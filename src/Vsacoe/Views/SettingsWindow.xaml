@@ -1,0 +1,168 @@
+<Window x:Class="Vsacoe.Views.SettingsWindow"
+        x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Vsacoe — настройки"
+        Width="720"
+        Height="560"
+        MinWidth="600"
+        MinHeight="460"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI"
+        FontSize="13">
+    <Window.Resources>
+        <Style TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="MinWidth" Value="90" />
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#666" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="22,0,0,6" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" HorizontalAlignment="Right" Orientation="Horizontal">
+            <Button Content="Сохранить" IsDefault="True" Margin="0,0,8,0" Click="Save_Click" />
+            <Button Content="Отмена" IsCancel="True" Click="Cancel_Click" />
+        </StackPanel>
+
+        <TabControl x:Name="Tabs">
+            <TabItem Header="Общие">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <CheckBox x:Name="StartWithWindows" Content="Запускать вместе с Windows" />
+
+                        <CheckBox x:Name="HideDesktopIcons" Content="Скрыть стандартные значки рабочего стола" />
+                        <TextBlock Style="{StaticResource Hint}" Text="Файлы рабочего стола будут видны только в оградах. Неразложенные элементы и Корзина появятся в ограде «для всего остального» (создаётся автоматически)." />
+
+                        <CheckBox x:Name="QuickHide" Content="Двойной щелчок по пустому месту рабочего стола скрывает и показывает ограды" />
+                        <CheckBox x:Name="AutoApplyRules" Content="Автоматически раскладывать новые файлы рабочего стола по правилам" />
+                        <CheckBox x:Name="ExpandOnHover" Content="Раскрывать свёрнутые ограды при наведении мыши" />
+                        <CheckBox x:Name="LockFences" Content="Закрепить ограды (запретить перемещение и изменение размера)" />
+
+                        <CheckBox x:Name="SnapToGrid" Content="Выравнивать по сетке" Margin="0,12,0,4" />
+                        <StackPanel Orientation="Horizontal" Margin="22,0,0,0">
+                            <TextBlock Text="Шаг сетки:" VerticalAlignment="Center" Width="110" />
+                            <Slider x:Name="GridSize" Width="220" Minimum="2" Maximum="50" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                            <TextBlock Margin="8,0" VerticalAlignment="Center" Text="{Binding Value, ElementName=GridSize, StringFormat={}{0} px}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <TextBlock Text="Размер значков:" VerticalAlignment="Center" Width="132" />
+                            <Slider x:Name="IconSize" Width="220" Minimum="24" Maximum="96" TickFrequency="8" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                            <TextBlock Margin="8,0" VerticalAlignment="Center" Text="{Binding Value, ElementName=IconSize, StringFormat={}{0} px}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Правила сортировки">
+                <DockPanel Margin="10">
+                    <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8">
+                        Новые файлы на рабочем столе раскладываются по первому подходящему правилу.
+                        <LineBreak />
+                        <Run Foreground="#666" FontSize="12">Расширение: «jpg; png». Имя: маски «Отчёт*; *.tmp». Категория: Папка, Ярлык, Программа, Документ, Изображение, Видео, Аудио, Архив, Прочее.</Run>
+                    </TextBlock>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Добавить" Margin="0,0,6,0" Click="AddRule_Click" />
+                        <Button Content="Удалить" Margin="0,0,6,0" Click="RemoveRule_Click" />
+                        <Button Content="▲" MinWidth="36" Margin="0,0,6,0" ToolTip="Выше (раньше проверяется)" Click="MoveUp_Click" />
+                        <Button Content="▼" MinWidth="36" Margin="0,0,18,0" ToolTip="Ниже" Click="MoveDown_Click" />
+                        <Button Content="Разложить рабочий стол сейчас" Click="ApplyRules_Click" />
+                    </StackPanel>
+                    <DataGrid x:Name="RulesGrid"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserSortColumns="False"
+                              CanUserReorderColumns="False"
+                              HeadersVisibility="Column"
+                              SelectionMode="Single"
+                              SelectionUnit="FullRow"
+                              GridLinesVisibility="Horizontal"
+                              RowHeight="30">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Вкл." Width="44">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Условие" Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding DataContext.KindOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  DisplayMemberPath="Name"
+                                                  SelectedValuePath="Kind"
+                                                  SelectedValue="{Binding Kind, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalContentAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Шаблон" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBox Text="{Binding Pattern, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Ограда" Width="170">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding DataContext.FenceOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  DisplayMemberPath="Title"
+                                                  SelectedValuePath="Id"
+                                                  SelectedValue="{Binding TargetFenceId, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalContentAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Снимки макета">
+                <DockPanel Margin="10">
+                    <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
+                               Text="Снимок сохраняет все ограды: положение, размер, цвет и содержимое. Удобно для разных разрешений экрана или «рабочего» и «домашнего» макета." />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Сохранить текущий…" Margin="0,0,6,0" Click="SaveSnapshot_Click" />
+                        <Button Content="Восстановить" Margin="0,0,6,0" Click="RestoreSnapshot_Click" />
+                        <Button Content="Удалить" Margin="0,0,6,0" Click="DeleteSnapshot_Click" />
+                        <Button Content="Открыть папку" Click="OpenSnapshots_Click" />
+                    </StackPanel>
+                    <ListBox x:Name="SnapshotsList" DisplayMemberPath="Text" MouseDoubleClick="RestoreSnapshot_Click" />
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="О программе">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Vsacoe" />
+                        <TextBlock x:Name="VersionText" Foreground="#666" Margin="0,0,0,12" />
+                        <TextBlock TextWrapping="Wrap" xml:space="preserve">Ограды для рабочего стола Windows: группируйте значки в полупрозрачные области.
+
+• Перетащите файлы в ограду — она запомнит их. Перетащите обратно на рабочий стол — элемент вернётся туда.
+• Двойной щелчок по заголовку сворачивает ограду до заголовка; при наведении она раскрывается.
+• Двойной щелчок по пустому месту рабочего стола скрывает/показывает все ограды.
+• Портал папки показывает содержимое любой папки; в нём можно переходить по подпапкам (Backspace — назад).
+• Правила автоматически раскладывают новые файлы по оградам.
+• Правый щелчок по ограде — цвет, прозрачность, сортировка, переименование.
+
+Клавиши: Enter — открыть, F2 — переименовать, Delete — в Корзину, Ctrl+A — выделить всё, F5 — обновить.
+
+Настройки хранятся в %APPDATA%\Vsacoe.</TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

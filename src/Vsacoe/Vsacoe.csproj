@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Позволяет собирать проект и вне Windows (например, в CI на Linux). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Vsacoe</RootNamespace>
+    <AssemblyName>Vsacoe</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Vsacoe</Product>
+    <Description>Ограды для рабочего стола Windows</Description>
+    <SatelliteResourceLanguages>ru;en</SatelliteResourceLanguages>
+    <!-- DPI задаётся в app.manifest (так правильно для WPF); предупреждение анализатора WinForms не относится к делу. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF и WinForms используют одинаковые имена типов; WinForms подключаем явно через псевдоним. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vsacoe.Core\Vsacoe.Core.csproj" />
+  </ItemGroup>
+
+</Project>
