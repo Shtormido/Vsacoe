@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Дневник",
+    "slug": "dnevnik",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vsacoe.dnevnik"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#5B5BD6",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.vsacoe.dnevnik"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#5B5BD6"
+        }
+      ]
+    ]
+  }
+}
