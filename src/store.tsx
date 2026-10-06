@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useContext, useEffect, useReducer, useState } from 'react';
-import { dateKey } from './dates';
+import { addDays, dateKey, dayList, parseKey, weekdayIndex } from './dates';
 import { Goal, Routine, Settings, State } from './types';
 
 const STORAGE_KEY = 'dnevnik-state-v1';
@@ -31,7 +31,8 @@ type Action =
   | { type: 'saveRoutine'; routine: Routine }
   | { type: 'removeRoutine'; id: string }
   | { type: 'toggleRoutine'; date: string; id: string }
-  | { type: 'updateSettings'; settings: Partial<Settings> };
+  | { type: 'updateSettings'; settings: Partial<Settings> }
+  | { type: 'setMotivation'; date: string; index: number };
 
 function mapGoals(state: State, list: string, fn: (goals: Goal[]) => Goal[]): State {
   const next = fn(state.goals[list] ?? []);
@@ -85,6 +86,8 @@ function reducer(state: State, action: Action): State {
     }
     case 'updateSettings':
       return { ...state, settings: { ...state.settings, ...action.settings } };
+    case 'setMotivation':
+      return { ...state, motivation: { date: action.date, index: action.index } };
   }
 }
 
@@ -148,3 +151,21 @@ export function routineStreak(r: Routine, routineDone: State['routineDone'], tod
   }
   return streak;
 }
+
+/** Привычки, которые действуют в этот день (и уже существовали). */
+export function routinesFor(state: State, key: string) {
+  const wd = weekdayIndex(parseKey(key));
+  return state.routines.filter((r) => r.createdAt <= key && r.days.includes(wd));
+}
+
+/** Сколько всего задач (цели + привычки) на день и сколько из них выполнено. */
+export function dayStats(state: State, key: string) {
+  const goals = state.goals[dayList(key)] ?? [];
+  const routines = routinesFor(state, key);
+  const doneIds = state.routineDone[key] ?? [];
+  const total = goals.length + routines.length;
+  const done = goals.filter((g) => g.done).length + routines.filter((r) => doneIds.includes(r.id)).length;
+  return { done, total };
+}
+
+export const previousDay = (key: string) => dateKey(addDays(parseKey(key), -1));

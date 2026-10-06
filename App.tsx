@@ -4,6 +4,7 @@ import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, V
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { dateKey, startOfDay } from './src/dates';
 import { onNotificationOpen, requestPermission, rescheduleAll } from './src/notifications';
+import { MotivationScreen } from './src/screens/MotivationScreen';
 import { RoutinesScreen } from './src/screens/RoutinesScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TodayScreen } from './src/screens/TodayScreen';
@@ -11,11 +12,12 @@ import { WeekScreen } from './src/screens/WeekScreen';
 import { StoreProvider, useStore } from './src/store';
 import { useTheme } from './src/theme';
 
-type Tab = 'today' | 'week' | 'routines' | 'settings';
+type Tab = 'today' | 'week' | 'motivation' | 'routines' | 'settings';
 
 const TABS: { key: Tab; icon: string; label: string }[] = [
   { key: 'today', icon: '📅', label: 'День' },
   { key: 'week', icon: '🗓', label: 'Неделя' },
+  { key: 'motivation', icon: '🔥', label: 'Мотивация' },
   { key: 'routines', icon: '🔁', label: 'Привычки' },
   { key: 'settings', icon: '⚙️', label: 'Настройки' },
 ];
@@ -81,7 +83,7 @@ function Main() {
   useEffect(
     () =>
       onNotificationOpen((target) => {
-        if (target !== 'today' && target !== 'week') return;
+        if (target !== 'today' && target !== 'week' && target !== 'motivation') return;
         setTab(target);
         if (target === 'today') setDate(dateKey(new Date()));
       }),
@@ -117,6 +119,15 @@ function Main() {
             today={today}
             openDay={(key) => {
               setDate(key);
+              setTab('today');
+            }}
+          />
+        ) : null}
+        {tab === 'motivation' ? (
+          <MotivationScreen
+            today={today}
+            openToday={() => {
+              setDate(dateKey(today));
               setTab('today');
             }}
           />

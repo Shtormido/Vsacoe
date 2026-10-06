@@ -32,4 +32,6 @@ export type State = {
   /** dateKey → id выполненных привычек */
   routineDone: Record<string, string[]>;
   settings: Settings;
+  /** Фраза дня, выбранная вручную кнопкой «обновить» (действует только в этот день) */
+  motivation?: { date: string; index: number };
 };

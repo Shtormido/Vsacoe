@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { AddInput, Card, Empty, Header, ProgressBar, SectionTitle, TaskRow } from '../components/ui';
-import { addDays, dateKey, dayList, formatWeek, mondayOf, WEEKDAYS_SHORT, weekList } from '../dates';
-import { useStore } from '../store';
+import { addDays, dateKey, formatWeek, mondayOf, WEEKDAYS_SHORT, weekList } from '../dates';
+import { dayStats, useStore } from '../store';
 import { useTheme } from '../theme';
 import { Goal } from '../types';
 
@@ -61,11 +61,7 @@ export function WeekScreen({ today, openDay }: Props) {
           {WEEKDAYS_SHORT.map((label, i) => {
             const day = addDays(monday, i);
             const key = dateKey(day);
-            const dayGoals = state.goals[dayList(key)] ?? [];
-            const routines = state.routines.filter((r) => r.createdAt <= key && r.days.includes(i));
-            const doneIds = state.routineDone[key] ?? [];
-            const total = dayGoals.length + routines.length;
-            const done = dayGoals.filter((g) => g.done).length + routines.filter((r) => doneIds.includes(r.id)).length;
+            const { done, total } = dayStats(state, key);
             const isToday = key === todayKey;
             const complete = total > 0 && done === total;
             return (

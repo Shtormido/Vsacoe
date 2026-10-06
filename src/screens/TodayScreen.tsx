@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Mascot } from '../components/Mascot';
 import { TimePicker } from '../components/TimePicker';
 import { AddInput, Card, Chip, Empty, Header, ProgressBar, SectionTitle, TaskRow } from '../components/ui';
-import { addDays, dateKey, dayList, formatDay, mondayOf, parseKey, plural, relativeDay, startOfDay, weekdayIndex, weekList } from '../dates';
-import { routineStreak, useStore } from '../store';
+import { addDays, dateKey, dayList, formatDay, mondayOf, parseKey, plural, relativeDay, startOfDay, weekList } from '../dates';
+import { dayMood } from '../mascot';
+import { dayStats, routinesFor, routineStreak, useStore } from '../store';
 import { useTheme } from '../theme';
 import { Goal } from '../types';
 
@@ -20,7 +22,7 @@ export function TodayScreen({ date, setDate, today }: Props) {
   const isPast = day < startOfDay(today);
   const isToday = date === dateKey(today);
 
-  const routines = state.routines.filter((r) => r.createdAt <= date && r.days.includes(weekdayIndex(day)));
+  const routines = routinesFor(state, date);
   const routineDone = state.routineDone[date] ?? [];
 
   const weekGoals = state.goals[weekList(dateKey(mondayOf(day)))] ?? [];
@@ -29,8 +31,7 @@ export function TodayScreen({ date, setDate, today }: Props) {
   const yesterdayList = dayList(dateKey(addDays(day, -1)));
   const yesterdayUndone = isToday ? (state.goals[yesterdayList] ?? []).filter((g) => !g.done).length : 0;
 
-  const done = goals.filter((g) => g.done).length + routines.filter((r) => routineDone.includes(r.id)).length;
-  const total = goals.length + routines.length;
+  const { done, total } = dayStats(state, date);
 
   const confirmDelete = (g: Goal) =>
     Alert.alert('Удалить цель?', g.title, [
@@ -49,9 +50,7 @@ export function TodayScreen({ date, setDate, today }: Props) {
       />
 
       {total > 0 ? <ProgressBar done={done} total={total} /> : null}
-      {total > 0 && done === total ? (
-        <Text style={[styles.congrats, { color: t.success }]}>🎉 Всё выполнено! Отличный день.</Text>
-      ) : null}
+      <Mascot mood={dayMood(state, date, new Date())} seed={date} vars={{ done, total, left: total - done }} />
 
       {yesterdayUndone > 0 ? (
         <Pressable
@@ -138,7 +137,6 @@ export function TodayScreen({ date, setDate, today }: Props) {
 }
 
 const styles = StyleSheet.create({
-  congrats: { fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
   banner: { borderRadius: 12, padding: 12, marginBottom: 14 },
   hint: { fontSize: 12, textAlign: 'center', marginTop: 8 },
   weekGoal: { fontSize: 15, paddingVertical: 3 },
