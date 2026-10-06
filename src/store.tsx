@@ -10,6 +10,7 @@ export const defaultSettings: Settings = {
   evening: { enabled: true, time: '21:00' },
   weekly: { enabled: true, time: '09:00' },
   nudge: true,
+  mascot: { id: 'raccoon', name: '', address: 'братан' },
 };
 
 const initialState: State = {

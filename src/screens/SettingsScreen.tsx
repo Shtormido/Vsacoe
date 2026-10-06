@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Mascot } from '../components/Mascot';
 import { TimePicker } from '../components/TimePicker';
 import { Button, Card, Chip, Header, SectionTitle } from '../components/ui';
 import { getPermission, PermissionStatus, requestPermission, rescheduleAll, sendTestNotification } from '../notifications';
+import { DEFAULT_ADDRESS, MASCOTS } from '../mascot';
 import { useStore } from '../store';
 import { useTheme } from '../theme';
 import { Settings } from '../types';
@@ -26,6 +28,9 @@ export function SettingsScreen() {
   }, []);
 
   const update = (settings: Partial<Settings>) => dispatch({ type: 'updateSettings', settings });
+  const mascot = state.settings.mascot;
+  const updateMascot = (patch: Partial<Settings['mascot']>) => update({ mascot: { ...mascot, ...patch } });
+  const base = MASCOTS.find((m) => m.id === mascot.id) ?? MASCOTS[0];
 
   const enable = async () => {
     const p = await requestPermission();
@@ -40,7 +45,7 @@ export function SettingsScreen() {
 
   return (
     <View>
-      <Header title="Настройки" subtitle="Напоминания" />
+      <Header title="Настройки" subtitle="Маскот и напоминания" />
 
       {permission !== 'granted' ? (
         <Card style={{ backgroundColor: t.warnSoft, borderColor: t.warnSoft }}>
@@ -52,6 +57,53 @@ export function SettingsScreen() {
           {permission !== 'unsupported' ? <Button label="Разрешить уведомления" onPress={enable} /> : null}
         </Card>
       ) : null}
+
+      <Card>
+        <SectionTitle>Маскот</SectionTitle>
+        <View style={styles.mascots}>
+          {MASCOTS.map((m) => {
+            const active = m.id === base.id;
+            return (
+              <Pressable
+                key={m.id}
+                onPress={() => updateMascot({ id: m.id })}
+                style={[styles.mascotItem, { borderColor: active ? t.accent : t.border, backgroundColor: active ? t.accentSoft : 'transparent' }]}
+              >
+                <Text style={styles.mascotEmoji}>{m.emoji}</Text>
+                <Text style={[styles.mascotName, { color: active ? t.accent : t.muted }]}>{m.name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.label, { color: t.muted }]}>Имя маскота</Text>
+        <TextInput
+          value={mascot.name}
+          onChangeText={(name) => updateMascot({ name })}
+          placeholder={base.name}
+          placeholderTextColor={t.muted}
+          maxLength={30}
+          style={[styles.input, { color: t.text, borderColor: t.border }]}
+        />
+
+        <Text style={[styles.label, { color: t.muted }]}>Как маскот обращается ко мне</Text>
+        <TextInput
+          value={mascot.address}
+          onChangeText={(address) => updateMascot({ address })}
+          placeholder={DEFAULT_ADDRESS}
+          placeholderTextColor={t.muted}
+          maxLength={30}
+          style={[styles.input, { color: t.text, borderColor: t.border }]}
+        />
+        <View style={styles.chips}>
+          {['братан', 'брат', 'бро', 'чемпион', 'боец', 'легенда'].map((a) => (
+            <Chip key={a} label={a} active={mascot.address === a} onPress={() => updateMascot({ address: a })} />
+          ))}
+        </View>
+
+        <Text style={[styles.label, { color: t.muted }]}>Так это выглядит</Text>
+        <Mascot mood="disappointed" seed="preview" />
+      </Card>
 
       <Card>
         <SectionTitle>Напоминания</SectionTitle>
@@ -114,5 +166,12 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth },
   title: { fontSize: 16, fontWeight: '600' },
   hint: { fontSize: 13, marginTop: 2 },
+  mascots: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  mascotItem: { width: '31%', alignItems: 'center', paddingVertical: 8, borderRadius: 12, borderWidth: 1.5 },
+  mascotEmoji: { fontSize: 30 },
+  mascotName: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  label: { fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 6 },
+  input: { fontSize: 16, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   footer: { fontSize: 13, textAlign: 'center', paddingHorizontal: 20, lineHeight: 19 },
 });

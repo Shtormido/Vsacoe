@@ -3,7 +3,7 @@ import { Animated, Share, StyleSheet, Text, View } from 'react-native';
 import { Mascot } from '../components/Mascot';
 import { Button, Card, Header } from '../components/ui';
 import { dateKey, formatDay, plural } from '../dates';
-import { MASCOT_NAME } from '../mascot';
+import { fill, getMascot } from '../mascot';
 import { QUOTES, quoteOfDay } from '../quotes';
 import { dayStats, useStore } from '../store';
 import { useTheme } from '../theme';
@@ -17,8 +17,10 @@ export function MotivationScreen({ today, openToday }: Props) {
 
   const key = dateKey(today);
   const index = state.motivation?.date === key ? state.motivation.index : quoteOfDay(today);
+  const mascot = getMascot(state.settings);
   const quote = QUOTES[index];
-  const author = quote.author ?? `${MASCOT_NAME} 🦝`;
+  const text = fill(quote.text, mascot.address);
+  const author = quote.author ?? `${mascot.name} ${mascot.emoji}`;
   const { done, total } = dayStats(state, key);
   const left = total - done;
 
@@ -37,7 +39,7 @@ export function MotivationScreen({ today, openToday }: Props) {
 
       <Card style={{ ...styles.quoteCard, borderLeftColor: t.accent }}>
         <Animated.View style={{ opacity }}>
-          <Text style={[styles.quote, { color: t.text }]}>{quote.text}</Text>
+          <Text style={[styles.quote, { color: t.text }]}>{text}</Text>
           <Text style={[styles.author, { color: t.muted }]}>— {author}</Text>
         </Animated.View>
       </Card>
@@ -50,7 +52,7 @@ export function MotivationScreen({ today, openToday }: Props) {
           <Button
             label="📤 Поделиться"
             kind="secondary"
-            onPress={() => Share.share({ message: `«${quote.text}» — ${author}` })}
+            onPress={() => Share.share({ message: `«${text}» — ${author}` })}
           />
         </View>
       </View>

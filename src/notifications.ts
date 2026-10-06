@@ -1,12 +1,12 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { addDays, dateKey, dayList, parseKey, parseTime } from './dates';
-import { MASCOT_EMOJI, MASCOT_NAME } from './mascot';
+import { fill, getMascot } from './mascot';
 import { State } from './types';
 
 const CHANNEL = 'reminders';
 const NUDGES = [
-  'Брат, я думал ты сможешь...',
+  '{Addr}, я думал ты сможешь...',
   'Ты подвёл не меня. Ты подвёл того самого маленького ребёнка, который сидит внутри тебя.',
 ];
 // iOS хранит не больше 64 запланированных уведомлений на приложение.
@@ -58,18 +58,20 @@ async function rescheduleNow(state: State) {
   await Notifications.cancelAllScheduledNotificationsAsync();
 
   const { settings } = state;
+  const mascot = getMascot(settings);
+  const voice = `${mascot.emoji} ${mascot.name}`;
   const now = new Date();
   const requests: Request[] = [];
 
   if (settings.morning.enabled) {
     requests.push({
-      content: content('☀️ Доброе утро, брат!', 'Фраза дня уже ждёт. Заряжайся и ставь цели на сегодня.', 'motivation'),
+      content: content(`☀️ ${fill('Доброе утро, {addr}!', mascot.address)}`, 'Фраза дня уже ждёт. Заряжайся и ставь цели на сегодня.', 'motivation'),
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, channelId: CHANNEL, ...parseTime(settings.morning.time) },
     });
   }
   if (settings.evening.enabled) {
     requests.push({
-      content: content(`${MASCOT_EMOJI} ${MASCOT_NAME}`, 'Брат, как прошёл день? Отметь, что сделал. Надеюсь, ты меня не подвёл 😏', 'today'),
+      content: content(voice, fill('{Addr}, как прошёл день? Отметь, что сделал. Надеюсь, ты меня не подвёл 😏', mascot.address), 'today'),
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, channelId: CHANNEL, ...parseTime(settings.evening.time) },
     });
   }
@@ -87,8 +89,8 @@ async function rescheduleNow(state: State) {
     at.setHours(hour, minute, 0, 0);
     requests.push({
       content: content(
-        `${MASCOT_EMOJI} ${MASCOT_NAME}`,
-        `${NUDGES[Math.floor(Math.random() * NUDGES.length)]} Ты два дня не открывал дневник.`,
+        voice,
+        `${fill(NUDGES[Math.floor(Math.random() * NUDGES.length)], mascot.address)} Ты два дня не открывал дневник.`,
         'today',
       ),
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, channelId: CHANNEL, date: at },
@@ -120,17 +122,17 @@ async function rescheduleNow(state: State) {
   for (const r of state.routines) {
     if (!r.time || !r.days.length) continue;
     const time = parseTime(r.time);
-    const body = `Брат, пора: ${r.title}`;
+    const body = `${fill('{Addr}', mascot.address)}, пора: ${r.title}`;
     if (r.days.length === 7) {
       requests.push({
-        content: content(`${MASCOT_EMOJI} Привычка`, body, 'today'),
+        content: content(voice, body, 'today'),
         trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, channelId: CHANNEL, ...time },
       });
       continue;
     }
     for (const d of r.days) {
       requests.push({
-        content: content(`${MASCOT_EMOJI} Привычка`, body, 'today'),
+        content: content(voice, body, 'today'),
         // наш 0 = Пн → 2 … 6 = Вс → 1
         trigger: { type: Notifications.SchedulableTriggerInputTypes.WEEKLY, channelId: CHANNEL, weekday: ((d + 1) % 7) + 1, ...time },
       });

@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { MASCOT_EMOJI, MASCOT_NAME, mascotPhrase, Mood, MOOD_BADGE } from '../mascot';
+import { getMascot, mascotPhrase, Mood, MOOD_BADGE } from '../mascot';
+import { useStore } from '../store';
 import { useTheme } from '../theme';
 
 type Props = { mood: Mood; seed: string; vars?: Record<string, number> };
 
-/** Енот Братан: говорит фразу по настроению, по нажатию подпрыгивает и говорит другую. */
+/** Маскот: говорит фразу по настроению, по нажатию подпрыгивает и говорит другую. */
 export function Mascot({ mood, seed, vars }: Props) {
   const t = useTheme();
+  const mascot = getMascot(useStore().state.settings);
   const [shift, setShift] = useState(0);
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -23,14 +25,14 @@ export function Mascot({ mood, seed, vars }: Props) {
   return (
     <Pressable onPress={poke} style={[styles.wrap, { backgroundColor: bg }]}>
       <Animated.View style={[styles.avatar, { backgroundColor: t.card, transform: [{ scale }] }]}>
-        <Text style={styles.emoji}>{MASCOT_EMOJI}</Text>
+        <Text style={styles.emoji}>{mascot.emoji}</Text>
         <View style={[styles.badge, { backgroundColor: t.card }]}>
           <Text style={styles.badgeText}>{MOOD_BADGE[mood]}</Text>
         </View>
       </Animated.View>
       <View style={styles.body}>
-        <Text style={[styles.name, { color: t.muted }]}>{MASCOT_NAME}</Text>
-        <Text style={[styles.text, { color: t.text }]}>{mascotPhrase(mood, seed, shift, vars)}</Text>
+        <Text style={[styles.name, { color: t.muted }]}>{mascot.name}</Text>
+        <Text style={[styles.text, { color: t.text }]}>{mascotPhrase(mood, seed, shift, mascot.address, vars)}</Text>
       </View>
     </Pressable>
   );

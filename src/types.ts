@@ -18,11 +18,21 @@ export type Routine = {
 
 export type ReminderSetting = { enabled: boolean; time: string };
 
+export type MascotSettings = {
+  /** id из списка MASCOTS */
+  id: string;
+  /** Своё имя маскота; пусто — имя по умолчанию */
+  name: string;
+  /** Как маскот обращается к пользователю */
+  address: string;
+};
+
 export type Settings = {
   morning: ReminderSetting;
   evening: ReminderSetting;
   weekly: ReminderSetting; // по понедельникам
   nudge: boolean; // «давно не заходил»
+  mascot: MascotSettings;
 };
 
 export type State = {
