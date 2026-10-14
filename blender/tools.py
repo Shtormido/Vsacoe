@@ -165,10 +165,20 @@ def treat(m):
     return root
 
 
+def first_aid(m):
+    root = empty("Tool_FirstAid")
+    red = mat("KitRed", "#e5484d", rough=0.4, coat=0.3)
+    box("Bag", (0.09, 0.05, 0.065), (0, 0, 0.04), red, root, bevel=0.012, segs=4)
+    box("CrossV", (0.016, 0.052, 0.045), (0, 0, 0.042), m["white"], root, bevel=0.003)
+    box("CrossH", (0.045, 0.052, 0.016), (0, 0, 0.042), m["white"], root, bevel=0.003)
+    torus("Handle", 0.02, 0.004, (0, 0, 0.073), (90, 0, 0), m["rubber"], root, seg=16, rings=6, arc=180)
+    return root
+
+
 def build():
     reset()
     m = M()
-    for fn in (brush, shower, dryer, clipper, scissors, shampoo, nail_clipper, perfume, bow, treat):
+    for fn in (brush, shower, dryer, clipper, scissors, shampoo, nail_clipper, perfume, bow, treat, first_aid):
         fn(m)
 
 

@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export const MODEL_FILES = [
   'pet_corgi', 'pet_poodle', 'pet_husky', 'pet_spitz', 'pet_yorkie', 'pet_cat',
-  'salon_props', 'tools', 'people',
+  'salon_props', 'tools', 'people', 'player',
 ];
 
 /** Загрузка и клонирование моделей из Blender (GLB). */

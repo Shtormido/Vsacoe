@@ -21,8 +21,27 @@ function shade(hex, k) {
   return `#${c.getHexString()}`;
 }
 
-export function floorTexture(kind, base) {
+export function floorTexture(kind, base, c2 = '#ffffff') {
   const rng = mulberry32(kind.length * 97);
+  if (kind === 'tile') {
+    return canvas(1024, 1024, (g, w, h) => {
+      const n = 8, s = w / n;
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          g.fillStyle = shade((i + j) % 2 ? base : c2, (rng() - 0.5) * 0.03);
+          g.fillRect(i * s, j * s, s, s);
+          g.fillStyle = 'rgba(255,255,255,0.18)';
+          g.fillRect(i * s + 6, j * s + 6, s - 12, 8);
+        }
+      }
+      g.strokeStyle = 'rgba(80,70,80,0.35)';
+      g.lineWidth = 4;
+      for (let i = 0; i <= n; i++) {
+        g.beginPath(); g.moveTo(i * s, 0); g.lineTo(i * s, h); g.stroke();
+        g.beginPath(); g.moveTo(0, i * s); g.lineTo(w, i * s); g.stroke();
+      }
+    });
+  }
   if (kind === 'wood') {
     return canvas(1024, 1024, (g, w, h) => {
       const rows = 8;

@@ -181,11 +181,13 @@ def reception_desk(m):
         prim("sphere", f"Toe{i}", (0.035, 0.02, 0.04), loc=(x, -0.345, z), material=m["accent"], parent=root)
     prim("sphere", "PawPad", (0.1, 0.02, 0.075), loc=(0, -0.345, 0.54), material=m["accent"], parent=root)
     # монитор, клавиатура, терминал
-    box("MonitorStand", (0.04, 0.04, 0.2), (0.35, 0.18, 1.2), m["dark"], root, bevel=0.005)
-    box("MonitorBase", (0.18, 0.14, 0.015), (0.35, 0.18, 1.105), m["dark"], root, bevel=0.005)
-    box("Monitor", (0.5, 0.03, 0.3), (0.35, 0.17, 1.37), m["black"], root, bevel=0.01, rot=(0, 0, 10))
-    box("Screen", (0.46, 0.005, 0.26), (0.347, 0.152, 1.37), m["screen"], root, bevel=0.002, rot=(0, 0, 10))
-    box("Keyboard", (0.38, 0.13, 0.015), (0.32, -0.05, 1.108), m["white"], root, bevel=0.004)
+    # монитор и клавиатура — на стороне персонала (+Y), экран к сотруднику, а не к посетителям
+    box("MonitorStand", (0.04, 0.04, 0.2), (0.35, -0.06, 1.2), m["dark"], root, bevel=0.005)
+    box("MonitorBase", (0.18, 0.14, 0.015), (0.35, -0.06, 1.105), m["dark"], root, bevel=0.005)
+    box("Monitor", (0.5, 0.03, 0.3), (0.35, -0.05, 1.37), m["black"], root, bevel=0.01, rot=(0, 0, -8))
+    box("Screen", (0.46, 0.005, 0.26), (0.353, -0.033, 1.37), m["screen"], root, bevel=0.002, rot=(0, 0, -8))
+    box("Keyboard", (0.38, 0.13, 0.015), (0.32, 0.17, 1.108), m["white"], root, bevel=0.004)
+    box("Mouse", (0.05, 0.08, 0.02), (0.6, 0.18, 1.11), m["white"], root, bevel=0.009)
     box("Terminal", (0.09, 0.16, 0.05), (-0.4, -0.1, 1.125), m["dark"], root, bevel=0.012, rot=(0, 0, -10))
     box("TermScreen", (0.06, 0.05, 0.005), (-0.4, -0.06, 1.15), m["screen"], root, bevel=0.002, rot=(0, 0, -10))
     # подставка с визитками и баночка с лакомствами
@@ -559,9 +561,62 @@ def scale_device(m):
     return root
 
 
+def first_aid_cabinet(m):
+    root = empty("FirstAidCabinet")
+    box("Body", (0.46, 0.16, 0.5), (0, 0, 0), m["white"], root, bevel=0.02)
+    box("Door", (0.42, 0.02, 0.46), (0, -0.085, 0), m["white"], root, bevel=0.01)
+    box("CrossV", (0.07, 0.02, 0.22), (0, -0.098, 0.02), m["red"], root, bevel=0.006)
+    box("CrossH", (0.22, 0.02, 0.07), (0, -0.098, 0.02), m["red"], root, bevel=0.006)
+    cyl("Knob", 0.012, 0.03, (0.17, -0.1, -0.15), m["chrome"], root, rot=(90, 0, 0), segments=12)
+    return root
+
+
+def first_aid_kit(m):
+    root = empty("FirstAidKit")
+    box("Bag", (0.3, 0.14, 0.2), (0, 0, 0.1), m["red"], root, bevel=0.04, segs=4)
+    box("Cross1", (0.05, 0.145, 0.14), (0, 0, 0.11), m["white"], root, bevel=0.01)
+    box("Cross2", (0.14, 0.145, 0.05), (0, 0, 0.11), m["white"], root, bevel=0.01)
+    torus("Handle", 0.06, 0.012, (0, 0, 0.21), (90, 0, 0), m["dark"], root, seg=20, rings=8, arc=180)
+    return root
+
+
+def mirror(m):
+    root = empty("Mirror")
+    glass = mat("MirrorGlass", "#e8eef5", rough=0.02, metal=1.0)
+    g = empty("Frame", root, (0, 0, 1.15))
+    disk = prim("cyl", "Glass", (0.62, 0.62, 0.02), loc=(0, 0, 0), rot=(90, 0, 0), material=glass, parent=g, segments=48)
+    disk.scale = (1.0, 1.0, 1.0)
+    for v in disk.data.vertices:
+        v.co.z *= 1.55  # овал
+    disk.data.update()
+    t = torus("Rim", 0.31, 0.025, (0, 0, 0), (90, 0, 0), m["gold"], g, seg=48, rings=10)
+    for v in t.data.vertices:
+        v.co.y *= 1.55
+    t.data.update()
+    for sgn in (-1, 1):
+        tube(f"Leg{sgn}", [(sgn * 0.25, 0.05, 0.0), (sgn * 0.3, 0.02, 0.7), (sgn * 0.33, 0.0, 1.15)], 0.018, m["gold"], root, sides=8)
+    tube("BackLeg", [(0, 0.35, 0.0), (0, 0.05, 1.1)], 0.016, m["gold"], root, sides=8)
+    return root
+
+
+def office_chair(m):
+    root = empty("OfficeChair")
+    cyl("Seat", 0.24, 0.08, (0, 0, 0.5), m["fabric"], root, bevel=0.03, segments=32)
+    box("Back", (0.42, 0.06, 0.45), (0, 0.22, 0.85), m["fabric"], root, bevel=0.04, segs=4)
+    tube("BackPost", [(0, 0.2, 0.5), (0, 0.24, 0.65)], 0.02, m["dark"], root, sides=8)
+    cyl("Gas", 0.025, 0.4, (0, 0, 0.27), m["chrome"], root)
+    for i in range(5):
+        a = i / 5 * 2 * math.pi
+        tube(f"S{i}", [(0, 0, 0.08), (math.cos(a) * 0.27, math.sin(a) * 0.27, 0.05)], 0.016, m["dark"], root, sides=8)
+        prim("sphere", f"W{i}", (0.045, 0.045, 0.045), loc=(math.cos(a) * 0.27, math.sin(a) * 0.27, 0.024),
+             material=m["rubber"], parent=root, segments=12, rings=8)
+    return root
+
+
 ITEMS = [groom_table, bathtub, dryer_stand, reception_desk, sofa, chair, stool, plant, shelf, pendant_lamp,
          window, door, dog_bed, kennel, coffee_machine, trophy, neon_paw, picture, wall_clock, sink_cabinet,
-         towel_stack, bench, stage, spotlight, judges_table, signboard, rug, scale_device]
+         towel_stack, bench, stage, spotlight, judges_table, signboard, rug, scale_device, first_aid_cabinet,
+         first_aid_kit, mirror, office_chair]
 
 
 def build():

@@ -14,6 +14,32 @@ export class CameraRig {
     this.sway = 1;
     this.basePos = camera.position.clone();
     this.orbit = { yaw: 0, pitch: 0.35, dist: 1.2, tyaw: 0, tpitch: 0.35, tdist: 1.2, min: 0.35, max: 2.2, center: new THREE.Vector3() };
+    this.follow = { target: null, yaw: 0, pitch: 0.55, dist: 3.6, tyaw: 0, tpitch: 0.55, tdist: 3.6, pos: new THREE.Vector3() };
+  }
+
+  /** Камера от третьего лица за персонажем. */
+  startFollow(target, { yaw = 0 } = {}) {
+    const f = this.follow;
+    f.target = target;
+    f.tyaw = yaw;
+    f.pos.copy(target.position);
+    // стартуем из текущего положения камеры — без рывка
+    const off = this.camera.position.clone().sub(target.position);
+    f.yaw = Math.atan2(off.x, off.z);
+    f.dist = clamp(Math.hypot(off.x, off.z), 2, 6);
+    this.fly = null;
+    this.mode = 'follow';
+  }
+
+  followRotate(dx, dy) {
+    const f = this.follow;
+    f.tyaw -= dx * 0.006;
+    f.tpitch = clamp(f.tpitch + dy * 0.004, 0.2, 1.2);
+  }
+
+  followZoom(delta) {
+    const f = this.follow;
+    f.tdist = clamp(f.tdist * (1 + delta * 0.001), 2, 7);
   }
 
   set(pos, target) {
@@ -77,6 +103,27 @@ export class CameraRig {
         this.basePos.copy(f.p1);
         f.resolve();
       }
+      return;
+    }
+    if (this.mode === 'follow' && this.follow.target) {
+      const f = this.follow;
+      const k = clamp(dt * 6);
+      f.yaw += (f.tyaw - f.yaw) * clamp(dt * 8);
+      f.pitch += (f.tpitch - f.pitch) * k;
+      f.dist += (f.tdist - f.dist) * k;
+      f.pos.lerp(f.target.position, clamp(dt * 8));
+      const cp = Math.cos(f.pitch);
+      const c = f.pos.clone().add(new THREE.Vector3(0, 1.05, 0));
+      cam.position.set(c.x + Math.sin(f.yaw) * cp * f.dist, c.y + Math.sin(f.pitch) * f.dist, c.z + Math.cos(f.yaw) * cp * f.dist);
+      if (this.maxY) cam.position.y = Math.min(cam.position.y, this.maxY);
+      if (this.bounds) {
+        // камера не выходит за стены (спереди комната открыта)
+        const B = this.bounds;
+        cam.position.x = clamp(cam.position.x, B.x0, B.x1);
+        cam.position.z = Math.max(cam.position.z, B.z0);
+      }
+      this.target.copy(c);
+      cam.lookAt(c);
       return;
     }
     if (this.mode === 'orbit') {

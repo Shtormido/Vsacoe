@@ -6,10 +6,10 @@ const _e = new THREE.Euler();
 
 /** Персонаж из people.glb с процедурной анимацией ходьбы, сидения и речи. */
 export class Npc {
-  constructor(assets, personId) {
+  constructor(assets, personId, model = null) {
     this.id = personId;
     this.root = new THREE.Group();
-    this.model = assets.node('people', `Person_${personId}`);
+    this.model = model || assets.node('people', `Person_${personId}`);
     this.root.add(this.model);
     // в people.glb имена частей повторяются у разных персонажей (Head, Head001, ...)
     const f = (n) => {
@@ -43,6 +43,43 @@ export class Npc {
     this.lookTarget = null;
     this._resolve = null;
     this.appear = 1;
+    this.moveInput = 0;
+    this.badge = null;
+  }
+
+  /** Значок над головой (эмодзи или текст), null — убрать. */
+  setBadge(text, color = '#ffffff') {
+    if (this.badge?.userData.text === text) return;
+    if (this.badge) {
+      this.badge.parent?.remove(this.badge);
+      this.badge.material.map.dispose();
+      this.badge = null;
+    }
+    if (!text) return;
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = color;
+    g.beginPath();
+    g.arc(64, 60, 50, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.moveTo(50, 104); g.lineTo(64, 124); g.lineTo(78, 104);
+    g.fill();
+    g.font = '64px "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#3d2f3a';
+    g.fillText(text, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    sp.scale.setScalar(0.32);
+    sp.position.y = 2.25;
+    sp.renderOrder = 20;
+    sp.userData.text = text;
+    this.root.add(sp);
+    this.badge = sp;
   }
 
   get pos() {
@@ -134,7 +171,9 @@ export class Npc {
       this.yaw += diff * clamp(dt * 9);
       this.root.rotation.y = this.yaw;
     }
-    this.walking += ((moving ? 1 : 0) - this.walking) * clamp(dt * 8);
+    if (this.moveInput > 0) moving = true;
+    this.walking += ((moving ? Math.max(1, this.moveInput) : 0) - this.walking) * clamp(dt * 8);
+    if (this.badge) this.badge.position.y = 2.25 + Math.sin(this.t * 3) * 0.04 - (this.sitting > 0.5 ? 0.35 : 0);
     this.sitting += (this.sitTarget - this.sitting) * clamp(dt * 5);
 
     // ходьба

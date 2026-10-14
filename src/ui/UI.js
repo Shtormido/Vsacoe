@@ -13,7 +13,12 @@ export function h(sel, attrs = {}, ...children) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v === undefined || v === null || v === false) continue;
     if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else if (k === 'style' && typeof v === 'object') {
+      for (const [sk, sv] of Object.entries(v)) {
+        if (sk.startsWith('--')) el.style.setProperty(sk, sv);
+        else el.style[sk] = sv;
+      }
+    }
     else if (k === 'html') el.innerHTML = v;
     else el.setAttribute(k, v === true ? '' : v);
   }
@@ -32,7 +37,7 @@ export function starsText(v) {
 export const ICONS = {
   shower: 'icons/shower.png', shampoo: 'icons/shampoo.png', dryer: 'icons/dryer.png', brush: 'icons/brush.png',
   clipper: 'icons/clipper.png', scissors: 'icons/scissors.png', nailclip: 'icons/nailclip.png',
-  perfume: 'icons/perfume.png', bow: 'icons/bow.png', treat: 'icons/treat.png',
+  perfume: 'icons/perfume.png', bow: 'icons/bow.png', treat: 'icons/treat.png', firstaid: 'icons/firstaid.png',
 };
 const EMOJI = { music: '🎵', plant: '🪴', ads: '📣', sofa: '🛋️', neon: '💡', coffee: '☕', table: '🛠️' };
 

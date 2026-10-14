@@ -336,6 +336,41 @@ export class Pet {
     return out;
   }
 
+  /** Запомнить состояние шерсти перед работой сотрудника. */
+  snapshot() {
+    this._snap = this.parts.map((p) => ({ state: p.state.slice(), state2: p.state2.slice() }));
+  }
+
+  /**
+   * Сотрудник «работает» сам: плавно ведём шерсть от снимка к результату.
+   * t — прогресс 0..1, q — качество 0..1.
+   */
+  autoGroom(t, q, targets, services) {
+    if (!this._snap) this.snapshot();
+    const sm = (a, b, x) => smoothstep(a, b, x);
+    const bump = (a, b, x) => (x <= a || x >= b ? 0 : Math.sin(((x - a) / (b - a)) * Math.PI));
+    const washP = sm(0.05, 0.4, t), brushP = sm(0.45, 0.65, t), cutP = sm(0.6, 0.95, t);
+    this.parts.forEach((p, k) => {
+      const S = this._snap[k];
+      const tgt = targets ? targets[p.region] : undefined;
+      for (let i = 0; i < p.n; i++) {
+        const i4 = i * 4, i2 = i * 2;
+        const noise = ((i * 2654435761) % 1000) / 1000 - 0.5;
+        const d0 = S.state[i4 + 1], m0 = S.state[i4 + 2], l0 = S.state[i4];
+        const dF = services.wash ? d0 * (1 - q) * 0.5 : d0;
+        const mF = services.brush ? m0 * (1 - q) * 0.6 : m0;
+        const lF = services.cut && tgt !== undefined && tgt !== null ? tgt + (1 - q) * 0.3 * noise : l0;
+        p.state[i4 + 1] = d0 + (dF - d0) * washP;
+        p.state[i4 + 2] = m0 + (mF - m0) * brushP;
+        p.state[i4] = l0 + (lF - l0) * cutP;
+        p.state[i4 + 3] = services.wash ? bump(0.08, 0.32, t) * 0.8 : 0;
+        p.state2[i2] = services.wash ? Math.min(1, bump(0.12, 0.62, t) * 1.4) : 0;
+      }
+      p.aState.needsUpdate = true;
+      p.aState2.needsUpdate = true;
+    });
+  }
+
   attachBow(bowObj, worldPoint) {
     this.removeBow();
     const parent = this.head || this.model;

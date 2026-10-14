@@ -4,6 +4,7 @@ import { REGIONS, STYLES } from '../data/breeds.js';
 import { SCENES } from '../data/story.js';
 import { TOOLS, TOOL_BY_ID, toolParams } from '../data/tools.js';
 import { h } from '../ui/UI.js';
+import { computeMods } from '../data/skills.js';
 import { clamp, smoothstep } from '../util/math.js';
 
 const PAINT_TOOLS = new Set(['shower', 'shampoo', 'dryer', 'brush', 'clipper', 'scissors', 'perfume']);
@@ -58,8 +59,15 @@ export class GroomSession {
     this.hintOverride = null;
     this.hintT = 0;
     this.paused = false;
-    this.temper = pet.breed.temper * (owned.includes('table_hydro') || championship ? 0.8 : 1) * (client?.temper || 1);
+    this.mods = computeMods(game.state);
+    this.temper = pet.breed.temper * (owned.includes('table_hydro') || championship ? 0.8 : 1) * (client?.temper || 1)
+      * Math.max(0.3, 1 + (this.mods.stress || 0));
     this.calm = owned.includes('music') ? 1.5 : 1;
+    this.stock = championship ? null : game.state.stock;   // null — без ограничений
+    this.wounds = [];
+    this.nickCd = 6;
+    this.usedPerfume = false;
+    this.jitter = new THREE.Vector3();
     this.cursors = {};
     this._bind();
   }
@@ -178,7 +186,7 @@ export class GroomSession {
 
   _keydown(e) {
     if (this.paused) return;
-    const t = TOOLS.find((x) => x.key === e.key);
+    const t = TOOLS.find((x) => x.code === e.code);
     if (t) {
       this.selectTool(t.id);
       return;
@@ -198,6 +206,34 @@ export class GroomSession {
   hasTool(id) {
     const t = TOOL_BY_ID[id];
     return !t.requires || this.owned.includes(t.requires);
+  }
+
+  /** Есть ли расходник на складе (на чемпионате — всегда). */
+  has(item) {
+    return !this.stock || (this.stock[item] || 0) > 0;
+  }
+
+  use(item) {
+    if (this.stock) this.stock[item] = Math.max(0, (this.stock[item] || 0) - 1);
+    this._refreshStock?.();
+  }
+
+  get injured() {
+    return !this.championship && !!this.game.state.injury;
+  }
+
+  healPlayer() {
+    const g = this.game;
+    if (!g.state.injury) return;
+    if (!this.has('firstaid')) {
+      g.ui.toast('Аптечек нет — закажите на компьютере (Расходники).', 'bad');
+      return;
+    }
+    this.use('firstaid');
+    g.state.injury = null;
+    g.audio.play('pop');
+    g.ui.toast('Рана обработана — руки больше не дрожат.', 'good');
+    this._refreshInjury();
   }
 
   selectTool(id) {
@@ -313,6 +349,13 @@ export class GroomSession {
     } else if (this.tool === 'bow') {
       const name = this.hit.object.name;
       if (/Fur_Head|Fur_Ear/.test(name)) {
+        if (!this.pet.bow) {
+          if (!this.has('bows')) {
+            g.ui.toast('Бантики закончились — закажите на компьютере.', 'bad');
+            return;
+          }
+          this.use('bows');
+        }
         const bow = g.assets.node('tools', 'Tool_Bow', { cloneMaterials: true });
         if (this.order.bowColor) Assets.tint(bow, ['Ribbon'], this.order.bowColor);
         pet.attachBow(bow, this.hit.point.clone().addScaledVector(this.hit.normal, pet.breed.furMax * 0.5));
@@ -321,14 +364,36 @@ export class GroomSession {
       } else {
         this._hint('Бантик крепится на голову или ушко.', true);
       }
+    } else if (this.tool === 'firstaid') {
+      const w = this.wounds.find((x) => !x.treated && x.mesh.getWorldPosition(new THREE.Vector3()).distanceTo(this.hit.point) < 0.06);
+      if (!w) {
+        this._hint(this.wounds.some((x) => !x.treated) ? 'Кликните точно по красной ранке.' : 'Ран нет — и это прекрасно!', true);
+        return;
+      }
+      if (!this.has('firstaid')) {
+        g.ui.toast('Аптечек нет! Закажите на компьютере (Расходники).', 'bad');
+        return;
+      }
+      this.use('firstaid');
+      w.treated = true;
+      w.mesh.material = new THREE.MeshStandardMaterial({ color: '#fff6ea', roughness: 0.8 });
+      w.mesh.scale.set(1.4, 1.4, 0.5);
+      g.audio.play('pop');
+      g.particles.emit('heart', this.hit.point, UP, 4);
+      if (this.mods.medic) this.stress = Math.max(0, this.stress - 20);
     } else if (this.tool === 'treat') {
       if (this.treatCd > 0) {
         this._hint('Не перекармливайте — подождите пару секунд.', true);
         return;
       }
+      if (!this.has('treats')) {
+        g.ui.toast('Лакомства закончились — закажите на компьютере.', 'bad');
+        return;
+      }
+      this.use('treats');
       pet.eat();
       g.audio.play('eat');
-      this.stress = Math.max(0, this.stress - 35);
+      this.stress = Math.max(0, this.stress - 35 * (1 + (this.mods.treatPower || 0)));
       this.treatCd = 4;
       pet.anim.happy = 1;
       g.particles.emit('heart', this.center.clone().add(new THREE.Vector3(0, this.radius * 0.6, 0)), UP, 8, { spread: 0.8 });
@@ -356,6 +421,13 @@ export class GroomSession {
       return;
     }
     this._raycast();
+    if (this.hit && this.injured) {
+      const amp = 0.012 * (1 - 0.5 * (this.mods.steady || 0));
+      this.hit.point.x += Math.sin(this.elapsed * 37) * amp;
+      this.hit.point.y += Math.sin(this.elapsed * 29 + 1) * amp;
+      this.hit.point.z += Math.cos(this.elapsed * 33) * amp;
+    }
+    for (const w of this.wounds) if (!w.treated) w.mesh.scale.setScalar(1 + Math.sin(this.elapsed * 8) * 0.25);
     this._placeCursor(dt);
     pet.highlightNails(this.tool === 'nails', this.elapsed);
     pet.lookAt(this.hit ? this.hit.point : g.camera.position);
@@ -367,6 +439,28 @@ export class GroomSession {
     if (working) {
       const P = this.params[this.tool] || {};
       const opts = { ...P };
+      const M = this.mods;
+      if (this.tool === 'shower' || this.tool === 'shampoo') opts.rate = (opts.rate || 1) * (1 + (M.washRate || 0));
+      if (this.tool === 'dryer') opts.power = (opts.power || 1) * (1 + (M.dryRate || 0));
+      if (this.tool === 'clipper' || this.tool === 'scissors') opts.speed = (opts.speed || 1) * (1 + (M.cutSpeed || 0));
+      if (this.injured) opts.rate = (opts.rate || 1) * (0.65 + 0.35 * (M.steady || 0));
+      if (this.tool === 'shampoo' && !this.usedShampoo) {
+        if (!this.has('shampoo')) {
+          this._hint('Шампунь закончился! Закажите на компьютере (Расходники). Пока можно только смыть водой.', true);
+          this.active = false;
+          return;
+        }
+        this.use('shampoo');
+      }
+      if (this.tool === 'perfume' && !this.usedPerfume) {
+        if (!this.has('perfume')) {
+          this._hint('Парфюм закончился — закажите на компьютере.', true);
+          this.active = false;
+          return;
+        }
+        this.use('perfume');
+        this.usedPerfume = true;
+      }
       if (this.tool === 'clipper') opts.guard = P.guards[this.guardIdx];
       const res = this.tool === 'perfume'
         ? { work: 1, regions: { head: 0 } }
@@ -399,11 +493,13 @@ export class GroomSession {
           break;
         case 'clipper':
           gain = 1.2 + 5 * headFrac;
+          this._maybeNick(dt, headFrac, P.guards[this.guardIdx] <= 0.15 ? 2 : P.guards[this.guardIdx] <= 0.25 ? 1 : 0.4);
           if (res.cut > 0.002) g.particles.emit('hair', pt, n.clone().multiplyScalar(0.6), 2, { color: this._furColor(), spread: 1.2 });
           if (res.blocked > 0.5) this._hint('Колтуны забивают машинку! Сначала расчешите их пуходёркой [4].', true);
           break;
         case 'scissors':
           gain = 3 * headFrac;
+          this._maybeNick(dt, headFrac, 0.6);
           this.snipT -= dt;
           if (res.cut > 0.0005 && this.snipT <= 0) {
             g.audio.play('snip');
@@ -434,6 +530,13 @@ export class GroomSession {
       this._sound();
       g.ui.toast('Питомец вырывается! Дайте ему успокоиться.', 'bad');
       this.active = false;
+      const biteChance = (pet.breedId === 'cat' ? 0.7 : 0.4) * Math.max(0.1, 1 + (this.mods.bite || 0));
+      if (!this.championship && !g.state.injury && Math.random() < biteChance) {
+        g.state.injury = { type: pet.breedId === 'cat' ? 'Царапина' : 'Укус', day: g.state.day };
+        g.audio.play('fail');
+        g.ui.toast(`${g.state.injury.type}! Руки дрожат — обработайте рану аптечкой (кнопка 🩹).`, 'bad');
+        this._refreshInjury();
+      }
     }
     // мокрая собака отряхивается
     this.shakeCd -= dt;
@@ -464,6 +567,33 @@ export class GroomSession {
     if (this.hintT <= 0) this.hintOverride = null;
     this._refreshHint();
     if (this.timeLimit && this.elapsed >= this.timeLimit) this.finish(true);
+  }
+
+  _maybeNick(dt, headFrac, k) {
+    this.nickCd -= dt;
+    if (this.nickCd > 0 || !this.hit || !/^Fur_/.test(this.hit.object.name)) return;
+    const chance = 0.05 * k * (1 + this.stress / 60) * (1 + headFrac) * Math.max(0.1, 1 + (this.mods.nick || 0)) * (this.injured ? 1.6 : 1);
+    if (Math.random() < chance * dt) {
+      this.nickCd = 8;
+      this._addWound();
+    }
+  }
+
+  /** Порез: красная ранка на коже и выбритое пятно вокруг. */
+  _addWound() {
+    const g = this.game;
+    const obj = this.hit.object;
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.011, 12, 8),
+      new THREE.MeshStandardMaterial({ color: '#d61f3c', emissive: '#7a0010', roughness: 0.3 }));
+    mesh.position.copy(obj.worldToLocal(this.hit.point.clone().addScaledVector(this.hit.normal, 0.004)));
+    mesh.raycast = () => {};
+    obj.add(mesh);
+    this.pet.applyTool('clipper', this.hit.point, 0.02, 1, { guard: 0.05, speed: 30, pro: true });
+    this.wounds.push({ mesh, treated: false });
+    this.stress = Math.min(100, this.stress + 22);
+    this._sound();
+    g.audio.play('fail');
+    g.ui.toast('Порез! Обработайте ранку аптечкой [−], иначе хозяин будет в ярости.', 'bad');
   }
 
   _furColor() {
@@ -536,6 +666,16 @@ export class GroomSession {
       score *= 0.6 + 0.4 * this.keepQ;
       notes.push('Шерсть подстрижена без спроса');
     }
+    const open = this.wounds.filter((w) => !w.treated).length;
+    const treated = this.wounds.length - open;
+    if (open) {
+      score *= Math.max(0.35, 1 - open * 0.3);
+      notes.push(`Необработанные порезы: ${open}`);
+    }
+    if (treated) {
+      score *= Math.max(0.7, 1 - treated * 0.06);
+      notes.push(`Порезы (обработаны): ${treated}`);
+    }
     if (this.incidents) {
       score *= Math.max(0.5, 1 - this.incidents * 0.12);
       notes.push(`Питомец вырывался: ${this.incidents}`);
@@ -568,7 +708,9 @@ export class GroomSession {
     this.guardsEl = h('div.guards.panel');
     this.stressBar = h('div');
     this.timerEl = h('span');
+    this.injuryBtn = h('button.chip.panel', { style: { color: '#e5484d', display: 'none' }, onclick: () => this.healPlayer() });
     const top = h('div.groomtop',
+      this.injuryBtn,
       h('div.chip.panel', `${this.pet.name || 'Питомец'} · ${this.pet.breed.name}`),
       h('div.stress.panel', h('span', '♥'), h('div.bar', this.stressBar), h('span.lbl', 'нервы')),
       h('div.chip.panel', h('span.ico', '⏱'), this.timerEl));
@@ -577,6 +719,7 @@ export class GroomSession {
       h('h3', this.championship ? 'Задание чемпионата' : `Заказ: ${this.client?.name || ''}`),
       h('div.pet', `${this.pet.name} · ${this.pet.breed.name}, окрас «${this.pet.palette.name}»`),
       this.orderList,
+      this.stockEl = h('div.stockline'),
       this.order.needs && !this.owned.includes(this.order.needs)
         ? h('div.note', 'Нет гипоаллергенного шампуня — у питомца будет зуд, мытьё оценят ниже.') : null);
     this.hintEl = h('div.hintbox.panel');
@@ -587,6 +730,26 @@ export class GroomSession {
       h('kbd', 'ЛКМ'), ' инструмент · ', h('kbd', 'ПКМ'), ' вращать · ', h('kbd', 'колесо'), ' зум · ', h('kbd', '1–0'), ' выбор');
     this.hud = h('div.pass', bar, this.guardsEl, top, this.orderEl, bottom, keys);
     ui.layers.hud.append(this.hud);
+    this._refreshStock = () => {
+      if (!this.stock) {
+        this.stockEl.textContent = 'Расходники предоставлены оргкомитетом';
+        return;
+      }
+      const st = this.stock;
+      this.stockEl.textContent = `Склад: шампунь ${st.shampoo} · аптечки ${st.firstaid}`
+        + (this.owned.includes('treats') ? ` · лакомства ${st.treats}` : '')
+        + (this.owned.includes('bows') ? ` · бантики ${st.bows}` : '')
+        + (this.owned.includes('perfume') ? ` · парфюм ${st.perfume}` : '');
+    };
+    this._refreshStock();
+    this._refreshInjury();
+  }
+
+  _refreshInjury() {
+    if (!this.injuryBtn) return;
+    const inj = this.injured ? this.game.state.injury : null;
+    this.injuryBtn.style.display = inj ? '' : 'none';
+    if (inj) this.injuryBtn.textContent = `🩹 ${inj.type}: обработать (${this.stock ? this.stock.firstaid : '∞'})`;
   }
 
   _renderGuards() {
@@ -620,7 +783,10 @@ export class GroomSession {
   _refreshHint() {
     let text, warn = false;
     if (this.hintOverride) ({ text, warn } = this.hintOverride);
-    else if (this.stress > 70) {
+    else if (this.wounds.some((w) => !w.treated) && this.tool !== 'firstaid') {
+      text = 'Есть необработанный порез! Возьмите аптечку [−] и кликните по ранке.';
+      warn = true;
+    } else if (this.stress > 70) {
       text = this.hasTool('treat') ? 'Питомец нервничает! Дайте лакомство [0] или переждите.' : 'Питомец нервничает — дайте ему передохнуть.';
       warn = true;
     } else text = TOOL_BY_ID[this.tool].hint;

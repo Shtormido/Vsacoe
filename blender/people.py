@@ -59,11 +59,24 @@ CHARACTERS = {
                   body="woman"),
     "walk6": dict(skin="light", top="#9aa5b1", bottom="#334155", shoes="#111827", hair="#e6c27a", hair_style="short",
                   body="man", glasses="#333333"),
+    # сотрудники салона (в фартуках)
+    "emp1": dict(skin="fair", top="#ffffff", bottom="#2f3b52", shoes="#2b2b2b", hair="#3a2a1a", hair_style="ponytail",
+                 body="woman", apron="#5fd0b5"),
+    "emp2": dict(skin="tan", top="#f2e8da", bottom="#3a3a3a", shoes="#111111", hair="#141414", hair_style="short",
+                 body="man", apron="#ff8fa3", beard="#141414"),
+    "emp3": dict(skin="light", top="#e9f1ff", bottom="#4a3f6b", shoes="#ffffff", hair="#d9a066", hair_style="bob",
+                 body="woman", apron="#8a6cf0", glasses="#8a6cf0"),
+    "emp4": dict(skin="brown", top="#fff6e0", bottom="#2d2d38", shoes="#e0504f", hair="#121212", hair_style="mohawk",
+                 body="man", apron="#ffc23d"),
+    "emp5": dict(skin="dark", top="#ffe3ec", bottom="#3d2f3a", shoes="#5b3b2b", hair="#2a1a14", hair_style="afro",
+                 body="woman", apron="#4aa3df"),
+    "emp6": dict(skin="fair", top="#e8f6f0", bottom="#555b66", shoes="#2b2b2b", hair="#c8452c", hair_style="curly",
+                 body="man", apron="#ff9248"),
 }
 
 
-def build_character(cid, c):
-    skin = mat(f"Skin_{c['skin']}", SKIN[c["skin"]], rough=0.6)
+def build_character(cid, c, root_name=None):
+    skin = mat(c.get("skin_mat") or f"Skin_{c['skin']}", SKIN[c["skin"]], rough=0.6)
     top = mat(f"Top_{cid}", c["top"], rough=0.8)
     bottom = mat(f"Bottom_{cid}", c["bottom"], rough=0.85)
     shoes = mat(f"Shoes_{cid}", c["shoes"], rough=0.45)
@@ -75,7 +88,7 @@ def build_character(cid, c):
     woman = c["body"] == "woman"
     old = c.get("age") == "old"
 
-    root = empty(f"Person_{cid}")
+    root = empty(root_name or f"Person_{cid}")
     hip_z = 0.78
     sh_z = 1.28 if not old else 1.24
     sh_w = 0.2 if woman else 0.23
@@ -120,74 +133,14 @@ def build_character(cid, c):
         smile.append((math.sin(t) * 0.03, -hr * 0.86 - (1 - math.cos(t)) * 0.004, hr * 0.66 - math.cos(t) * 0.014))
     tube("Smile", smile, 0.0045, mouth, head, sides=6)
 
-    # причёски
-    hs = c["hair_style"]
-    hbl = Blob()
-    if hs != "bald":
-        hbl.ellipsoid((0, 0.02, hr * 1.25), (hr * 0.98, hr * 0.97, hr * 0.85), stiff=2)
-        hbl.ellipsoid((0, 0.0, hr * 1.25), (hr * 0.98, hr * 0.97, hr * 0.85), stiff=2, neg=False)
-        # открываем лицо отрицательным элементом
-        hbl.ellipsoid((0, -hr * 0.9, hr * 0.9), (hr * 0.75, hr * 0.5, hr * 0.5), stiff=3, neg=True)
-    if hs == "bun":
-        hbl.ball((0, hr * 0.55, hr * 1.85), 0.075, stiff=2)
-    elif hs == "curly":
-        for i in range(14):
-            a = i / 14 * 2 * math.pi
-            hbl.ball((math.cos(a) * hr * 0.85, math.sin(a) * hr * 0.8 + 0.02, hr * 1.25 + math.sin(a * 3) * 0.02), 0.06, stiff=2)
-        hbl.ball((0, 0.02, hr * 1.75), 0.09, stiff=2)
-    elif hs == "ponytail":
-        hbl.capsule((0, hr * 0.85, hr * 1.5), (0, hr * 1.35, hr * 0.5), 0.05, stiff=2)
-        hbl.ball((0, hr * 1.4, hr * 0.35), 0.055, stiff=2)
-    elif hs == "bob":
-        for s in (-1, 1):
-            hbl.ellipsoid((s * hr * 0.82, 0.02, hr * 0.85), (0.06, 0.12, 0.14), stiff=2)
-        hbl.ellipsoid((0, hr * 0.5, hr * 0.85), (0.14, 0.08, 0.14), stiff=2)
-    elif hs == "long":
-        for s in (-1, 1):
-            hbl.capsule((s * hr * 0.82, 0.03, hr * 1.2), (s * hr * 0.75, 0.06, -hr * 0.6), 0.06, stiff=2)
-        hbl.capsule((0, hr * 0.7, hr * 1.3), (0, hr * 0.75, -hr * 0.7), 0.12, stiff=2)
-    elif hs == "slick":
-        hbl.ellipsoid((0, -hr * 0.3, hr * 1.85), (hr * 0.8, hr * 0.5, 0.05), stiff=2)  # кок
-    elif hs == "afro":
-        hbl.ball((0, 0.02, hr * 1.4), hr * 1.35, stiff=2)
-        hbl.ellipsoid((0, -hr * 1.1, hr * 0.9), (hr * 0.8, hr * 0.6, hr * 0.62), stiff=3, neg=True)
-    elif hs == "short":
-        hbl.ellipsoid((0, -hr * 0.5, hr * 1.7), (hr * 0.7, hr * 0.35, 0.05), stiff=2)
-    if hs == "bald":
-        # венчик волос вокруг затылка
-        for i in range(9):
-            a = math.pi * (0.1 + 0.8 * i / 8)
-            hbl.ball((math.cos(a) * hr * 0.92, math.sin(a) * hr * 0.6 + 0.04, hr * 1.02), 0.04, stiff=2)
-    if hbl.items:
-        hm = hbl.build("Hair", origin=(0, 0, 0), resolution=0.018, voxel=0.016, material=hair)
-        hm.parent = head
-        hm.location = (0, 0, 0)
-    if hs == "cap":
-        cap = mat(f"Cap_{cid}", c["cap"], rough=0.6)
-        capm = prim("sphere", "Cap", (hr * 2.0, hr * 2.0, hr * 1.4), loc=(0, 0.0, hr * 1.25), material=cap, parent=head)
-        for v in capm.data.vertices:
-            if v.co.z < 0:
-                v.co.z *= 0.1
-        capm.data.update()
-        prim("cyl", "Visor", (0.18, 0.14, 0.012), loc=(0, hr * 0.95, hr * 1.25), rot=(-10, 0, 0), material=cap, parent=head)
+    # причёски и аксессуары головы
+    make_hair(c["hair_style"], hair, head, hr)
+    if c["hair_style"] == "cap" or c.get("cap_on"):
+        make_cap(mat(f"Cap_{cid}", c["cap"], rough=0.6), head, hr)
     if c.get("beard"):
-        bm = mat(f"Beard_{cid}", c["beard"], rough=0.8)
-        bb = Blob()
-        bb.ellipsoid((0, -hr * 0.62, hr * 0.42), (hr * 0.72, hr * 0.45, hr * 0.45), stiff=2)
-        bb.ellipsoid((0, -hr * 0.85, hr * 0.62), (hr * 0.3, hr * 0.2, hr * 0.15), stiff=2, neg=True)
-        be = bb.build("Beard", origin=(0, 0, 0), resolution=0.016, voxel=0.015, material=bm)
-        be.parent = head
-        be.location = (0, 0, 0)
+        make_beard(mat(f"Beard_{cid}", c["beard"], rough=0.8), head, hr)
     if c.get("glasses"):
-        gm = mat(f"Glasses_{cid}", c["glasses"], rough=0.25, metal=0.5)
-        lens = mat("Shades", "#111418", rough=0.05) if c.get("sunglasses") else None
-        for s in (-1, 1):
-            torus(f"Rim{s}", 0.04, 0.005, (s * 0.058, -hr * 0.96, hr * 1.03), (90, 0, 0), gm, head, seg=20, rings=6)
-            if lens:
-                prim("cyl", f"Lens{s}", (0.08, 0.08, 0.005), loc=(s * 0.058, -hr * 0.97, hr * 1.03), rot=(90, 0, 0),
-                     material=lens, parent=head)
-        tube("Bridge", [(-0.02, -hr * 0.98, hr * 1.04), (0, -hr * 1.0, hr * 1.06), (0.02, -hr * 0.98, hr * 1.04)], 0.004, gm,
-             head, sides=6)
+        make_glasses(mat(f"Glasses_{cid}", c["glasses"], rough=0.25, metal=0.5), head, hr, c.get("sunglasses"))
     # шея / аксессуары
     if c.get("scarf"):
         torus("Scarf", 0.07, 0.035, (0, 0, sh_z + 0.02), (0, 0, 0), mat(f"Scarf_{cid}", c["scarf"], rough=0.9), root,
@@ -202,6 +155,8 @@ def build_character(cid, c):
               root, seg=32, rings=6)
     if c.get("hood"):
         torus("Hood", 0.11, 0.045, (0, 0.04, sh_z + 0.01), (-15, 0, 0), top, root, seg=28, rings=10)
+    if c.get("apron"):
+        make_apron(mat(f"Apron_{cid}", c["apron"], rough=0.75), root, sh_z, hip_z, sh_w)
 
     # руки
     for s in (-1, 1):
@@ -231,6 +186,109 @@ def build_character(cid, c):
                 v.co.z = -0.01 - (v.co.z + 0.01) * 0.2
         shoe.data.update()
     return root
+
+
+def make_hair(hs, hair, head, hr, name="Hair"):
+    """Причёска как отдельный меш в системе координат головы."""
+    hbl = Blob()
+    if hs not in ("bald", "none", "cap"):
+        hbl.ellipsoid((0, 0.02, hr * 1.25), (hr * 0.98, hr * 0.97, hr * 0.85), stiff=2)
+        # открываем лицо отрицательным элементом
+        hbl.ellipsoid((0, -hr * 0.9, hr * 0.9), (hr * 0.75, hr * 0.5, hr * 0.5), stiff=3, neg=True)
+    if hs == "cap":
+        hbl.ellipsoid((0, 0.04, hr * 1.1), (hr * 0.95, hr * 0.9, hr * 0.6), stiff=2)
+        hbl.ellipsoid((0, -hr * 0.9, hr * 0.9), (hr * 0.75, hr * 0.5, hr * 0.5), stiff=3, neg=True)
+    if hs == "bun":
+        hbl.ball((0, hr * 0.55, hr * 1.85), 0.075, stiff=2)
+    elif hs == "curly":
+        for i in range(14):
+            a = i / 14 * 2 * math.pi
+            hbl.ball((math.cos(a) * hr * 0.85, math.sin(a) * hr * 0.8 + 0.02, hr * 1.25 + math.sin(a * 3) * 0.02), 0.06, stiff=2)
+        hbl.ball((0, 0.02, hr * 1.75), 0.09, stiff=2)
+    elif hs == "ponytail":
+        hbl.capsule((0, hr * 0.85, hr * 1.5), (0, hr * 1.35, hr * 0.5), 0.05, stiff=2)
+        hbl.ball((0, hr * 1.4, hr * 0.35), 0.055, stiff=2)
+    elif hs == "bob":
+        for s in (-1, 1):
+            hbl.ellipsoid((s * hr * 0.82, 0.02, hr * 0.85), (0.06, 0.12, 0.14), stiff=2)
+        hbl.ellipsoid((0, hr * 0.5, hr * 0.85), (0.14, 0.08, 0.14), stiff=2)
+    elif hs == "long":
+        for s in (-1, 1):
+            hbl.capsule((s * hr * 0.82, 0.03, hr * 1.2), (s * hr * 0.75, 0.06, -hr * 0.6), 0.06, stiff=2)
+        hbl.capsule((0, hr * 0.7, hr * 1.3), (0, hr * 0.75, -hr * 0.7), 0.12, stiff=2)
+    elif hs == "slick":
+        hbl.ellipsoid((0, -hr * 0.3, hr * 1.85), (hr * 0.8, hr * 0.5, 0.05), stiff=2)  # кок
+    elif hs == "afro":
+        hbl.ball((0, 0.02, hr * 1.4), hr * 1.35, stiff=2)
+        hbl.ellipsoid((0, -hr * 1.1, hr * 0.9), (hr * 0.8, hr * 0.6, hr * 0.62), stiff=3, neg=True)
+    elif hs == "short":
+        hbl.ellipsoid((0, -hr * 0.5, hr * 1.7), (hr * 0.7, hr * 0.35, 0.05), stiff=2)
+    elif hs == "mohawk":
+        hbl.items = []
+        for i in range(7):
+            a = math.pi * (0.15 + 0.7 * i / 6)
+            hbl.ellipsoid((0, -math.cos(a) * hr * 0.95, hr + math.sin(a) * hr * 0.95), (0.03, 0.05, 0.07), stiff=2)
+    elif hs == "bald":
+        # венчик волос вокруг затылка
+        for i in range(9):
+            a = math.pi * (0.1 + 0.8 * i / 8)
+            hbl.ball((math.cos(a) * hr * 0.92, math.sin(a) * hr * 0.6 + 0.04, hr * 1.02), 0.04, stiff=2)
+    if not hbl.items:
+        return None
+    hm = hbl.build(name, origin=(0, 0, 0), resolution=0.018, voxel=0.016, material=hair)
+    hm.parent = head
+    hm.location = (0, 0, 0)
+    return hm
+
+
+def make_cap(cap, head, hr):
+    capm = prim("sphere", "Cap", (hr * 2.0, hr * 2.0, hr * 1.4), loc=(0, 0.0, hr * 1.25), material=cap, parent=head)
+    for v in capm.data.vertices:
+        if v.co.z < 0:
+            v.co.z *= 0.1
+    capm.data.update()
+    prim("cyl", "Visor", (0.18, 0.14, 0.012), loc=(0, -hr * 0.95, hr * 1.25), rot=(10, 0, 0), material=cap, parent=head)
+
+
+def make_beard(bm, head, hr):
+    bb = Blob()
+    bb.ellipsoid((0, -hr * 0.62, hr * 0.42), (hr * 0.72, hr * 0.45, hr * 0.45), stiff=2)
+    bb.ellipsoid((0, -hr * 0.85, hr * 0.62), (hr * 0.3, hr * 0.2, hr * 0.15), stiff=2, neg=True)
+    be = bb.build("Beard", origin=(0, 0, 0), resolution=0.016, voxel=0.015, material=bm)
+    be.parent = head
+    be.location = (0, 0, 0)
+    return be
+
+
+def make_glasses(gm, head, hr, sunglasses=False):
+    lens = mat("Shades", "#111418", rough=0.05) if sunglasses else None
+    for s in (-1, 1):
+        torus(f"Rim{s}", 0.04, 0.005, (s * 0.058, -hr * 0.96, hr * 1.03), (90, 0, 0), gm, head, seg=20, rings=6)
+        if lens:
+            prim("cyl", f"Lens{s}", (0.08, 0.08, 0.005), loc=(s * 0.058, -hr * 0.97, hr * 1.03), rot=(90, 0, 0),
+                 material=lens, parent=head)
+    tube("Bridge", [(-0.02, -hr * 0.98, hr * 1.04), (0, -hr * 1.0, hr * 1.06), (0.02, -hr * 0.98, hr * 1.04)], 0.004, gm,
+         head, sides=6)
+
+
+def make_apron(am, root, sh_z, hip_z, sh_w):
+    """Фартук грумера: нагрудник, юбка, карман и лямки."""
+    bib = prim("cube", "ApronBib", (sh_w * 1.2, 0.02, 0.3), loc=(0, -0.135, sh_z - 0.2), material=am, parent=root,
+               bevel=0.008)
+    for v in bib.data.vertices:  # чуть выгнуть по груди
+        v.co.y -= (1 - (v.co.x / (sh_w * 0.6)) ** 2) * 0.02
+    bib.data.update()
+    skirt = prim("cube", "ApronSkirt", (0.36, 0.02, 0.42), loc=(0, -0.145, hip_z + 0.0), material=am, parent=root,
+                 bevel=0.01)
+    for v in skirt.data.vertices:
+        v.co.x *= 1 + max(0.0, -v.co.z) * 0.6
+        v.co.y -= (1 - (v.co.x / 0.25) ** 2) * 0.025
+    skirt.data.update()
+    prim("cube", "ApronPocket", (0.2, 0.012, 0.09), loc=(0, -0.17, hip_z + 0.02), material=mat("ApronPocket", "#ffffff", 0.7),
+         parent=root, bevel=0.006)
+    for sgn in (-1, 1):
+        tube(f"ApronStrap{sgn}", [(sgn * sh_w * 0.5, -0.13, sh_z - 0.06), (sgn * 0.08, -0.06, sh_z + 0.07), (0, 0.02, sh_z + 0.09)],
+             0.012, am, root, sides=6)
 
 
 def build():

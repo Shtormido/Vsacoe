@@ -19,7 +19,7 @@ PUBLIC = os.path.dirname(OUT_DIR)
 TOOL_ICONS = {
     "Tool_Brush": "brush", "Tool_Shower": "shower", "Tool_Dryer": "dryer", "Tool_Clipper": "clipper",
     "Tool_Scissors": "scissors", "Tool_Shampoo": "shampoo", "Tool_NailClipper": "nailclip",
-    "Tool_Perfume": "perfume", "Tool_Bow": "bow", "Tool_Treat": "treat",
+    "Tool_Perfume": "perfume", "Tool_Bow": "bow", "Tool_Treat": "treat", "Tool_FirstAid": "firstaid",
 }
 
 
