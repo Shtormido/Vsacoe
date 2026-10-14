@@ -98,6 +98,7 @@ export class Game {
 
   update(dt) {
     if (this.mode === 'menu' || this.mode === 'select') {
+      this.rig.setFov(45);
       const a = this.time * 0.08;
       const S = this.salon;
       if (S) {
@@ -109,6 +110,7 @@ export class Game {
       this.rig.update(dt);
     }
     const blocking = this.uiBlocking();
+    if ((blocking || this.mode !== 'walk') && this.walk.locked) this.walk.release();
     if (this.mode === 'walk' && this.player) {
       const m = computeMods(this.state);
       this.walk.setEnabled(!blocking && !this.busy);
@@ -175,8 +177,11 @@ export class Game {
     }
     if (withPlayer && this.state) {
       this.player = new Player(this.assets, this.state.look);
-      this.player.place(this.salon.staffSpot.clone().add(new THREE.Vector3(-0.2, 0, 1.2)), Math.PI);
+      // начинаем посреди ресепшена, лицом к груминг-залу
+      this.player.place(new THREE.Vector3(this.salon.deskPos.x - 1.0, 0, this.salon.deskPos.z + 1.9), Math.PI);
       this.scene.add(this.player.root);
+      this.rig.fps.yaw = 2.2;
+      this.rig.fps.pitch = -0.12;
       this.syncStaff();
     }
   }
@@ -262,6 +267,26 @@ export class Game {
 
   refreshSign() {
     if (this.salon) this.rebuildSalonKeepActors();
+  }
+
+  /** Вид от первого лица: своё тело скрыто, камера в глазах персонажа. */
+  enterFps(opts = {}) {
+    if (!this.player) return;
+    this.player.root.visible = false;
+    this.rig.startFps(this.player, opts);
+  }
+
+  headOf(npc) {
+    return npc.pos.clone().add(new THREE.Vector3(0, npc.sitting > 0.5 ? 1.2 : 1.55, 0));
+  }
+
+  onPointerUnlock() {
+    if (this.walk.autoUnlock) {
+      this.walk.autoUnlock = false;
+      return;
+    }
+    // Esc в браузере сначала отпускает мышь — показываем паузу
+    if (this.mode === 'walk' && !this.busy && !this.uiBlocking()) this.pauseMenu();
   }
 
   /** Сцена у стойки: игрок за компьютером, гость — у стойки. */
@@ -350,8 +375,9 @@ export class Game {
     const S = this.salon;
     await this.ui.fade(() => {
       this.playerToDesk();
-      this.spawnNpc('tamara', S.clientAtDesk.clone(), Math.PI / 2, 'tamara');
-      this.rig.set(S.cams.reception.pos, S.cams.reception.target);
+      const t = this.spawnNpc('tamara', S.clientAtDesk.clone(), Math.PI / 2, 'tamara');
+      this.enterFps();
+      this.rig.fpsLookAt(this.headOf(t), 0.01);
     });
     await this.ui.dialog(SCENES.mentor);
     await this.chooseSalon(true);
@@ -363,6 +389,7 @@ export class Game {
     this.mode = 'story';
     this.walk.setEnabled(false);
     const p = this.player.root.position;
+    this.player.root.visible = true;
     this.player.face(0);
     this.player.yaw = 0;
     this.player.root.rotation.y = 0;
@@ -373,7 +400,7 @@ export class Game {
     hud.style.display = '';
     save(this.state);
     this.mode = prevMode;
-    if (prevMode === 'walk') this.rig.startFollow(this.player.root, { yaw: this.rig.follow.tyaw });
+    if (prevMode === 'walk') this.enterFps();
   }
 
   // ================================================================ выбор салона
@@ -452,11 +479,7 @@ export class Game {
       save(s);
     }
     this.mode = 'walk';
-    this.player.visible = true;
-    this.player.root.visible = true;
-    this.rig.startFollow(this.player.root, { yaw: 0 });
-    this.rig.maxY = this.salon.H - 0.15;
-    this.rig.bounds = { x0: -this.salon.W / 2 + 0.25, x1: this.salon.W / 2 - 0.25, z0: -this.salon.D / 2 + 0.25 };
+    this.enterFps();
     this.buildHud();
     if (!s.flags.walkTutorial) {
       s.flags.walkTutorial = true;
@@ -472,6 +495,7 @@ export class Game {
     this.hudEls = {
       clock: h('span'), money: h('span'), rep: h('span'), injury: h('button.chip.panel', { style: { color: '#e5484d' }, onclick: () => this.useFirstAidSelf() }),
       stock: h('div.chip.panel.warnchip'), queue: h('div.queue.panel'), prompt: h('div.prompt.panel'), action: h('div.actionbar'),
+      cross: h('div.crosshair'), lock: h('div.lockhint.panel', 'Кликните по экрану, чтобы осматриваться мышью'),
     };
     const E = this.hudEls;
     const ch = this.chapter();
@@ -486,9 +510,9 @@ export class Game {
         h('button', { onclick: () => this.openPC() }, h('span.ico', '💻'), 'Компьютер [C]'),
         h('button', { onclick: () => this.customize() }, h('span.ico', '👤'), 'Внешний вид'),
         h('button', { onclick: () => this.pauseMenu() }, h('span.ico', '⏸'), 'Меню [Esc]')),
-      E.queue, E.prompt, E.action,
+      E.queue, E.prompt, E.action, E.cross, E.lock,
       h('div.keys.panel', { style: { position: 'fixed', left: '14px', bottom: '14px' } },
-        h('kbd', 'WASD'), ' ходить · ', h('kbd', 'Shift'), ' бег · ', h('kbd', 'E'), ' действие · ', h('kbd', 'ПКМ'), ' камера · ', h('kbd', 'C'), ' компьютер'));
+        h('kbd', 'Мышь'), ' осмотреться · ', h('kbd', 'WASD'), ' ходить · ', h('kbd', 'Shift'), ' бег · ', h('kbd', 'E'), '/', h('kbd', 'ЛКМ'), ' действие · ', h('kbd', 'C'), ' компьютер'));
     this._actionKey = null;
     this.refreshHud();
   }
@@ -521,8 +545,12 @@ export class Game {
     E.queue.replaceChildren(h('div.qtitle', `Клиенты · ожидается ещё ${upcoming}`), ...lines);
     E.queue.style.display = T ? '' : 'none';
     // подсказка действия
-    const target = this.findInteraction();
+    const free = !this.busy && !this.uiBlocking();
+    const target = free ? this.findInteraction() : null;
     E.prompt.style.display = target ? '' : 'none';
+    E.cross.style.display = free ? '' : 'none';
+    E.cross.classList.toggle('on', !!target);
+    E.lock.style.display = free && !this.walk.locked ? '' : 'none';
     if (target) E.prompt.replaceChildren(h('kbd', 'E'), ' ', target.label);
     // большая кнопка
     let key = 'none';
@@ -540,16 +568,28 @@ export class Game {
   }
 
   /** Ближайшее, с чем можно взаимодействовать. */
+  /** То, на что смотрит игрок (в пределах ~2,3 м и узкого конуса взгляда). */
   findInteraction() {
     if (!this.player || this.mode !== 'walk') return null;
-    const p = this.player.root.position;
+    const eye = this.camera.position;
+    const dir = this.rig.fpsDir();
+    const feet = this.player.root.position;
     let best = null;
-    const consider = (d, r, obj) => {
-      if (d < r && (!best || d < best.d)) best = { ...obj, d };
+    const consider = (point, obj, { maxDist = 2.3, cone = 0.38 } = {}) => {
+      const v = point.clone().sub(eye);
+      const d = v.length();
+      if (d > maxDist) return;
+      const ang = Math.acos(Math.min(1, Math.max(-1, v.dot(dir) / Math.max(d, 1e-4))));
+      // чем ближе цель, тем шире допустимый угол
+      const limit = cone + 0.25 / Math.max(d, 0.4);
+      if (ang > limit) return;
+      const score = ang + d * 0.05;
+      if (!best || score < best.score) best = { ...obj, score };
     };
+    const body = (n) => n.pos.clone().add(new THREE.Vector3(0, n.sitting > 0.5 ? 1.0 : 1.25, 0));
     for (const c of this.day.clients) {
-      if (c.status === 'desk') consider(c.npc.pos.distanceTo(p), 1.6, { kind: 'client', c, label: `Поговорить: ${c.info.name}` });
-      if (c.status === 'sofa') consider(c.npc.pos.distanceTo(p), 1.5, { kind: 'client', c, label: `${c.info.name}: взять в работу` });
+      if (c.status === 'desk') consider(body(c.npc), { kind: 'client', c, label: `Поговорить: ${c.info.name}` }, { maxDist: 3 });
+      if (c.status === 'sofa') consider(body(c.npc), { kind: 'client', c, label: `${c.info.name}: взять в работу` });
     }
     for (const st of this.salon.stations) {
       let label = st.label;
@@ -560,12 +600,13 @@ export class Game {
         else continue;
       }
       if (st.id === 'firstaid' && !this.state.injury) label = 'Аптечка (вы здоровы)';
-      consider(st.pos.distanceTo(p), st.r, { kind: 'station', id: st.id, label });
+      if (st.pos.distanceTo(feet) > st.r + 1.4) continue;
+      consider(st.look, { kind: 'station', id: st.id, label });
     }
-    if (this.ponchik) consider(this.ponchik.root.position.distanceTo(p), 1.0, { kind: 'ponchik', label: 'Погладить Пончика' });
+    if (this.ponchik) consider(this.ponchik.root.position.clone().setY(0.3), { kind: 'ponchik', label: 'Погладить Пончика' });
     for (const [id, n] of Object.entries(this.staffNpcs)) {
       const e = this.state.staff.find((x) => x.id === id);
-      if (e) consider(n.pos.distanceTo(p), 1.0, { kind: 'staff', e, label: `${e.name}: как дела?` });
+      if (e) consider(body(n), { kind: 'staff', e, label: `${e.name}: как дела?` });
     }
     return best;
   }
@@ -675,11 +716,11 @@ export class Game {
     this.busy = true;
     const S = this.salon;
     const atDesk = c.status === 'desk';
+    this.actors.walkin = c.npc;
+    if (c.info.regular) this.actors[c.info.regular.id] = c.npc;
+    this.player.moveInput = 0;
+    await this.rig.fpsLookAt(this.headOf(c.npc), 0.45);
     if (atDesk) {
-      this.playerToDesk();
-      this.actors.walkin = c.npc;
-      if (c.info.regular) this.actors[c.info.regular.id] = c.npc;
-      await this.cam('reception', 0.8);
       if (!c.greeted) {
         c.greeted = true;
         await this.speak([[c.info.speaker, c.info.greet]], c.info);
@@ -695,7 +736,6 @@ export class Game {
     buttons.push({ label: 'Сделаю сам(а)', cls: '.primary', value: 'self' });
     const r = await this.ui.modal(`Заказ: ${c.info.name}`, free.length ? 'Кто займётся питомцем?' : 'Возьмётесь?', this.orderCard(c.info, c.order), buttons, { width: 'min(620px, 94vw)' });
     this.busy = false;
-    this.rig.startFollow(this.player.root, { yaw: this.rig.follow.tyaw });
     if (r === null) return; // закрыли окно — клиент ждёт дальше
     if (r === 'no') {
       await this.speak([[c.info.speaker, 'Жаль... Ну, может, в другой раз.']], c.info);
@@ -732,7 +772,7 @@ export class Game {
       pet.root.rotation.set(0, Math.PI / 2, 0);
       this.player.place(S.tables[0].stand, Math.PI);
       this.player.root.visible = false;
-      this.rig.set(S.tables[0].stand.clone().add(new THREE.Vector3(0, 1.4, 1.2)), S.tablePos);
+      this.rig.set(S.tables[0].stand.clone().add(new THREE.Vector3(0, 1.55, 0.1)), S.tablePos);
     });
     this.mode = 'groom';
     this.ui.clearHud();
@@ -744,7 +784,6 @@ export class Game {
     s.flags.tutorialDone = true;
     this.mode = 'story';
     await this.ui.fade(async () => {
-      this.player.root.visible = true;
       this.playerToDesk();
       c.npc.stand();
       c.npc.place(S.clientAtDesk, Math.PI / 2);
@@ -752,7 +791,8 @@ export class Game {
       pet.anim.happy = result.score > 0.7 ? 1.5 : 0;
       c.npc.setFollower(pet);
       c.npc.setBadge(null);
-      this.rig.set(S.cams.reception.pos, S.cams.reception.target);
+      this.enterFps();
+      this.rig.fpsLookAt(this.headOf(c.npc), 0.01);
     });
     await this.payout(c, result);
     this.day.leave(c);
@@ -840,7 +880,7 @@ export class Game {
       this.day.clear();
       this.clearActors();
       this.syncStaff();
-      this.player.place(this.salon.staffSpot.clone().add(new THREE.Vector3(-0.2, 0, 1.2)), Math.PI);
+      this.player.place(new THREE.Vector3(this.salon.deskPos.x - 1.0, 0, this.salon.deskPos.z + 1.9), Math.PI);
     });
     this.busy = false;
     if (s.money < 0) {
@@ -913,9 +953,11 @@ export class Game {
     this.playerToDesk();
     const npc = this.spawnNpc(person, S.doorIn.clone(), -Math.PI / 2, person);
     npc.appear = 0;
-    this.cam('reception', 1.2);
+    this.enterFps();
+    this.rig.fpsLookAt(this.headOf(npc), 0.6);
     await npc.walkTo([S.doorIn.clone().add(new THREE.Vector3(-0.7, 0, -0.35)), S.clientAtDesk]);
     npc.face(Math.PI / 2);
+    await this.rig.fpsLookAt(this.headOf(npc), 0.4);
     const r = await this.ui.dialog(lines);
     npc.wave = 1.2;
     await sleep(500);
@@ -931,9 +973,11 @@ export class Game {
     this.playerToDesk();
     const npc = this.spawnNpc('viktor', S.doorIn.clone(), -Math.PI / 2, 'viktor');
     npc.appear = 0;
-    this.cam('reception', 1.2);
+    this.enterFps();
+    this.rig.fpsLookAt(this.headOf(npc), 0.6);
     await npc.walkTo([S.doorIn.clone().add(new THREE.Vector3(-0.7, 0, -0.35)), S.clientAtDesk]);
     npc.face(Math.PI / 2);
+    await this.rig.fpsLookAt(this.headOf(npc), 0.4);
     for (;;) {
       const [choice] = await this.ui.dialog(SCENES.viktor);
       if (choice !== 2) break;

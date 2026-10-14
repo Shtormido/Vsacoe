@@ -58,8 +58,9 @@ export class Salon {
     return o;
   }
 
-  station(id, pos, label, r = 0.9) {
-    this.stations.push({ id, pos: pos.clone().setY(0), label, r });
+  /** Точка взаимодействия: pos — где стоит игрок, look — на что он смотрит. */
+  station(id, pos, label, r = 0.9, look = null) {
+    this.stations.push({ id, pos: pos.clone().setY(0), label, r, look: look || pos.clone().setY(1.0) });
   }
 
   _build() {
@@ -85,6 +86,7 @@ export class Salon {
     floor.receiveShadow = true;
     this.group.add(floor);
 
+    const baseMat = new THREE.MeshStandardMaterial({ color: c.floor === 'marble' ? '#c9a45a' : '#ffffff', roughness: 0.5 });
     // --- стены
     const wallTex = wallTexture(c.wall, c.wallColor, c.wallColor2);
     const texSize = c.wall === 'brick' ? 2.2 : 3.2;
@@ -115,7 +117,6 @@ export class Salon {
       m.receiveShadow = true;
       this.group.add(m);
     }
-    const baseMat = new THREE.MeshStandardMaterial({ color: c.floor === 'marble' ? '#c9a45a' : '#ffffff', roughness: 0.5 });
     for (const [x, z, sx, sz] of [[0, -D / 2 + 0.01, W, 0.02], [-W / 2 + 0.01, 0, 0.02, D], [W / 2 - 0.01, 0, 0.02, D]]) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.1, sz), baseMat);
       b.position.set(x, 0.05, z);
@@ -152,6 +153,29 @@ export class Salon {
     this.group.add(this.partition);
     this.colliders.push({ x0: xp - 0.1, x1: xp + 0.1, z0: -D / 2, z1: dz0, name: 'wall' });
     this.colliders.push({ x0: xp - 0.1, x1: xp + 0.1, z0: dz1, z1: D / 2, name: 'wall' });
+
+    // --- передняя стена с витринами (видна только изнутри — камеры меню смотрят сквозь неё)
+    const fwX = [(-W / 2 + xp) / 2, (xp + W / 2) / 2 - 0.3];
+    const frontShape = new THREE.Shape().moveTo(0, 0).lineTo(W, 0).lineTo(W, H).lineTo(0, H).lineTo(0, 0);
+    for (const x of fwX) {
+      const hx = W / 2 - x; // в координатах фигуры ось X идёт от правого края
+      frontShape.holes.push(new THREE.Path().moveTo(hx - winW / 2, winY - winH / 2).lineTo(hx + winW / 2, winY - winH / 2)
+        .lineTo(hx + winW / 2, winY + winH / 2).lineTo(hx - winW / 2, winY + winH / 2));
+    }
+    const front = new THREE.Mesh(new THREE.ShapeGeometry(frontShape), mkMat());
+    front.rotation.y = Math.PI;
+    front.position.set(W / 2, 0, D / 2);
+    front.receiveShadow = true;
+    this.group.add(front);
+    const fb = new THREE.Mesh(new THREE.BoxGeometry(W, 0.1, 0.02), baseMat);
+    fb.position.set(0, 0.05, D / 2 - 0.01);
+    this.group.add(fb);
+    for (const x of fwX) this.prop('Window', x, winY, D / 2 - 0.02, Math.PI, { tint: false });
+    const frontStreet = new THREE.Mesh(new THREE.PlaneGeometry(W + 8, 4.5), new THREE.MeshBasicMaterial({ map: streetTexture(c.sky), toneMapped: false }));
+    frontStreet.position.set(0, 1.6, D / 2 + 3);
+    frontStreet.rotation.y = Math.PI;
+    this.group.add(frontStreet);
+    this.frontParts = [front, fb, frontStreet];
 
     // --- окно и улица
     this.prop('Window', -W / 2 + 0.02, winY, winZ, Math.PI / 2, { tint: false });
@@ -194,9 +218,9 @@ export class Salon {
       nl.position.set(nx, 2.0, -D / 2 + 0.4);
       this.group.add(nl);
     }
-    this.station('table', this.tables[0].stand, 'Мой рабочий стол');
-    this.station('firstaid', new THREE.Vector3(xp - 0.6, 0, 0.15), 'Аптечка: обработать травму');
-    this.station('mirror', new THREE.Vector3(xp - 0.95, 0, D / 2 - 0.75), 'Зеркало: сменить образ', 0.8);
+    this.station('table', this.tables[0].stand, 'Мой рабочий стол', 0.9, this.tables[0].pos.clone());
+    this.station('firstaid', new THREE.Vector3(xp - 0.6, 0, 0.15), 'Аптечка: обработать травму', 0.9, new THREE.Vector3(xp - 0.1, 1.45, 0.15));
+    this.station('mirror', new THREE.Vector3(xp - 0.95, 0, D / 2 - 0.75), 'Зеркало: сменить образ', 0.8, new THREE.Vector3(xp - 0.4, 1.15, D / 2 - 0.4));
 
     // ================= ресепшен
     const deskX = W / 2 - 1.15, deskZ = -D / 2 + 1.45;
@@ -204,7 +228,7 @@ export class Salon {
     this.prop('ReceptionDesk', deskX, 0, deskZ, -Math.PI / 2);
     this.staffSpot = new THREE.Vector3(W / 2 - 0.45, 0, deskZ);
     this.prop('OfficeChair', W / 2 - 0.3, 0, deskZ - 0.6, -Math.PI / 2 + 0.4, { solid: false });
-    this.station('pc', this.staffSpot, 'Компьютер');
+    this.station('pc', this.staffSpot, 'Компьютер', 0.9, new THREE.Vector3(deskX - 0.05, 1.3, deskZ + 0.35));
     const sign = this.prop('Signboard', deskX + 0.25, 2.15, deskZ, -Math.PI / 2);
     const signName = this.game.state?.site?.name || c.name.replace(/[«»]/g, '');
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1.48, 0.33),
@@ -213,7 +237,7 @@ export class Salon {
     sign.add(label);
     this.prop('Door', W / 2 - 0.02, 0, D / 2 - 0.75, -Math.PI / 2);
     this.doorIn = new THREE.Vector3(W / 2 - 0.55, 0, D / 2 - 0.75);
-    this.station('door', this.doorIn, 'Дверь');
+    this.station('door', this.doorIn, 'Дверь', 1.0, new THREE.Vector3(W / 2, 1.2, D / 2 - 0.75));
     this.queueSpot = (i) => new THREE.Vector3(deskX - 1.05, 0, deskZ + i * 0.7);
     this.clientAtDesk = this.queueSpot(0);
 

@@ -317,3 +317,10 @@ p.muted { margin: 4px 0 10px; }
 .custom .footer { margin-top: 16px; }
 .cand .stats4 { grid-template-columns: 1fr; }
 .cand .stat { grid-template-columns: 96px 1fr 18px; }
+
+/* ---------- вид от первого лица */
+.crosshair { position: fixed; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
+  background: rgba(255,255,255,0.9); box-shadow: 0 0 0 2px rgba(40,20,40,0.35); pointer-events: none !important; transition: transform 0.12s, background 0.12s; }
+.crosshair.on { transform: scale(1.8); background: var(--pink); }
+.lockhint { position: fixed; left: 50%; top: 66%; transform: translateX(-50%); padding: 8px 14px; font-weight: 800; font-size: 14px; pointer-events: none !important; opacity: 0.9; }
+.prompt { bottom: auto; top: calc(50% + 28px); }

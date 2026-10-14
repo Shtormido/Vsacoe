@@ -15,6 +15,56 @@ export class CameraRig {
     this.basePos = camera.position.clone();
     this.orbit = { yaw: 0, pitch: 0.35, dist: 1.2, tyaw: 0, tpitch: 0.35, tdist: 1.2, min: 0.35, max: 2.2, center: new THREE.Vector3() };
     this.follow = { target: null, yaw: 0, pitch: 0.55, dist: 3.6, tyaw: 0, tpitch: 0.55, tdist: 3.6, pos: new THREE.Vector3() };
+    this.fps = { target: null, npc: null, yaw: 0, pitch: -0.08, eye: 1.62, turn: null };
+  }
+
+  /** Вид от первого лица: камера в глазах персонажа. */
+  setFov(fov) {
+    if (this.camera.fov !== fov) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  startFps(npc, { yaw = null, pitch = null } = {}) {
+    this.setFov(70);
+    const f = this.fps;
+    f.npc = npc;
+    f.target = npc.root;
+    f.turn = null;
+    if (yaw !== null) f.yaw = yaw;
+    if (pitch !== null) f.pitch = pitch;
+    this.fly = null;
+    this.mode = 'fps';
+  }
+
+  fpsRotate(dx, dy) {
+    const f = this.fps;
+    f.turn = null;
+    f.yaw -= dx * 0.0024;
+    f.pitch = clamp(f.pitch - dy * 0.0024, -1.35, 1.35);
+  }
+
+  /** Плавно повернуть взгляд на точку (например, на лицо собеседника). */
+  fpsLookAt(point, dur = 0.5) {
+    const f = this.fps;
+    const eye = f.target.position.clone().add(new THREE.Vector3(0, f.eye, 0));
+    const d = point.clone().sub(eye);
+    let yaw = Math.atan2(-d.x, -d.z);
+    const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
+    let dy = yaw - f.yaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    yaw = f.yaw + dy;
+    return new Promise((resolve) => {
+      f.turn = { y0: f.yaw, p0: f.pitch, y1: yaw, p1: pitch, k: 0, dur, resolve };
+    });
+  }
+
+  /** Направление взгляда (единичный вектор). */
+  fpsDir(out = new THREE.Vector3()) {
+    const f = this.fps;
+    const cp = Math.cos(f.pitch);
+    return out.set(-Math.sin(f.yaw) * cp, Math.sin(f.pitch), -Math.cos(f.yaw) * cp);
   }
 
   /** Камера от третьего лица за персонажем. */
@@ -43,6 +93,7 @@ export class CameraRig {
   }
 
   set(pos, target) {
+    this.setFov(45);
     this.fly = null;
     this.mode = 'fixed';
     this.basePos.copy(pos);
@@ -53,6 +104,7 @@ export class CameraRig {
 
   flyTo(pos, target, dur = 1.4) {
     this.mode = 'fixed';
+    this.setFov(45);
     return new Promise((resolve) => {
       this.fly = {
         p0: this.camera.position.clone(), t0: this.target.clone(), p1: pos.clone(), t1: target.clone(),
@@ -62,6 +114,7 @@ export class CameraRig {
   }
 
   startOrbit(center, { yaw = 0, pitch = 0.35, dist = 1.2, min = 0.35, max = 2.2 } = {}) {
+    this.setFov(45);
     const o = this.orbit;
     o.center.copy(center);
     Object.assign(o, { min, max });
@@ -103,6 +156,26 @@ export class CameraRig {
         this.basePos.copy(f.p1);
         f.resolve();
       }
+      return;
+    }
+    if (this.mode === 'fps' && this.fps.target) {
+      const f = this.fps;
+      if (f.turn) {
+        const t = f.turn;
+        t.k = Math.min(1, t.k + dt / t.dur);
+        const e = ease(t.k);
+        f.yaw = t.y0 + (t.y1 - t.y0) * e;
+        f.pitch = t.p0 + (t.p1 - t.p0) * e;
+        if (t.k >= 1) {
+          f.turn = null;
+          t.resolve();
+        }
+      }
+      const n = f.npc;
+      const bob = n ? Math.abs(Math.sin(n.phase)) * 0.035 * Math.min(1, n.walking) : 0;
+      cam.position.copy(f.target.position).add(new THREE.Vector3(0, f.eye + bob, 0));
+      cam.rotation.set(f.pitch, f.yaw, 0, 'YXZ');
+      this.target.copy(cam.position).add(this.fpsDir());
       return;
     }
     if (this.mode === 'follow' && this.follow.target) {
