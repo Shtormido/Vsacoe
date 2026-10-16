@@ -8,6 +8,9 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -15,10 +18,10 @@ jobs:
           dotnet-version: 8.0.x
       - name: Publish
         run: >
-          dotnet publish JivieOboi/JivieOboi.csproj -c Release -r win-x64 --self-contained true
+          dotnet publish JivieOboi/JivieOboi.csproj -c Release -r ${{ matrix.rid }} --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
           -o publish
       - uses: actions/upload-artifact@v4
         with:
-          name: JivieOboi-win-x64
+          name: JivieOboi-${{ matrix.rid }}
           path: publish/JivieOboi.exe

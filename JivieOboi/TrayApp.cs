@@ -30,8 +30,9 @@ internal sealed class TrayApp
     IntPtr iconHandle;
     HwndSource? messages;
     uint taskbarCreated;
-    bool autoPaused, sessionLocked, hotkeyRegistered, cleanedUp;
+    bool autoPaused, sessionLocked, hotkeyRegistered, cleanedUp, desktopMissingNotified;
     LockOverlay? overlay;
+    DesktopTarget? target;
 
     static Dispatcher UI => Application.Current.Dispatcher;
 
@@ -52,6 +53,7 @@ internal sealed class TrayApp
 
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
         WindowsScreensaver.RefreshIfInstalled();
     }
 
@@ -60,12 +62,15 @@ internal sealed class TrayApp
     void BuildWallpapers()
     {
         DisposeWallpapers();
-        var target = DesktopHost.Find();
+        target = DesktopHost.Find();
         if (target is null)
         {
-            Notify("Не найден рабочий стол Explorer. Попробую ещё раз позже.");
+            if (!desktopMissingNotified) Notify("Не найден рабочий стол Explorer. Попробую ещё раз позже.");
+            desktopMissingNotified = true;
+            ScheduleRebuild();
             return;
         }
+        desktopMissingNotified = false;
         foreach (var screen in WF.Screen.AllScreens)
         {
             try
@@ -96,6 +101,8 @@ internal sealed class TrayApp
     {
         bool paused = s.Paused || autoPaused || sessionLocked || overlay != null;
         foreach (var w in walls) w.View.SetPaused(paused);
+        // Пока на экране ничего не движется — «режим эффективности» Windows 11.
+        Efficiency.Set(paused && overlay == null);
         if (tray != null)
             tray.Text = paused ? "Живые обои — пауза" : "Живые обои";
     }
@@ -103,6 +110,7 @@ internal sealed class TrayApp
     /// <summary>Пауза при полноэкранных приложениях / развёрнутых окнах / от батареи и живая заставка при бездействии.</summary>
     void Watch()
     {
+        CheckDesktop();
         bool pause = false, fullscreenApp = false;
         if (s.PauseOnBattery && WF.SystemInformation.PowerStatus.PowerLineStatus == WF.PowerLineStatus.Offline)
             pause = true;
@@ -129,10 +137,31 @@ internal sealed class TrayApp
             ShowLockOverlay(s.LockAfterIdleOverlay);
     }
 
+    /// <summary>
+    /// Explorer мог перестроить рабочий стол (перезапуск, смена темы, слайд-шоу фона в Windows 11):
+    /// следим, что наши окна живы и стоят на месте.
+    /// </summary>
+    void CheckDesktop()
+    {
+        if (rebuild.IsEnabled || target is not DesktopTarget t) return;
+        if (!Native.IsWindow(t.Parent) || walls.Exists(w => !Native.IsWindow(w.Handle)))
+        {
+            ScheduleRebuild();
+            return;
+        }
+        DesktopHost.EnsureWorkerAtBottom(t);
+    }
+
     static bool IsShellWindow(IntPtr hwnd) => Native.ClassName(hwnd) is
         "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "NotifyIconOverflowWindow";
 
     void OnDisplaySettingsChanged(object? sender, EventArgs e) => UI.BeginInvoke(ScheduleRebuild);
+
+    // После сна Windows 11 может изменить размеры рабочего стола — пересоздаём окна.
+    void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume) UI.BeginInvoke(ScheduleRebuild);
+    }
 
     void OnSessionSwitch(object? sender, SessionSwitchEventArgs e) => UI.BeginInvoke(() =>
     {
@@ -225,6 +254,7 @@ internal sealed class TrayApp
         menu.Opening += (_, e) =>
         {
             BuildMenu(menu);
+            Win11MenuRenderer.Apply(menu, Win11Palette.Current());
             e.Cancel = false;
         };
         menu.Items.Add("…");
@@ -280,6 +310,7 @@ internal sealed class TrayApp
         menu.Items.Add(new WF.ToolStripSeparator());
 
         menu.Items.Add(Item("Запускать вместе с Windows", () => Autostart.Set(!Autostart.IsEnabled), Autostart.IsEnabled));
+        menu.Items.Add(Item("Диагностика рабочего стола", ShowDiagnostics));
         menu.Items.Add(Item("Открыть папку настроек", () =>
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Settings.Dir}\"") { UseShellExecute = true })));
         menu.Items.Add(Item("Выход", Exit));
@@ -375,6 +406,15 @@ internal sealed class TrayApp
         s.SourceType = "file";
         s.FilePath = dialog.FileName;
         SaveAndRebuild();
+    }
+
+    void ShowDiagnostics()
+    {
+        var path = System.IO.Path.Combine(Settings.Dir, "diagnostics.txt");
+        System.IO.Directory.CreateDirectory(Settings.Dir);
+        System.IO.File.WriteAllText(path, DesktopHost.Describe()
+            + $"Окон обоев: {walls.Count}, мониторов: {WF.Screen.AllScreens.Length}{Environment.NewLine}");
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
     }
 
     void TogglePause()
@@ -489,6 +529,7 @@ internal sealed class TrayApp
         rebuild.Stop();
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         overlay?.Close();
         DisposeWallpapers();
         DesktopHost.RestoreSystemWallpaper();

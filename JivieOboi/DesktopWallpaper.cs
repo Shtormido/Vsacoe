@@ -12,6 +12,7 @@ internal sealed class DesktopWallpaper : IDisposable
 
     public WallpaperView View { get; }
     public bool IsPrimary { get; }
+    public IntPtr Handle => source.Handle;
 
     public DesktopWallpaper(DesktopTarget target, WF.Screen screen, Settings settings)
     {
