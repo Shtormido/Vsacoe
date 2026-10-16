@@ -1,0 +1,45 @@
+name: Android APK
+
+on:
+  push:
+    branches: [plyer_mp3up]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # номер версии = число коммитов
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Сборка APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Подготовка файла
+        run: cp android/app/build/outputs/apk/release/app-release.apk MP3UP.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MP3UP-apk
+          path: MP3UP.apk
+
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: MP3UP для Android (сборка ${{ github.run_number }})
+          make_latest: true
+          files: MP3UP.apk
+          body: |
+            Скачайте **MP3UP.apk** ниже и откройте его на телефоне.
+            Если Android спросит — разрешите установку из этого источника.

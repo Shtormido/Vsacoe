@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MP3UP</string>
+    <string name="channel_name">Воспроизведение</string>
+    <string name="channel_desc">Управление музыкой в шторке и на экране блокировки</string>
+    <string name="prev">Предыдущий</string>
+    <string name="play">Слушать</string>
+    <string name="pause">Пауза</string>
+    <string name="next">Следующий</string>
+</resources>

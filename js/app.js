@@ -48,6 +48,8 @@
   const UNKNOWN_ARTIST = 'Неизвестный исполнитель';
   const AUDIO_RE = /\.(mp3|m4a|aac|flac|ogg|oga|opus|wav|webm)$/i;
   const MOBILE = () => matchMedia('(max-width: 760px)').matches;
+  const Native = window.MP3UPAndroid || null; // мост в Android-приложении
+  if (Native) document.documentElement.classList.add('is-android');
 
   /* ---------- Состояние ---------- */
   const S = {
@@ -944,6 +946,7 @@
     const t = S.tracks.get(S.current);
     document.title = t ? `${playing ? '▶ ' : ''}${t.title} — ${artistOf(t)} · MP3UP` : 'MP3UP — твоя музыка';
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = S.current ? (playing ? 'playing' : 'paused') : 'none';
+    notifyNative();
   }
 
   function updateControls() {
@@ -1021,6 +1024,7 @@
     const u = coverUrl(t);
     $('#npBg').style.setProperty('--art', u ? `url("${u}")` : 'none');
     vizColor = c;
+    sendNativeArtwork(t);
     updateLikeUI();
     updatePlayState();
     if ('mediaSession' in navigator && 'MediaMetadata' in window) {
@@ -1087,6 +1091,65 @@
       }
     }
   }
+
+  /* ---------- Android-приложение: уведомление, кнопки, файлы ---------- */
+  let nativeKey = '';
+  let nativeArtId = null;
+  function notifyNative(force) {
+    if (!Native) return;
+    const t = S.tracks.get(S.current);
+    const playing = !!t && !audio.paused;
+    const pos = Math.round((audio.currentTime || 0) * 1000);
+    const dur = Math.round((isFinite(audio.duration) ? audio.duration : (t?.duration || 0)) * 1000);
+    const key = [t?.id, t?.title, t?.artist, playing, dur].join('|');
+    if (!force && key === nativeKey) return;
+    nativeKey = key;
+    try { Native.playback(t ? t.title : '', t ? artistOf(t) : '', t?.album || '', playing, !!t, pos, dur); } catch { /* мост недоступен */ }
+  }
+  async function sendNativeArtwork(t) {
+    if (!Native || !t || nativeArtId === t.id) return;
+    nativeArtId = t.id;
+    let data = '';
+    const u = coverUrl(t);
+    if (u) {
+      try {
+        const img = new Image();
+        img.src = u;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = c.height = 320;
+        c.getContext('2d').drawImage(img, 0, 0, 320, 320);
+        data = c.toDataURL('image/jpeg', 0.85);
+      } catch { /* без обложки */ }
+    }
+    if (nativeArtId === t.id) try { Native.artwork(data); } catch { /* мост недоступен */ }
+  }
+  window.mp3upControl = (cmd) => {
+    if (cmd === 'play') { if (S.current) { ensureAudioGraph(); if (!audio.src) loadIndex(S.qi); else audio.play().catch(() => {}); } }
+    else if (cmd === 'pause') audio.pause();
+    else if (cmd === 'toggle') togglePlay();
+    else if (cmd === 'next') next();
+    else if (cmd === 'prev') prev();
+    else if (cmd.startsWith('seek:')) { const ms = +cmd.slice(5); if (S.current && isFinite(ms)) { audio.currentTime = ms / 1000; notifyNative(true); } }
+  };
+  window.mp3upBack = () => {
+    if (menuOpen()) { closeMenu(); return true; }
+    if (modalStack.length) { modalStack[modalStack.length - 1].close(); return true; }
+    if (S.queueOpen) { setQueueOpen(false); return true; }
+    if (S.npOpen) { setNp(false); return true; }
+    return false;
+  };
+  window.mp3upOpenShared = async (items) => {
+    const files = [];
+    for (const it of items || []) {
+      try {
+        const blob = await (await fetch(it.url)).blob();
+        files.push(new File([blob], it.name || 'track.mp3', { type: it.type || blob.type || 'audio/mpeg' }));
+      } catch (e) { console.warn('Не удалось открыть файл', it, e); }
+    }
+    const ids = await importFiles(files);
+    if (ids.length) playIds(ids, 0, 'Открытые файлы');
+  };
 
   /* ---------- Полноэкранный плеер и очередь ---------- */
   function setNp(open) {
@@ -1200,7 +1263,7 @@
   const isAndroid = () => /android/i.test(UA);
 
   function updateInstallUI() {
-    $$('[data-act="install"]').forEach((b) => { b.hidden = isStandalone(); });
+    $$('[data-act="install"]').forEach((b) => { b.hidden = isStandalone() || !!Native; });
   }
 
   async function installApp() {
@@ -1606,6 +1669,7 @@
     LS.set('theme', theme);
     $$('[data-act="theme"]').forEach((b) => setIcon(b, theme === 'dark' ? 'sun' : 'moon'));
     $('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#0b0b10' : '#f8f8fb');
+    try { Native?.theme(theme); } catch { /* мост недоступен */ }
   }
 
   const openFilePicker = () => $('#fileInput').click();
@@ -1796,6 +1860,7 @@
       }
     });
     window.addEventListener('pagehide', saveSession);
+    audio.addEventListener('seeked', () => notifyNative(true));
 
     // Системные кнопки (наушники, экран блокировки)
     if ('mediaSession' in navigator) {
@@ -1890,8 +1955,9 @@
     updateVolumeUI();
     requestAnimationFrame(progressTick);
     $('#app').classList.add('ready');
+    try { Native?.ready(); } catch { /* мост недоступен */ }
 
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !Native) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
 

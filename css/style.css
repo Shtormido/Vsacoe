@@ -792,6 +792,9 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
 .drop-box b { font-size: 22px; }
 .drop-box span { color: var(--text-2); }
 
+/* ---------- Android-приложение ---------- */
+.is-android [data-act="add-folder"], .is-android .dropzone, .is-android .privacy { display: none !important; }
+
 /* ---------- Сенсорные экраны ---------- */
 @media (hover: none) {
   .row .like, .row .more, .qrow .icon-btn { opacity: 1; }

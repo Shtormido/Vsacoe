@@ -1,0 +1,66 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Веб-версия плеера (корень репозитория) встраивается в APK как assets
+def webRoot = rootProject.projectDir.parentFile
+def webAssets = layout.buildDirectory.dir('generated/web-assets')
+
+// Номер версии = число коммитов: каждая новая сборка ставится поверх старой
+def buildNumber = 1
+try {
+    buildNumber = providers.exec {
+        commandLine 'git', 'rev-list', '--count', 'HEAD'
+    }.standardOutput.asText.get().trim().toInteger()
+} catch (ignored) { }
+
+tasks.register('copyWebApp', Sync) {
+    from(webRoot) {
+        include 'index.html', 'css/**', 'js/**', 'icons/**', 'manifest.webmanifest'
+    }
+    into webAssets
+}
+
+android {
+    namespace 'app.mp3up'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'app.mp3up'
+        minSdk 24
+        targetSdk 35
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('mp3up-release.jks')
+            storePassword 'mp3up-release'
+            keyAlias 'mp3up'
+            keyPassword 'mp3up-release'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    sourceSets {
+        main.assets.srcDirs += webAssets
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+tasks.named('preBuild') { dependsOn 'copyWebApp' }
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
