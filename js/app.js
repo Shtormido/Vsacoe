@@ -73,7 +73,10 @@
     npOpen: false,
   };
 
-  const audio = $('#audio');
+  const audioMain = $('#audio');   // идёт через Web Audio: эквалайзер и визуализатор
+  const audioRaw = new Audio();    // для источников без CORS (Jamendo) — в обход Web Audio
+  audioRaw.preload = 'auto';
+  let audio = audioMain;           // активный элемент
   const coverCache = new Map();
 
   /* ---------- Данные медиатеки ---------- */
@@ -83,7 +86,7 @@
 
   const getTrack = (id) => S.tracks.get(id) || S.remote.get(id);
   const hasTrack = (id) => S.tracks.has(id) || S.remote.has(id);
-  const isRemote = (t) => !!t && t.source === 'audius';
+  const isRemote = (t) => !!t && !!t.source;
 
   function coverUrl(t, small) {
     if (!t) return null;
@@ -303,8 +306,9 @@
         'sep',
         { icon: 'heart', label: 'Добавить в «Любимые»', action: () => toggleLike(id) },
         { icon: 'library', label: 'Сохранить в медиатеку', action: () => saveRemote([id]) },
-        { icon: 'search', label: 'Ещё треки исполнителя', action: () => go('online', artistOf(t)) },
-        { icon: 'share', label: 'Открыть на Audius', action: () => window.open(t.permalink, '_blank', 'noopener') },
+        ...(t.iaId ? [{ icon: 'disc', label: 'Открыть альбом', action: () => go('ia', t.iaId) }] : []),
+        { icon: 'search', label: 'Ещё треки исполнителя', action: () => { ON.source = t.source; go('online', artistOf(t)); } },
+        { icon: 'share', label: `Открыть на ${SOURCES[t.source]?.name || 'сайте'}`, action: () => window.open(t.permalink, '_blank', 'noopener') },
       ]);
       return;
     }
@@ -319,7 +323,7 @@
     ];
     if (t.album) items.push({ icon: 'disc', label: 'Перейти к альбому', action: () => go('album', t.album) });
     items.push({ icon: 'edit', label: 'Изменить название…', action: () => editTrack(id) });
-    if (isRemote(t)) items.push({ icon: 'share', label: 'Открыть на Audius', action: () => window.open(t.permalink, '_blank', 'noopener') });
+    if (isRemote(t)) items.push({ icon: 'share', label: `Открыть на ${SOURCES[t.source]?.name || 'сайте'}`, action: () => window.open(t.permalink, '_blank', 'noopener') });
     if (ctx.playlistId) items.push('sep', { icon: 'close', label: 'Убрать из этого плейлиста', action: () => removeFromPlaylist(ctx.playlistId, id) });
     items.push('sep', { icon: 'trash', label: 'Удалить из медиатеки', danger: true, action: () => deleteTracks([id]) });
     openMenu(x, y, items);
@@ -653,7 +657,7 @@
       $('#pkList', m.el).innerHTML = list.length ? list.slice(0, 400).map((t) => `
         <div class="pk-row">${coverHTML(t, 'xs')}
           <div class="tt"><div class="t1">${esc(t.title)}</div><div class="t2">${esc(artistOf(t))}</div></div>
-          <button class="pk-add ${inSet.has(t.id) ? 'on' : ''}" data-pk="${t.id}" aria-label="${inSet.has(t.id) ? 'Убрать' : 'Добавить'}">${ic(inSet.has(t.id) ? 'check' : 'plus')}</button>
+          <button class="pk-add ${inSet.has(t.id) ? 'on' : ''}" data-pk="${esc(t.id)}" aria-label="${inSet.has(t.id) ? 'Убрать' : 'Добавить'}">${ic(inSet.has(t.id) ? 'check' : 'plus')}</button>
         </div>`).join('') : '<p class="dim pad">Ничего не найдено</p>';
     };
     draw();
@@ -694,7 +698,7 @@
     if (!AC) return;
     try {
       actx = new AC();
-      const src = actx.createMediaElementSource(audio);
+      const src = actx.createMediaElementSource(audioMain);
       let node = src;
       eqNodes = EQ_BANDS.map((f, i) => {
         const b = actx.createBiquadFilter();
@@ -738,8 +742,16 @@
     updateNowPlaying();
     renderQueue();
     let src;
+    const el = isRemote(t) && t.cors === false ? audioRaw : audioMain;
+    if (el !== audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      audio = el;
+      syncAudioSettings();
+    }
     if (isRemote(t)) {
-      src = Audius.streamUrl(t.audiusId);
+      src = t.source === 'audius' ? Audius.streamUrl(t.audiusId) : t.stream;
       colorizeRemote(t);
     } else {
       let rec;
@@ -751,7 +763,7 @@
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = src.startsWith('blob:') ? src : null;
     audio.src = src;
-    if (startAt > 0) audio.addEventListener('loadedmetadata', () => { audio.currentTime = Math.min(startAt, (audio.duration || startAt) - 1); }, { once: true });
+    if (startAt > 0) el.addEventListener('loadedmetadata', () => { audio.currentTime = Math.min(startAt, (audio.duration || startAt) - 1); }, { once: true });
     saveSession();
     if (autoplay) {
       ensureAudioGraph();
@@ -947,11 +959,13 @@
       return;
     }
     if (S.ctxKey === spec && S.current) { togglePlay(); return; }
+    if (spec.startsWith('ia:')) { playArchive(spec.slice(3)); return; }
     const r = resolveSpec(spec);
     if (!r || !r.ids.length) { toast('Здесь пока нет треков', 'info'); return; }
     playIds(r.ids, 0, r.label, { key: spec });
   }
   function handleShuffleSpec(spec) {
+    if (spec.startsWith('ia:')) { playArchive(spec.slice(3), { shuffle: true }); return; }
     const r = resolveSpec(spec);
     if (!r || !r.ids.length) return;
     if (!S.shuffle) { S.shuffle = true; LS.set('shuffle', true); updateControls(); }
@@ -1005,7 +1019,7 @@
     });
     $$('.wave').forEach((w) => w.classList.toggle('playing', playing && S.ctxKey === 'wave'));
     $$('.row.playing').forEach((r) => r.classList.remove('playing'));
-    if (S.current) $$(`.row[data-id="${S.current}"]`).forEach((r) => r.classList.add('playing'));
+    if (S.current) $$(`.row[data-id="${CSS.escape(S.current)}"]`).forEach((r) => r.classList.add('playing'));
     $$('.sp-item').forEach((el) => el.classList.toggle('playing', !!S.current && el.dataset.key === S.ctxKey));
     const t = getTrack(S.current);
     document.title = t ? `${playing ? '▶ ' : ''}${t.title} — ${artistOf(t)} · MP3UP` : 'MP3UP — твоя музыка';
@@ -1049,7 +1063,11 @@
     audio.muted = v === 0;
     LS.set('vol', v);
     LS.set('muted', audio.muted);
+    syncAudioSettings();
     updateVolumeUI();
+  }
+  function syncAudioSettings() {
+    for (const el of [audioMain, audioRaw]) if (el !== audio) { el.volume = audio.volume; el.muted = audio.muted; }
   }
   function toggleMute() {
     if (audio.muted || audio.volume === 0) {
@@ -1058,6 +1076,7 @@
     } else audio.muted = true;
     LS.set('muted', audio.muted);
     LS.set('vol', audio.volume);
+    syncAudioSettings();
     updateVolumeUI();
   }
 
@@ -1277,7 +1296,7 @@
           <div class="eq-slot"><input type="range" class="range always" min="-12" max="12" step="1" data-eq="${i}" aria-label="${EQ_LABELS[i]}"></div>
           <span>${EQ_LABELS[i]}</span>
         </div>`).join('')}</div>
-      <p class="eq-note">${actx ? 'Двигайте ползунки — изменения слышны сразу' : 'Эквалайзер недоступен в этом браузере'}</p>`, { cls: 'wide' });
+      <p class="eq-note">${!actx ? 'Эквалайзер недоступен в этом браузере' : audio === audioRaw ? 'Для треков Jamendo эквалайзер не действует: их сервер не разрешает обработку звука' : 'Двигайте ползунки — изменения слышны сразу'}</p>`, { cls: 'wide' });
     const sync = () => {
       const pn = presetName();
       $$('[data-preset]', m.el).forEach((b) => b.classList.toggle('active', b.dataset.preset === pn));
@@ -1408,11 +1427,11 @@
     return `<div class="tracklist ${compact ? 'compact' : ''}" data-list="${lid}">
       <div class="tl-head"><span class="num">#</span><span>Название</span><span class="al">Альбом</span><span></span><span class="r">${ic('clock')}</span><span></span></div>
       ${tracks.map((t, i) => `
-      <div class="row ${t.id === S.current ? 'playing' : ''}" data-id="${t.id}" data-i="${i}">
+      <div class="row ${t.id === S.current ? 'playing' : ''}" data-id="${esc(t.id)}" data-i="${i}">
         <span class="num"><span class="n">${numbers ? i + 1 : (t.trackNo || i + 1)}</span><button class="row-play" data-act="row-play" aria-label="Слушать">${ic('play')}</button><span class="bars"><i></i><i></i><i></i></span></span>
         <span class="ti">${coverHTML(t, 'sm')}<span class="tt"><span class="t1">${esc(t.title)}${isRemote(t) ? ic('globe', 'src') : ''}</span><a class="t2" href="${S.tracks.has(t.id) ? '#/artist/' : '#/online/'}${encodeURIComponent(artistOf(t))}">${esc(artistOf(t))}</a></span></span>
-        <span class="al">${t.album ? `<a href="#/album/${encodeURIComponent(t.album)}">${esc(t.album)}</a>` : `<span class="dim">${isRemote(t) ? esc(t.genre || 'Audius') : '—'}</span>`}</span>
-        <button class="icon-btn like ${t.liked ? 'on' : ''}" data-act="like" data-like="${t.id}" aria-label="Нравится" title="Нравится">${ic(t.liked ? 'heart-fill' : 'heart')}</button>
+        <span class="al">${t.album ? `<a href="#/album/${encodeURIComponent(t.album)}">${esc(t.album)}</a>` : `<span class="dim">${isRemote(t) ? esc(t.genre || SOURCES[t.source]?.name || '') : '—'}</span>`}</span>
+        <button class="icon-btn like ${t.liked ? 'on' : ''}" data-act="like" data-like="${esc(t.id)}" aria-label="Нравится" title="Нравится">${ic(t.liked ? 'heart-fill' : 'heart')}</button>
         <span class="dur">${fmt(t.duration)}</span>
         <button class="icon-btn more" data-act="more" aria-label="Ещё" title="Ещё">${ic('more')}</button>
       </div>`).join('')}
@@ -1510,25 +1529,179 @@
     };
   })();
 
-  const ONLINE_GENRES = [['', 'Все'], ['Electronic', 'Электроника'], ['Hip-Hop/Rap', 'Хип-хоп'], ['Pop', 'Поп'], ['Rock', 'Рок'],
-    ['Alternative', 'Альтернатива'], ['Lo-Fi', 'Lo-Fi'], ['House', 'Хаус'], ['Techno', 'Техно'], ['Trap', 'Трэп'], ['R&B/Soul', 'R&B'],
-    ['Drum & Bass', 'Драм-н-бэйс'], ['Ambient', 'Эмбиент'], ['Jazz', 'Джаз'], ['Classical', 'Классика'], ['Metal', 'Метал'], ['Soundtrack', 'Саундтреки']];
-  const ON = { genre: LS.get('onlineGenre', ''), results: new Map() };
+  /* Jamendo: независимые артисты под Creative Commons (нужен личный бесплатный Client ID) */
+  const Jamendo = (() => {
+    const API = 'https://api.jamendo.com/v3.0';
+    const key = () => LS.get('jamendoId', '');
+    async function get(path, params, clientId = key()) {
+      const u = new URL(API + path);
+      u.searchParams.set('client_id', clientId);
+      u.searchParams.set('format', 'json');
+      for (const [k, v] of Object.entries(params)) if (v !== '' && v != null) u.searchParams.set(k, v);
+      const d = await (await fetch(u)).json();
+      if (d.headers?.status !== 'success') {
+        const e = new Error(d.headers?.error_message || 'Jamendo');
+        e.auth = d.headers?.code === 5;
+        throw e;
+      }
+      return d.results || [];
+    }
+    function toTrack(a) {
+      const id = 'jm:' + a.id;
+      const known = S.tracks.get(id) || S.remote.get(id);
+      if (known) return known;
+      const t = {
+        id, source: 'jamendo', cors: false, stream: a.audio,
+        title: a.name || 'Без названия', artist: a.artist_name || '', album: '', albumArtist: '',
+        genre: a.musicinfo?.tags?.genres?.[0] || '', year: (a.releasedate || '').slice(0, 4), trackNo: 0,
+        duration: +a.duration || 0, art: a.album_image || a.image || '', artSmall: a.image || a.album_image || '',
+        permalink: a.shareurl || `https://www.jamendo.com/track/${a.id}`,
+        cover: null, color: null, addedAt: 0, plays: 0, lastPlayed: 0, liked: false, likedAt: 0,
+      };
+      S.remote.set(id, t);
+      return t;
+    }
+    const base = { limit: 60, include: 'musicinfo', audioformat: 'mp32', imagesize: 300 };
+    return {
+      hasKey: () => !!key(),
+      test: (clientId) => get('/tracks/', { limit: 1 }, clientId),
+      trending: async (tag) => (await get('/tracks/', { ...base, order: 'popularity_week', fuzzytags: tag })).filter((a) => a.audio).map(toTrack),
+      search: async (q) => (await get('/tracks/', { ...base, search: q, order: 'relevance' })).filter((a) => a.audio).map(toTrack),
+    };
+  })();
+
+  /* Internet Archive: нетлейблы под Creative Commons, живые концерты, пластинки 78 об/мин */
+  const Archive = (() => {
+    const COLLECTIONS = {
+      '': 'collection:(netlabels OR etree OR georgeblood)',
+      netlabels: 'collection:netlabels', etree: 'collection:etree', georgeblood: 'collection:georgeblood',
+    };
+    const LABELS = { netlabels: 'Нетлейбл', etree: 'Живой концерт', georgeblood: 'Пластинка 78' };
+    const items = new Map();
+    const str = (v) => String((Array.isArray(v) ? v[0] : v) ?? '');
+    const thumb = (id) => `https://archive.org/services/img/${encodeURIComponent(id)}`;
+    const dl = (id, name) => `https://archive.org/download/${encodeURIComponent(id)}/${name.split('/').map(encodeURIComponent).join('/')}`;
+    function parseLen(v) {
+      if (!v) return 0;
+      if (String(v).includes(':')) return String(v).split(':').reduce((a, x) => a * 60 + (+x || 0), 0);
+      return +v || 0;
+    }
+    async function search(q, coll) {
+      const clean = q.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').replace(/\s+/g, ' ').trim();
+      const u = new URL('https://archive.org/advancedsearch.php');
+      u.searchParams.set('q', (clean ? `(${clean}) AND ` : '') + 'mediatype:audio AND ' + (COLLECTIONS[coll] || COLLECTIONS['']));
+      ['identifier', 'title', 'creator', 'year', 'collection'].forEach((f) => u.searchParams.append('fl[]', f));
+      if (!clean) u.searchParams.append('sort[]', 'week desc');
+      u.searchParams.set('rows', '48');
+      u.searchParams.set('output', 'json');
+      const r = await fetch(u);
+      if (!r.ok) throw new Error('Archive ' + r.status);
+      return ((await r.json()).response?.docs || []).map((d) => ({
+        id: d.identifier, title: str(d.title) || d.identifier, creator: str(d.creator), year: str(d.year).slice(0, 4),
+      }));
+    }
+    async function load(id) {
+      const cur = items.get(id);
+      if (cur?.item) return cur.item;
+      if (cur?.loading) return cur.loading;
+      const promise = (async () => {
+        try {
+          const r = await fetch(`https://archive.org/metadata/${encodeURIComponent(id)}`);
+          if (!r.ok) throw new Error('Archive ' + r.status);
+          const d = await r.json();
+          const md = d.metadata || {};
+          const files = d.files || [];
+          const RANK = ['VBR MP3', '128Kbps MP3', 'MP3', '64Kbps MP3'];
+          const best = new Map();
+          for (const f of files) {
+            const rank = RANK.indexOf(f.format);
+            if (rank < 0 || !/\.mp3$/i.test(f.name)) continue;
+            const key = f.name.replace(/\.[^.]+$/, '').replace(/_(vbr|64kb|128kb)$/i, '');
+            const prev = best.get(key);
+            if (!prev || rank < prev.rank) best.set(key, { f, rank });
+          }
+          const coll = [].concat(md.collection || []).find((c) => LABELS[c]);
+          const coverFile = files.find((f) => f.format === 'JPEG' && !/thumb/i.test(f.name));
+          const art = coverFile ? dl(id, coverFile.name) : thumb(id);
+          const album = str(md.title) || id;
+          const creator = str(md.creator);
+          const list = [...best.values()].map((x) => x.f)
+            .sort((a, b) => (parseInt(a.track, 10) || 999) - (parseInt(b.track, 10) || 999) || collator.compare(a.name, b.name));
+          const tracks = list.map((f, i) => {
+            const tid = `ia:${id}/${f.name}`;
+            const known = S.tracks.get(tid) || S.remote.get(tid);
+            if (known) return known;
+            const t = {
+              id: tid, source: 'archive', iaId: id, stream: dl(id, f.name),
+              title: str(f.title) || f.name.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]*/, '').replace(/_/g, ' ') || f.name,
+              artist: str(f.creator) || str(f.artist) || creator, album: '', albumArtist: '', iaAlbum: album,
+              genre: LABELS[coll] || 'Internet Archive', year: str(md.year || md.date).slice(0, 4), trackNo: parseInt(f.track, 10) || i + 1,
+              duration: parseLen(f.length), art, artSmall: thumb(id), permalink: `https://archive.org/details/${id}`,
+              cover: null, color: null, addedAt: 0, plays: 0, lastPlayed: 0, liked: false, likedAt: 0,
+            };
+            S.remote.set(tid, t);
+            return t;
+          });
+          const item = { id, title: album, creator, year: str(md.year || md.date).slice(0, 4), license: str(md.licenseurl), label: LABELS[coll] || '', art, tracks };
+          items.set(id, { item });
+          return item;
+        } catch (e) {
+          console.warn(e);
+          items.set(id, { error: true });
+          return null;
+        }
+      })();
+      items.set(id, { loading: promise });
+      return promise;
+    }
+    return { search, load, thumb, cached: (id) => items.get(id), forget: (id) => items.delete(id) };
+  })();
+
+  const SOURCES = {
+    audius: {
+      name: 'Audius', url: 'https://audius.co', placeholder: 'Трек или исполнитель',
+      note: 'артисты сами выкладывают туда треки для бесплатного прослушивания',
+      genres: [['', 'Все'], ['Electronic', 'Электроника'], ['Hip-Hop/Rap', 'Хип-хоп'], ['Pop', 'Поп'], ['Rock', 'Рок'],
+        ['Alternative', 'Альтернатива'], ['Lo-Fi', 'Lo-Fi'], ['House', 'Хаус'], ['Techno', 'Техно'], ['Trap', 'Трэп'], ['R&B/Soul', 'R&B'],
+        ['Drum & Bass', 'Драм-н-бэйс'], ['Ambient', 'Эмбиент'], ['Jazz', 'Джаз'], ['Classical', 'Классика'], ['Metal', 'Метал'], ['Soundtrack', 'Саундтреки']],
+    },
+    jamendo: {
+      name: 'Jamendo', url: 'https://www.jamendo.com', placeholder: 'Трек или исполнитель',
+      note: 'независимые артисты со всего мира, все треки под лицензиями Creative Commons',
+      genres: [['', 'Все'], ['pop', 'Поп'], ['rock', 'Рок'], ['electronic', 'Электроника'], ['hiphop', 'Хип-хоп'], ['jazz', 'Джаз'],
+        ['classical', 'Классика'], ['ambient', 'Эмбиент'], ['lounge', 'Лаунж'], ['chillout', 'Чилаут'], ['acoustic', 'Акустика'],
+        ['metal', 'Метал'], ['soundtrack', 'Саундтреки'], ['relaxation', 'Релакс']],
+    },
+    archive: {
+      name: 'Internet Archive', url: 'https://archive.org/details/audio', placeholder: 'Альбом, исполнитель или лейбл',
+      note: 'альбомы нетлейблов под Creative Commons, записи живых концертов и оцифрованные пластинки',
+      genres: [['', 'Все'], ['netlabels', 'Нетлейблы'], ['etree', 'Живые концерты'], ['georgeblood', 'Пластинки 78 об/мин']],
+    },
+  };
+  const ON = {
+    source: SOURCES[LS.get('onlineSource', 'audius')] ? LS.get('onlineSource', 'audius') : 'audius',
+    genre: LS.get('onlineGenres', {}),
+    results: new Map(),
+  };
   const ONLINE_TTL = 15 * 60e3;
-  const onlineKey = (q, genre = ON.genre) => (q ? 'q:' + norm(q) : 'g:' + genre);
+  const curGenre = (src = ON.source) => ON.genre[src] || '';
+  const onlineKey = (q, src = ON.source, genre = curGenre(src)) => `${src}|` + (q ? 'q:' + norm(q) : 'g:' + genre);
   const onlineQuery = () => (S.view?.name === 'online' ? (S.view.param || '').trim() : '');
 
-  async function loadOnline(q, genre = ON.genre) {
-    const key = onlineKey(q, genre);
-    const cur = ON.results.get(key);
-    if (cur?.loading) return;
+  async function loadOnline(q, src = ON.source, genre = curGenre(src)) {
+    if (src === 'jamendo' && !Jamendo.hasKey()) return;
+    const key = onlineKey(q, src, genre);
+    if (ON.results.get(key)?.loading) return;
     ON.results.set(key, { loading: true });
     try {
-      const tracks = q ? await Audius.search(q) : await Audius.trending(genre);
-      ON.results.set(key, { tracks, at: Date.now() });
+      let res;
+      if (src === 'archive') res = { items: await Archive.search(q, genre) };
+      else if (src === 'jamendo') res = { tracks: q ? await Jamendo.search(q) : await Jamendo.trending(genre) };
+      else res = { tracks: q ? await Audius.search(q) : await Audius.trending(genre) };
+      ON.results.set(key, { ...res, at: Date.now() });
     } catch (e) {
       console.warn(e);
-      ON.results.set(key, { error: true });
+      ON.results.set(key, { error: true, auth: !!e.auth });
     }
     fillOnline();
   }
@@ -1539,20 +1712,51 @@
   const skeletonRows = () => `<div class="sk-list">${'<div class="sk-row"><i></i><span><b></b><b></b></span></div>'.repeat(8)}</div>`;
   const skeletonCards = () => '<div class="sk-card"><i></i><b></b><b></b></div>'.repeat(7);
 
+  function jamendoSetupHTML(error) {
+    return `<div class="setup-card">
+      <h3>Подключите Jamendo — это бесплатно</h3>
+      <p>Jamendo выдаёт каждому приложению личный ключ (Client ID). Получить его — пара минут:</p>
+      <ol>
+        <li>Зарегистрируйтесь на <a href="https://devportal.jamendo.com" target="_blank" rel="noopener">devportal.jamendo.com</a>.</li>
+        <li>В личном кабинете создайте приложение — название любое, например «MP3UP».</li>
+        <li>Скопируйте <b>Client ID</b> и вставьте его сюда.</li>
+      </ol>
+      <div class="setup-row">
+        <input class="input" id="jamendoKey" placeholder="Client ID" value="${esc(LS.get('jamendoId', ''))}" autocomplete="off" spellcheck="false">
+        <button class="btn btn-primary" data-act="jamendo-save">Подключить</button>
+      </div>
+      ${error ? `<p class="setup-error">${esc(error)}</p>` : ''}
+      <p class="dim">Ключ хранится только на этом устройстве.</p>
+    </div>`;
+  }
+  const archiveCard = (it) => card({
+    href: `#/ia/${encodeURIComponent(it.id)}`,
+    cover: `<img class="cover" src="${esc(Archive.thumb(it.id))}" alt="" loading="lazy" draggable="false">`,
+    title: it.title, sub: esc([it.creator, it.year].filter(Boolean).join(' · ')), play: `ia:${it.id}`,
+  });
+
   function onlineResultsHTML(q) {
+    const src = ON.source;
+    if (src === 'jamendo' && !Jamendo.hasKey()) return jamendoSetupHTML();
     const r = ON.results.get(onlineKey(q));
-    if (!r || r.loading) return skeletonRows();
+    if (!r || r.loading) return src === 'archive' ? `<div class="grid">${skeletonCards()}</div>` : skeletonRows();
     if (r.error) {
+      if (r.auth) return jamendoSetupHTML('Jamendo не принял ключ — проверьте Client ID.');
       return emptyBlock('globe', 'Не удалось загрузить',
-        navigator.onLine ? 'Audius сейчас не отвечает. Попробуйте ещё раз чуть позже.' : 'Нет подключения к интернету. Музыка из медиатеки по-прежнему доступна.',
+        navigator.onLine ? `${SOURCES[src].name} сейчас не отвечает. Попробуйте ещё раз чуть позже.` : 'Нет подключения к интернету. Музыка из медиатеки по-прежнему доступна.',
         `<button class="btn btn-primary" data-act="online-retry">Повторить</button>`);
     }
+    if (r.items) {
+      if (!r.items.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название, исполнителя или лейбл.');
+      return `<div class="grid">${r.items.map(archiveCard).join('')}</div>`;
+    }
     if (!r.tracks.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название или имя исполнителя.');
-    return trackList(r.tracks, { label: q ? `Audius: ${q}` : 'Audius: в тренде', key: 'online:' + onlineKey(q) });
+    const name = SOURCES[src].name;
+    return trackList(r.tracks, { label: q ? `${name}: ${q}` : `${name}: в тренде`, key: 'online:' + onlineKey(q) });
   }
   function homeOnlineHTML(trigger) {
-    const key = onlineKey('', '');
-    if (trigger && !onlineFresh(key)) setTimeout(() => loadOnline('', ''), 0);
+    const key = onlineKey('', 'audius', '');
+    if (trigger && !onlineFresh(key)) setTimeout(() => loadOnline('', 'audius', ''), 0);
     const r = ON.results.get(key);
     if (!r || r.loading) return skeletonCards();
     if (r.error) return `<p class="dim shelf-note">${navigator.onLine ? 'Audius сейчас не отвечает' : 'Нет подключения к интернету'}</p>`;
@@ -1567,15 +1771,48 @@
     if (home) home.innerHTML = homeOnlineHTML(false);
     updatePlayState();
   }
+  const onlineTitle = (q) => (q ? `Результаты по запросу «${q}»` : ON.source === 'archive' ? 'Популярное за неделю' : 'В тренде за неделю');
   function setOnlineQuery(q) {
     S.view = { name: 'online', param: q || null };
     history.replaceState(null, '', '#/online' + (q ? '/' + encodeURIComponent(q) : ''));
     const genres = $('#onlineGenres');
     if (genres) genres.hidden = !!q;
     const title = $('#onlineTitle');
-    if (title) title.textContent = q ? `Результаты по запросу «${q}»` : 'В тренде за неделю';
+    if (title) title.textContent = onlineTitle(q);
     if (!onlineFresh(onlineKey(q))) loadOnline(q);
     fillOnline();
+  }
+
+  async function saveJamendoKey() {
+    const input = $('#jamendoKey');
+    const id = input?.value.trim();
+    if (!id) { input?.classList.remove('err'); void input?.offsetWidth; input?.classList.add('err'); return; }
+    const t = toast('Проверяем ключ…', 'load', 0);
+    try {
+      await Jamendo.test(id);
+      LS.set('jamendoId', id);
+      for (const k of [...ON.results.keys()]) if (k.startsWith('jamendo|')) ON.results.delete(k);
+      t.close();
+      toast('Jamendo подключён', 'ok');
+      render();
+    } catch (e) {
+      t.close();
+      toast(e.auth ? 'Ключ не подошёл — проверьте Client ID' : 'Не удалось связаться с Jamendo. Проверьте интернет', 'warn', 4000);
+    }
+  }
+
+  /* Альбом Internet Archive: запустить или перемешать */
+  function playArchive(id, { shuffle = false } = {}) {
+    const spec = 'ia:' + id;
+    const start = (it) => {
+      if (!it || !it.tracks.length) { toast(it ? 'В этом альбоме нет MP3' : 'Не удалось загрузить альбом', 'warn'); return; }
+      if (shuffle && !S.shuffle) { S.shuffle = true; LS.set('shuffle', true); updateControls(); }
+      playIds(it.tracks.map((t) => t.id), 0, it.title, { key: spec, randomStart: shuffle });
+    };
+    const st = Archive.cached(id);
+    if (st?.item) { start(st.item); return; }
+    const tl = toast('Загружаем альбом…', 'load', 0);
+    Archive.load(id).then((it) => { tl.close(); start(it); });
   }
 
   /* ---------- Экраны ---------- */
@@ -1693,17 +1930,41 @@
 
     online(q) {
       q = (q || '').trim();
+      const src = SOURCES[ON.source];
       if (!onlineFresh(onlineKey(q))) setTimeout(() => loadOnline(q), 0);
+      const needsKey = ON.source === 'jamendo' && !Jamendo.hasKey();
       return { html: `
-        <div class="page-head"><div><h1>Онлайн</h1><p class="page-sub">Бесплатная музыка от артистов на Audius — без подписки и рекламы</p></div></div>
-        <label class="online-search">${ic('search')}<input id="onlineQ" type="search" placeholder="Трек или исполнитель" value="${esc(q)}" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>
-        <div class="chips" id="onlineGenres" ${q ? 'hidden' : ''}>${ONLINE_GENRES.map(([g, l]) => `<button class="chip ${g === ON.genre ? 'active' : ''}" data-genre="${esc(g)}">${l}</button>`).join('')}</div>
+        <div class="page-head"><div><h1>Онлайн</h1><p class="page-sub">Бесплатная и легальная музыка — без подписки и рекламы</p></div></div>
+        <div class="tabs source-tabs">${Object.entries(SOURCES).map(([k, x]) => `<button class="tab ${k === ON.source ? 'active' : ''}" data-source="${k}">${x.name}</button>`).join('')}</div>
+        ${needsKey ? '' : `<label class="online-search">${ic('search')}<input id="onlineQ" type="search" placeholder="${esc(src.placeholder)}" value="${esc(q)}" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>
+        <div class="chips" id="onlineGenres" ${q ? 'hidden' : ''}>${src.genres.map(([g, l]) => `<button class="chip ${g === curGenre() ? 'active' : ''}" data-genre="${esc(g)}">${l}</button>`).join('')}</div>`}
         <section class="section online-section">
-          <div class="sec-head"><h2 id="onlineTitle">${q ? `Результаты по запросу «${esc(q)}»` : 'В тренде за неделю'}</h2></div>
+          ${needsKey ? '' : `<div class="sec-head"><h2 id="onlineTitle">${esc(onlineTitle(q))}</h2></div>`}
           <div id="onlineResults">${onlineResultsHTML(q)}</div>
         </section>
-        <p class="online-note">${ic('globe')}<span>Треки предоставляет <a href="https://audius.co" target="_blank" rel="noopener">Audius</a> — артисты сами выкладывают их для бесплатного прослушивания. Нужен интернет. Нажмите ♥, чтобы сохранить трек в медиатеку.</span></p>`,
+        <p class="online-note">${ic('globe')}<span>Музыку предоставляет <a href="${src.url}" target="_blank" rel="noopener">${src.name}</a> — ${src.note}. Нужен интернет. Нажмите ♥, чтобы сохранить трек в медиатеку.${ON.source === 'jamendo' ? ' Для треков Jamendo не работают эквалайзер и визуализатор — их сервер это не разрешает.' : ''}${ON.source === 'jamendo' && Jamendo.hasKey() ? ' <button class="link-btn" data-act="jamendo-reset">Сменить ключ</button>' : ''}</span></p>`,
       color: { h: 268, s: 62, l: 50 } };
+    },
+
+    ia(id) {
+      const st = id && Archive.cached(id);
+      if (!st) setTimeout(() => Archive.load(id).then(() => { if (S.view?.name === 'ia' && S.view.param === id) render(); }), 0);
+      if (!st || st.loading) return { html: `<div class="hero"><div class="hero-cover"><div class="sk-card"><i></i></div></div></div>${skeletonRows()}` };
+      if (st.error) {
+        return { html: emptyBlock('globe', 'Не удалось загрузить альбом', navigator.onLine ? 'Internet Archive сейчас не отвечает. Попробуйте ещё раз.' : 'Нет подключения к интернету.', `<button class="btn btn-primary" data-act="ia-retry" data-id="${esc(id)}">Повторить</button>`) };
+      }
+      const it = st.item;
+      const total = it.tracks.reduce((a, t) => a + (t.duration || 0), 0);
+      const extra = `<span class="spacer"></span>
+        ${it.tracks.length ? `<button class="btn btn-ghost" data-act="ia-save" data-id="${esc(id)}">${ic('library')}<span>Сохранить в медиатеку</span></button>` : ''}
+        <a class="icon-btn round" href="https://archive.org/details/${encodeURIComponent(id)}" target="_blank" rel="noopener" title="Открыть на archive.org" aria-label="Открыть на archive.org">${ic('share')}</a>`;
+      const sub = [it.creator && `<b>${esc(it.creator)}</b>`, esc(it.year), it.tracks.length && `${tracksWord(it.tracks.length)}${total ? ', ' + fmtLong(total) : ''}`,
+        it.license && `<a href="${esc(it.license)}" target="_blank" rel="noopener">лицензия</a>`].filter(Boolean).join(' · ');
+      return { html: `
+        ${hero({ kind: `Альбом · Internet Archive${it.label ? ' · ' + esc(it.label) : ''}`, title: it.title, cover: `<img class="cover" src="${esc(it.art)}" alt="">`, sub, spec: 'ia:' + id, count: it.tracks.length, extra })}
+        ${it.tracks.length ? trackList(it.tracks, { label: it.title, key: 'ia:' + id, numbers: false })
+          : emptyBlock('disc', 'В этом альбоме нет MP3', 'Попробуйте открыть его на archive.org.')}`,
+      color: { h: hashHue(id), s: 50, l: 42 } };
     },
 
     library(tab) {
@@ -1936,10 +2197,26 @@
         }
       }
 
+      const sourceBtn = t.closest('[data-source]');
+      if (sourceBtn) {
+        ON.source = sourceBtn.dataset.source;
+        LS.set('onlineSource', ON.source);
+        render();
+        return;
+      }
+      const ia = t.closest('[data-act^="ia-"], [data-act^="jamendo-"]');
+      if (ia) {
+        const a = ia.dataset.act;
+        if (a === 'jamendo-save') saveJamendoKey();
+        if (a === 'jamendo-reset') { LS.set('jamendoId', ''); render(); }
+        if (a === 'ia-retry') { Archive.forget(ia.dataset.id); render(); }
+        if (a === 'ia-save') { const st = Archive.cached(ia.dataset.id); if (st?.item) saveRemote(st.item.tracks.map((x) => x.id)); }
+        return;
+      }
       const genreBtn = t.closest('[data-genre]');
       if (genreBtn) {
-        ON.genre = genreBtn.dataset.genre;
-        LS.set('onlineGenre', ON.genre);
+        ON.genre[ON.source] = genreBtn.dataset.genre;
+        LS.set('onlineGenres', ON.genre);
         $$('[data-genre]').forEach((b) => b.classList.toggle('active', b === genreBtn));
         if (!onlineFresh(onlineKey(''))) loadOnline('');
         fillOnline();
@@ -2004,6 +2281,7 @@
       onlineTimer = setTimeout(() => setOnlineQuery(e.target.value.trim()), 450);
     });
     document.addEventListener('keydown', (e) => {
+      if (e.target.id === 'jamendoKey' && e.key === 'Enter') saveJamendoKey();
       if (e.target.id === 'onlineQ' && e.key === 'Enter') { clearTimeout(onlineTimer); setOnlineQuery(e.target.value.trim()); e.target.blur(); }
     });
 
@@ -2061,24 +2339,27 @@
       }
     });
 
-    // Аудио
-    audio.addEventListener('play', updatePlayState);
-    audio.addEventListener('pause', () => { updatePlayState(); saveSession(); });
-    audio.addEventListener('ended', () => next(true));
-    audio.addEventListener('error', () => {
+    // Аудио: слушаем оба элемента, реагируем только на активный
+    function onAudio(type, fn) {
+      for (const el of [audioMain, audioRaw]) el.addEventListener(type, (e) => { if (e.target === audio) fn(e); });
+    }
+    onAudio('play', updatePlayState);
+    onAudio('pause', () => { updatePlayState(); saveSession(); });
+    onAudio('ended', () => next(true));
+    onAudio('error', () => {
       if (!S.current || !audio.getAttribute('src')) return;
       const t = getTrack(S.current);
       toast(isRemote(t) && !navigator.onLine ? 'Нет интернета — онлайн-трек не загрузится' : `Не удалось воспроизвести «${t?.title || 'трек'}»`, 'warn', 3500);
       if (S.qi < S.queue.length - 1) setTimeout(() => next(true), 1200);
     });
-    audio.addEventListener('loadedmetadata', () => {
+    onAudio('loadedmetadata', () => {
       const t = getTrack(S.current);
       if (t && isFinite(audio.duration) && Math.abs((t.duration || 0) - audio.duration) > 1) {
         t.duration = audio.duration;
         if (S.tracks.has(t.id)) DB.put('tracks', t).catch(() => {});
       }
     });
-    audio.addEventListener('timeupdate', () => {
+    onAudio('timeupdate', () => {
       const t = getTrack(S.current);
       if (t && !S.counted && !audio.paused && audio.currentTime > Math.min(30, (audio.duration || 60) * 0.5)) {
         S.counted = true;
@@ -2092,7 +2373,7 @@
       }
     });
     window.addEventListener('pagehide', saveSession);
-    audio.addEventListener('seeked', () => notifyNative(true));
+    onAudio('seeked', () => notifyNative(true));
 
     // Системные кнопки (наушники, экран блокировки)
     if ('mediaSession' in navigator) {
@@ -2169,9 +2450,10 @@
   /* ---------- Запуск ---------- */
   async function init() {
     applyTheme(LS.get('theme', matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
-    audio.crossOrigin = 'anonymous';
+    audioMain.crossOrigin = 'anonymous';
     audio.volume = clamp(LS.get('vol', 0.8), 0, 1);
     audio.muted = LS.get('muted', false);
+    syncAudioSettings();
     bindUI();
     try {
       const [tracks, pls] = await Promise.all([DB.all('tracks'), DB.all('playlists')]);

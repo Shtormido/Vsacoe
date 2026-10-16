@@ -810,6 +810,17 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
 .online-note a { color: var(--text); font-weight: 700; text-decoration: underline; }
 .online-cta { margin-top: 32px; display: flex; justify-content: center; }
 .shelf-note { padding: 20px 4px; }
+.source-tabs { margin-bottom: 18px; }
+.setup-card { max-width: 640px; padding: 24px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); }
+.setup-card h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+.setup-card p { color: var(--text-2); margin-bottom: 12px; }
+.setup-card ol { margin: 0 0 18px 20px; display: flex; flex-direction: column; gap: 6px; color: var(--text-2); }
+.setup-card ol b { color: var(--text); }
+.setup-card a { color: var(--accent); font-weight: 700; text-decoration: underline; }
+.setup-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.setup-row .input { flex: 1; min-width: 0; }
+.setup-error { color: #f87171 !important; font-weight: 700; }
+.setup-card .dim { font-size: 13px; margin: 0; }
 .t1 .ic.src { width: 13px; height: 13px; margin-left: 6px; vertical-align: -1px; color: var(--text-3); }
 
 .sk-list { display: flex; flex-direction: column; gap: 4px; }
