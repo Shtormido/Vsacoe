@@ -68,6 +68,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 a { color: inherit; text-decoration: none; }
 input, select { font: inherit; color: inherit; }
 img { display: block; }
+[hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 ::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
 
@@ -739,6 +740,10 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
 .eq-slot .range::-moz-range-thumb { opacity: 1; }
 .eq-note { margin-top: 16px; color: var(--text-3); font-size: 13px; text-align: center; }
 
+/* Установка */
+.install-note { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: var(--surface-2); color: var(--text-2); font-size: 14px; }
+.modal .help-tips + .m-text { margin: 4px 0 0; }
+
 /* Горячие клавиши */
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: center; font-size: 14px; }
 .keys kbd { font-family: inherit; font-weight: 800; font-size: 12px; padding: 4px 9px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 3px; white-space: nowrap; justify-self: start; }
@@ -821,12 +826,12 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; padding: 0; gap: 0; }
   .sidebar { display: none; }
   .main { border-radius: 0; }
-  .topbar { padding: 10px 16px; gap: 10px; }
+  .topbar { padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; gap: 10px; }
   .nav-arrows { display: none; }
   .logo-mobile { display: flex; padding: 0; font-size: 20px; }
   .logo-mobile .logo-mark { width: 30px; height: 30px; }
   .top-search { display: none; }
-  body[data-view="search"] .top-search { display: flex; position: absolute; left: 16px; right: 16px; top: 64px; max-width: none; }
+  body[data-view="search"] .top-search { display: flex; position: absolute; left: 16px; right: 16px; top: 64px; max-width: none; margin-top: env(safe-area-inset-top, 0px); }
   body[data-view="search"] .view { padding-top: 70px; }
   .top-actions .btn span { display: none; }
   .top-actions .btn { width: 40px; padding: 0; }
@@ -894,7 +899,7 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px; }
   .card { padding: 8px; }
 
-  .np-inner { padding: 12px 20px calc(20px + var(--safe-b)); }
+  .np-inner { padding: calc(12px + env(safe-area-inset-top, 0px)) 20px calc(20px + var(--safe-b)); }
   .np-main { gap: 22px; }
   .np-cover { width: min(100%, 40vh); }
   .np-controls { margin: 12px 0 18px; }

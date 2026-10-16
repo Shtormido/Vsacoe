@@ -1,14 +1,40 @@
 {
+  "id": "./",
   "name": "MP3UP — твоя музыка",
   "short_name": "MP3UP",
   "description": "Музыкальный плеер для вашей коллекции MP3: без подписок, рекламы и интернета.",
   "lang": "ru",
+  "dir": "ltr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#08080c",
   "theme_color": "#0b0b10",
+  "categories": ["music", "entertainment"],
   "icons": [
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ]
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Моя волна", "short_name": "Волна", "description": "Бесконечный поток вашей музыки", "url": "./#/wave", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Медиатека", "url": "./#/library", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Любимые треки", "url": "./#/liked", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "audio/mpeg": [".mp3"],
+        "audio/mp4": [".m4a", ".aac"],
+        "audio/flac": [".flac"],
+        "audio/ogg": [".ogg", ".oga", ".opus"],
+        "audio/wav": [".wav"]
+      }
+    }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" }
 }

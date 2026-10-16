@@ -7,8 +7,14 @@
   <meta name="description" content="MP3UP — музыкальный плеер для вашей коллекции MP3: без подписок, рекламы и интернета.">
   <meta name="theme-color" content="#0b0b10">
   <link rel="manifest" href="manifest.webmanifest">
+  <meta name="application-name" content="MP3UP">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MP3UP">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
@@ -62,6 +68,9 @@
   <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></symbol>
   <symbol id="i-next-up" viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></symbol>
+  <symbol id="i-plus-square" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
 </svg>
 
@@ -111,6 +120,7 @@
         <kbd>/</kbd>
       </label>
       <div class="top-actions">
+        <button class="btn btn-ghost install-btn" data-act="install" title="Установить MP3UP как приложение" hidden><svg class="ic"><use href="#i-download"/></svg><span>Установить</span></button>
         <button class="btn btn-primary" data-act="add-music" title="Добавить MP3 с устройства"><svg class="ic"><use href="#i-upload"/></svg><span>Добавить музыку</span></button>
         <button class="icon-btn round" data-act="theme" title="Сменить тему" aria-label="Сменить тему"><svg class="ic"><use href="#i-sun"/></svg></button>
         <button class="icon-btn round hide-sm" data-act="help" title="Подсказки и горячие клавиши" aria-label="Подсказки"><svg class="ic"><use href="#i-keyboard"/></svg></button>

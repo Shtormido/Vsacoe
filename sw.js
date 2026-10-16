@@ -1,6 +1,7 @@
 /* MP3UP — офлайн-режим: сначала сеть, при её отсутствии — кэш */
-const CACHE = 'mp3up-v1';
-const ASSETS = ['./', 'index.html', 'css/style.css', 'js/db.js', 'js/tags.js', 'js/app.js', 'icons/icon.svg', 'manifest.webmanifest'];
+const CACHE = 'mp3up-v2';
+const ASSETS = ['./', 'index.html', 'css/style.css', 'js/db.js', 'js/tags.js', 'js/app.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
+  'icons/icon-maskable-192.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

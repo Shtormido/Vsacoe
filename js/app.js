@@ -374,18 +374,19 @@
   let importing = false;
   async function importFiles(files) {
     files = [...files].filter((f) => f && (AUDIO_RE.test(f.name) || (f.type || '').startsWith('audio/')));
-    if (!files.length) { toast('Аудиофайлы не найдены. Подойдут MP3, M4A, FLAC, OGG, WAV', 'warn', 4500); return; }
-    if (importing) { toast('Подождите, предыдущие файлы ещё добавляются', 'info'); return; }
+    if (!files.length) { toast('Аудиофайлы не найдены. Подойдут MP3, M4A, FLAC, OGG, WAV', 'warn', 4500); return []; }
+    if (importing) { toast('Подождите, предыдущие файлы ещё добавляются', 'info'); return []; }
     importing = true;
     navigator.storage?.persist?.().catch(() => {});
-    const known = new Set(allTracks().map((t) => t.fileKey));
+    const known = new Map(allTracks().map((t) => [t.fileKey, t.id]));
+    const ids = [];
     const base = Date.now();
     let added = 0, skipped = 0, failed = 0;
     const progress = files.length > 1 ? toast(`Добавляем музыку… 0 из ${files.length}`, 'load', 0) : null;
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const fileKey = `${f.name}|${f.size}`;
-      if (known.has(fileKey)) { skipped++; continue; }
+      if (known.has(fileKey)) { skipped++; ids.push(known.get(fileKey)); continue; }
       try {
         const tags = await Tags.parse(f);
         const fromName = parseFileName(f.name);
@@ -409,7 +410,8 @@
         await DB.put('files', { id: t.id, blob: f });
         await DB.put('tracks', t);
         S.tracks.set(t.id, t);
-        known.add(fileKey);
+        known.set(fileKey, t.id);
+        ids.push(t.id);
         added++;
       } catch (e) {
         console.error('Не удалось добавить', f.name, e);
@@ -424,6 +426,7 @@
     else toast('Эти треки уже есть в медиатеке', 'info');
     if (failed && added) toast(`Не удалось добавить файлов: ${failed}`, 'warn', 4000);
     renderAll();
+    return ids;
   }
 
   async function filesFromDrop(dt) {
@@ -1182,9 +1185,69 @@
         <li>${ic('play')}<span><b>Нажмите на трек</b> — он заиграет. Правый клик или «⋯» — все действия с треком.</span></li>
         <li>${ic('wave')}<span><b>«Моя волна»</b> — бесконечный поток из вашей медиатеки: любимое звучит чаще.</span></li>
         <li>${ic('heart')}<span><b>Ставьте ♥</b>, чтобы собрать «Любимые треки», и создавайте свои плейлисты.</span></li>
+        <li>${ic('download')}<span><b>Установите MP3UP</b> кнопкой «Установить» вверху — он будет запускаться со значка, как обычное приложение.</span></li>
       </ul>
       <h3>Горячие клавиши</h3>
       <div class="keys">${keys.map(([k, v]) => `<kbd>${k}</kbd><span>${v}</span>`).join('')}</div>`, { cls: 'wide' });
+    m.el.addEventListener('click', (e) => { if (e.target.closest('[data-m="close"]')) m.close(); });
+  }
+
+  /* ---------- Установка как приложение ---------- */
+  let installPrompt = null;
+  const UA = navigator.userAgent;
+  const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = () => /android/i.test(UA);
+
+  function updateInstallUI() {
+    $$('[data-act="install"]').forEach((b) => { b.hidden = isStandalone(); });
+  }
+
+  async function installApp() {
+    if (installPrompt) {
+      const prompt = installPrompt;
+      installPrompt = null;
+      prompt.prompt();
+      const choice = await prompt.userChoice.catch(() => null);
+      if (choice?.outcome !== 'accepted') installPrompt = prompt;
+      return;
+    }
+    openInstallHelp();
+  }
+
+  function openInstallHelp() {
+    const step = (icon, html) => `<li>${ic(icon)}<span>${html}</span></li>`;
+    let body;
+    if (location.protocol === 'file:') {
+      body = `<p class="m-text">Сейчас плеер открыт как файл с диска — в таком режиме браузер не разрешает установку.</p>
+        <ul class="help-tips">
+          ${step('download', 'Откройте MP3UP <b>по ссылке на сайт</b> — или запустите из папки плеера <b>start.bat</b> (Windows) либо <b>start.sh</b> (macOS, Linux).')}
+          ${step('plus-square', 'В открывшемся окне нажмите кнопку <b>«Установить»</b> вверху.')}
+        </ul>`;
+    } else if (isIOS()) {
+      body = `<ul class="help-tips">
+          ${step('share', 'Откройте эту страницу в <b>Safari</b> и нажмите кнопку <b>«Поделиться»</b> внизу экрана.')}
+          ${step('plus-square', 'Прокрутите список и выберите <b>«На экран „Домой“»</b>.')}
+          ${step('check', 'Нажмите <b>«Добавить»</b> — значок MP3UP появится на главном экране.')}
+        </ul>
+        <p class="m-text">На iPhone у установленного приложения своя медиатека — музыку нужно будет добавить уже в нём.</p>`;
+    } else if (/firefox/i.test(UA) && !isAndroid()) {
+      body = `<p class="m-text">Firefox на компьютере не умеет устанавливать веб‑приложения. Откройте эту страницу в <b>Chrome</b>, <b>Edge</b> или <b>Яндекс Браузере</b> и нажмите «Установить».</p>`;
+    } else if (isAndroid()) {
+      body = `<ul class="help-tips">
+          ${step('more', 'Откройте меню браузера <b>⋮</b> (справа вверху).')}
+          ${step('plus-square', 'Выберите <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b>.')}
+        </ul>`;
+    } else {
+      body = `<ul class="help-tips">
+          ${step('download', 'Нажмите значок установки <b>справа в адресной строке</b> браузера.')}
+          ${step('more', 'Или откройте меню <b>⋮</b> → <b>«Установить MP3UP»</b> (в Chrome — в разделе «Трансляция, сохранение и отправка»).')}
+        </ul>`;
+    }
+    const m = openModal(`
+      <div class="modal-head"><h3>Установить MP3UP</h3><button class="icon-btn round" data-m="close" aria-label="Закрыть">${ic('close')}</button></div>
+      ${body}
+      <p class="install-note">После установки MP3UP открывается со значка на рабочем столе или главном экране — в своём окне, как обычное приложение, и работает без интернета.</p>`);
     m.el.addEventListener('click', (e) => { if (e.target.closest('[data-m="close"]')) m.close(); });
   }
 
@@ -1490,6 +1553,12 @@
   /* ---------- Отрисовка ---------- */
   function render() {
     const v = parseHash();
+    if (v.name === 'wave') { // ярлык «Моя волна» у установленного приложения
+      history.replaceState(null, '', '#/home');
+      setTimeout(startWave, 0);
+      render();
+      return;
+    }
     const changed = !S.view || v.name !== S.view.name || v.param !== S.view.param;
     S.view = v;
     lists = new Map();
@@ -1602,6 +1671,7 @@
           case 'queue-clear': clearUpcoming(); return;
           case 'theme': applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); return;
           case 'help': openHelp(); return;
+          case 'install': installApp(); return;
           case 'back': history.back(); return;
           case 'forward': history.forward(); return;
           case 'np-artist': { const tr = S.tracks.get(S.current); if (tr) { setNp(false); go('artist', artistOf(tr)); } return; }
@@ -1823,6 +1893,26 @@
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+
+    // Установка как приложение
+    updateInstallUI();
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; updateInstallUI(); });
+    window.addEventListener('appinstalled', () => {
+      installPrompt = null;
+      updateInstallUI();
+      toast('MP3UP установлен! Его значок — на рабочем столе и в списке приложений', 'ok', 6000);
+    });
+    matchMedia('(display-mode: standalone)').addEventListener?.('change', updateInstallUI);
+
+    // «Открыть с помощью MP3UP» для аудиофайлов (установленное приложение на компьютере)
+    if ('launchQueue' in window) {
+      window.launchQueue.setConsumer(async (params) => {
+        if (!params.files || !params.files.length) return;
+        const files = (await Promise.all(params.files.map((h) => h.getFile().catch(() => null)))).filter(Boolean);
+        const ids = await importFiles(files);
+        if (ids.length) playIds(ids, 0, 'Открытые файлы');
+      });
     }
   }
 
