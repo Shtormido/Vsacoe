@@ -190,9 +190,10 @@ internal sealed partial class MainWindow
         stack.Children.Add(Ui.Row("Способ встраивания в рабочий стол", Ui.Combo(new[]
         {
             ("Автоматически (рекомендуется)", "auto"),
-            ("1 — перенос окна в рабочий стол", nameof(EmbedMethod.Reparent)),
+            ("1 — окно-контейнер", nameof(EmbedMethod.Container)),
             ("2 — дочернее окно рабочего стола", nameof(EmbedMethod.ChildWindow)),
-            ("3 — внутри слоя фона (Windows 11 24H2+)", nameof(EmbedMethod.InsideWorker)),
+            ("3 — перенос окна в рабочий стол", nameof(EmbedMethod.Reparent)),
+            ("4 — внутри слоя фона (Windows 11 24H2+)", nameof(EmbedMethod.InsideWorker)),
         }, S.DesktopMethod, v =>
         {
             S.DesktopMethod = v;
@@ -223,7 +224,7 @@ internal sealed partial class MainWindow
             S.AudioReactive = v;
             S.Save();
             app.UpdatePauseState();
-        }, "Обои «слышат», что играет на компьютере: эквалайзер, пульсация анимаций, аудио-обои Wallpaper Engine. Микрофон не используется."));
+        }, "Обои «слышат», что играет на компьютере: эквалайзер, пульсация анимаций и веб-обоев. Микрофон не используется."));
         stack.Children.Add(Ui.ToggleRow("Интерактивные обои", S.Interactive, v =>
         {
             S.Interactive = v;
@@ -253,6 +254,7 @@ internal sealed partial class MainWindow
         }));
         system.Children.Add(Ui.Button("Диагностика рабочего стола", () =>
             Process.Start(new ProcessStartInfo(app.WriteDiagnostics()) { UseShellExecute = true })));
+        system.Children.Add(Ui.Button("Скопировать диагностику", CopyDiagnostics));
         system.Children.Add(Ui.Button("Проверить обои на рабочем столе", () =>
         {
             app.Wallpapers.Recheck();

@@ -84,9 +84,18 @@ internal sealed partial class MainWindow : Window
         if (nav.SelectedIndex == 0) RefreshCards();
     });
 
+    bool warningShown;
+
     void OnWallpapersChanged() => Dispatcher.BeginInvoke(() =>
     {
-        if (nav.SelectedIndex == 0) RefreshCards();
+        bool warn = app.Wallpapers.EmbedStatus.Contains("НЕ видны", StringComparison.Ordinal);
+        if (nav.SelectedIndex == 0)
+        {
+            // Предупреждение появилось или пропало — пересобираем страницу, иначе только карточки.
+            if (warn != warningShown) ShowPage(0);
+            else RefreshCards();
+        }
+        warningShown = warn;
         UpdateStatus();
     });
 
@@ -193,6 +202,24 @@ internal sealed partial class MainWindow : Window
 
         var head = new StackPanel();
         head.Children.Add(Ui.Title("Библиотека"));
+        if (app.Wallpapers.EmbedStatus.Contains("НЕ видны", StringComparison.Ordinal))
+        {
+            // Заметное предупреждение: без него пользователь видит пустой рабочий стол и не знает почему.
+            var warn = new DockPanel();
+            var copy = Ui.Button("Скопировать диагностику", CopyDiagnostics, accent: true);
+            DockPanel.SetDock(copy, Dock.Right);
+            warn.Children.Add(copy);
+            warn.Children.Add(new TextBlock
+            {
+                Text = "Обои не видны на рабочем столе ни одним способом. Нажмите «Скопировать диагностику» и вставьте текст разработчику.",
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 12, 0),
+            });
+            var card = Ui.Card(warn);
+            card.Background = new SolidColorBrush(Color.FromArgb(60, 255, 170, 0));
+            head.Children.Add(card);
+        }
         head.Children.Add(Ui.Subtitle("Щёлкните обои, чтобы открыть их настройки, двойной щелчок — поставить. " +
                                       "Видео, GIF, картинки и папки с веб-обоями можно просто перетащить в это окно."));
         Grid.SetColumnSpan(head, 2);
@@ -208,7 +235,7 @@ internal sealed partial class MainWindow : Window
         toolbar.Children.Add(Ui.Button("+ Файл…", AddFiles, accent: true));
         toolbar.Children.Add(Ui.Button("+ Веб-обои (папка)…", AddWebFolder));
         toolbar.Children.Add(Ui.Button("+ Сайт…", AddUrl));
-        toolbar.Children.Add(Ui.Button("Импорт из Wallpaper Engine", ImportWallpaperEngine));
+        toolbar.Children.Add(SourcesButton());
         Grid.SetRow(toolbar, 1);
         Grid.SetColumnSpan(toolbar, 2);
         grid.Children.Add(toolbar);
@@ -221,7 +248,7 @@ internal sealed partial class MainWindow : Window
         var filter = Ui.Combo(new[]
         {
             ("Все типы", ""), ("Анимации", WallpaperType.Scene), ("Видео", WallpaperType.Video), ("Веб и сайты", WallpaperType.Web),
-            ("GIF", WallpaperType.Gif), ("Картинки", WallpaperType.Image), ("Из Wallpaper Engine", "we"),
+            ("GIF", WallpaperType.Gif), ("Картинки", WallpaperType.Image), ("Встроенные", "builtin"),
         }, typeFilter, v => { typeFilter = v; RefreshCards(); }, 180);
         filter.Margin = new Thickness(0, 0, 8, 8);
         filters.Children.Add(filter);
@@ -263,7 +290,7 @@ internal sealed partial class MainWindow : Window
     {
         var q = search.Text.Trim();
         return Lib.Items.Where(i =>
-            (typeFilter == "" || (typeFilter == "we" ? i.Origin == "wallpaperengine"
+            (typeFilter == "" || (typeFilter == "builtin" ? i.IsBuiltIn
                 : typeFilter == WallpaperType.Web ? i.Type is WallpaperType.Web or WallpaperType.Url
                 : i.Type == typeFilter)) &&
             (q.Length == 0 || i.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)));
@@ -318,7 +345,7 @@ internal sealed partial class MainWindow : Window
         var title = new TextBlock { Text = item.Title, TextTrimming = TextTrimming.CharacterEllipsis, FontWeight = FontWeights.SemiBold, ToolTip = item.Title };
         var kind = new TextBlock
         {
-            Text = WallpaperType.Title(item.Type) + (item.Origin == "wallpaperengine" ? " · Wallpaper Engine" : "") + (S.Playlist.Contains(item.Id) ? " · в плейлисте" : ""),
+            Text = WallpaperType.Title(item.Type) + (item.IsBuiltIn ? " · встроенные" : "") + (S.Playlist.Contains(item.Id) ? " · в плейлисте" : ""),
             Opacity = 0.65,
             FontSize = 12,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -451,7 +478,7 @@ internal sealed partial class MainWindow : Window
 
         string origin = item.Origin switch
         {
-            "builtin" => "встроенная анимация",
+            "builtin" => item.Type == WallpaperType.Web ? "встроенные веб-обои" : "встроенная анимация",
             "wallpaperengine" => "из Wallpaper Engine" + (item.WorkshopId != null ? $" (#{item.WorkshopId})" : ""),
             _ => "добавлено вами",
         };
@@ -719,30 +746,39 @@ internal sealed partial class MainWindow : Window
         Added(Lib.AddUrl(url), "сайт");
     }
 
-    async void ImportWallpaperEngine()
+    void CopyDiagnostics()
     {
-        Mouse.OverrideCursor = Cursors.Wait;
-        WallpaperEngineImport.Result result;
-        try
-        {
-            var scan = await Task.Run(WallpaperEngineImport.Scan);
-            result = WallpaperEngineImport.Merge(Lib, scan);
-        }
-        finally
-        {
-            Mouse.OverrideCursor = null;
-        }
+        Clipboard.SetText(app.DiagnosticsText());
+        MessageBox.Show(this, "Диагностика скопирована. Вставьте её в чат (Ctrl+V).", "Живые обои", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
 
-        string message = result.Folders == 0
-            ? "Не нашёл обоев Wallpaper Engine. Программа ищет их в папках Steam (steamapps\\workshop\\content\\431960). " +
-              "Если Steam стоит в необычном месте, добавьте папку обоев кнопкой «+ Веб-обои (папка)»."
-            : $"Найдено обоев Wallpaper Engine: {result.Folders}.\n\n" +
-              $"Добавлено: {result.Added}\nУже были в библиотеке: {result.Skipped}\n" +
-              $"Не поддерживаются: {result.Unsupported} — это обои типа «сцена» и «приложение», " +
-              "они работают только внутри самого Wallpaper Engine. Видео и веб-обои переносятся полностью, вместе с настройками.";
-        MessageBox.Show(this, message, "Импорт из Wallpaper Engine", MessageBoxButton.OK, MessageBoxImage.Information);
-        typeFilter = result.Added > 0 ? "we" : typeFilter;
-        if (nav.SelectedIndex == 0) ShowPage(0);
+    /// <summary>Кнопка со списком сайтов, где бесплатно и законно скачиваются живые обои.</summary>
+    Button SourcesButton()
+    {
+        var button = Ui.Button("Где взять обои ▾", () => { });
+        var menu = new ContextMenu();
+        foreach (var (title, url) in new[]
+        {
+            ("Pexels — бесплатные видео", "https://www.pexels.com/videos/"),
+            ("Pixabay — бесплатные видео", "https://pixabay.com/videos/"),
+            ("Mixkit — бесплатные видео", "https://mixkit.co/free-stock-video/"),
+            ("Coverr — бесплатные видео", "https://coverr.co/"),
+            ("Shadertoy — шейдеры (ставить через «+ Сайт», ссылка вида …/embed/…)", "https://www.shadertoy.com/"),
+        })
+        {
+            menu.Items.Add(MenuItem(title, () =>
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })));
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "Скачанное видео перетащите в это окно или нажмите «+ Файл».", IsEnabled = false });
+        button.ContextMenu = menu;
+        button.Click += (_, _) =>
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        };
+        return button;
     }
 
     void OnDrop(object sender, DragEventArgs e)

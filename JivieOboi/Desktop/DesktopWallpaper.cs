@@ -36,9 +36,15 @@ internal sealed record WallpaperSlot(string Key, Rect Bounds, bool Primary, stri
 /// </summary>
 internal enum EmbedMethod
 {
+    /// <summary>
+    /// Простое системное окно-контейнер в рабочем столе (в 24H2+ — layered, непрозрачное),
+    /// а WPF рисует внутри него обычным дочерним окном. Главный способ: WPF не умеет
+    /// рисовать в окно, которому layered-прозрачность задали через SetLayeredWindowAttributes.
+    /// </summary>
+    Container,
     /// <summary>Как в Lively: обычное окно, затем стиль WS_CHILD (+ layered) и SetParent в рабочий стол.</summary>
     Reparent,
-    /// <summary>Сразу создаётся дочернее окно рабочего стола (HwndSource с родителем).</summary>
+    /// <summary>Сразу создаётся дочернее окно рабочего стола (HwndSource с родителем; в 24H2+ — с попиксельной прозрачностью WPF).</summary>
     ChildWindow,
     /// <summary>Только Windows 11 24H2+: дочернее окно внутри нижнего WorkerW (без layered).</summary>
     InsideWorker,
@@ -52,6 +58,7 @@ internal sealed class DesktopWallpaper : IDisposable
 
     readonly Window? window;
     readonly HwndSource? source;
+    readonly ContainerWindow? container;
     readonly Border probe = new() { Background = new SolidColorBrush(ProbeColor), Visibility = Visibility.Collapsed };
 
     public WallpaperView View { get; }
@@ -72,7 +79,25 @@ internal sealed class DesktopWallpaper : IDisposable
         bool layered = target.Raised && method != EmbedMethod.InsideWorker;
         var b = slot.Bounds;
 
-        if (method == EmbedMethod.ChildWindow)
+        if (method == EmbedMethod.Container)
+        {
+            var origin = new Native.POINT { X = b.X, Y = b.Y };
+            Native.ScreenToClient(parent, ref origin);
+            container = new ContainerWindow(parent, origin.X, origin.Y, b.Width, b.Height, layered);
+            Handle = container.Handle;
+            // Внутри контейнера WPF — обычное (не layered) дочернее окно с аппаратной отрисовкой.
+            source = new HwndSource(new HwndSourceParameters("JivieOboiWallpaperContent", b.Width, b.Height)
+            {
+                ParentWindow = container.Handle,
+                PositionX = 0,
+                PositionY = 0,
+                WindowStyle = Native.WS_CHILD | Native.WS_VISIBLE | Native.WS_CLIPSIBLINGS | Native.WS_CLIPCHILDREN,
+                ExtendedWindowStyle = Native.WS_EX_NOACTIVATE,
+            });
+            if (source.CompositionTarget != null) source.CompositionTarget.BackgroundColor = Colors.Black;
+            source.RootVisual = root;
+        }
+        else if (method == EmbedMethod.ChildWindow)
         {
             var origin = new Native.POINT { X = b.X, Y = b.Y };
             Native.ScreenToClient(parent, ref origin);
@@ -82,10 +107,11 @@ internal sealed class DesktopWallpaper : IDisposable
                 PositionX = origin.X,
                 PositionY = origin.Y,
                 WindowStyle = Native.WS_CHILD | Native.WS_VISIBLE | Native.WS_CLIPSIBLINGS | Native.WS_CLIPCHILDREN,
-                ExtendedWindowStyle = Native.WS_EX_NOACTIVATE | (layered ? Native.WS_EX_LAYERED : 0),
+                ExtendedWindowStyle = Native.WS_EX_NOACTIVATE,
+                // 24H2+: layered-окно, которое WPF рисует сам (UpdateLayeredWindow, без SetLayeredWindowAttributes).
+                UsesPerPixelOpacity = layered,
             });
             Handle = source.Handle;
-            if (layered) Native.SetLayeredWindowAttributes(Handle, 0, 255, Native.LWA_ALPHA);
             if (source.CompositionTarget != null) source.CompositionTarget.BackgroundColor = Colors.Black;
             source.RootVisual = root;
         }
@@ -106,15 +132,14 @@ internal sealed class DesktopWallpaper : IDisposable
                 Width = 64,
                 Height = 64,
                 Content = root,
+                // 24H2+: layered-окно, которое WPF рисует сам (флаг ставится до SetParent).
+                AllowsTransparency = layered,
             };
             Handle = new WindowInteropHelper(window).EnsureHandle();
 
             long ex = Native.GetWindowLongPtr(Handle, Native.GWL_EXSTYLE).ToInt64()
                       | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE;
-            if (layered) ex |= Native.WS_EX_LAYERED;
             Native.SetWindowLongPtr(Handle, Native.GWL_EXSTYLE, new IntPtr(ex));
-            // Layered нужно включить ДО SetParent — после него флаг может не примениться.
-            if (layered) Native.SetLayeredWindowAttributes(Handle, 0, 255, Native.LWA_ALPHA);
 
             window.Show();
 
@@ -150,12 +175,46 @@ internal sealed class DesktopWallpaper : IDisposable
                 source.Dispose();
             }
             window?.Close();
+            container?.DestroyHandle();
         }
         catch (Exception ex)
         {
             // Окно могло уже исчезнуть вместе с перезапущенным Explorer.
             Log.Error("Закрытие окна обоев", ex);
         }
+    }
+}
+
+/// <summary>Пустое системное окно-контейнер для обоев (без WPF, чтобы layered-режим не мешал отрисовке).</summary>
+internal sealed class ContainerWindow : WF.NativeWindow
+{
+    const int WM_ERASEBKGND = 0x0014;
+
+    public ContainerWindow(IntPtr parent, int x, int y, int width, int height, bool layered)
+    {
+        CreateHandle(new WF.CreateParams
+        {
+            Caption = "JivieOboi",
+            X = x,
+            Y = y,
+            Width = width,
+            Height = height,
+            Parent = parent,
+            Style = Native.WS_CHILD | Native.WS_VISIBLE | Native.WS_CLIPCHILDREN | Native.WS_CLIPSIBLINGS,
+            ExStyle = Native.WS_EX_NOACTIVATE | (layered ? Native.WS_EX_LAYERED : 0),
+        });
+        // Непрозрачный layered — так Windows 11 24H2+ показывает дочерние окна Progman (и так советует Microsoft).
+        if (layered) Native.SetLayeredWindowAttributes(Handle, 0, 255, Native.LWA_ALPHA);
+    }
+
+    protected override void WndProc(ref WF.Message m)
+    {
+        if (m.Msg == WM_ERASEBKGND)
+        {
+            m.Result = new IntPtr(1); // фон рисует WPF внутри
+            return;
+        }
+        base.WndProc(ref m);
     }
 }
 

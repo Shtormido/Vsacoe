@@ -4,112 +4,15 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
-using Microsoft.Win32;
 
 namespace JivieOboi;
 
 /// <summary>
-/// Импорт обоев, уже скачанных в Wallpaper Engine (Steam Workshop, приложение 431960).
-/// Поддерживаются типы «video» и «web» — их можно воспроизвести без движка Wallpaper Engine.
-/// Файлы не копируются: обои берутся прямо из папки Steam.
+/// Папка веб-обоев в распространённом формате project.json (его используют Wallpaper Engine и многие
+/// бесплатные обои в интернете): название, превью, настраиваемые свойства. Поддерживаются типы «video» и «web».
 /// </summary>
-internal static class WallpaperEngineImport
+internal static class WebProject
 {
-    public const string AppId = "431960";
-
-    public sealed record Result(int Added, int Skipped, int Unsupported, int Folders);
-
-    public static IEnumerable<string> SteamLibraries()
-    {
-        var roots = new List<string>();
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
-            if (key?.GetValue("SteamPath") is string steam) roots.Add(steam.Replace('/', '\\'));
-        }
-        catch
-        {
-            // Steam не установлен.
-        }
-        roots.Add(@"C:\Program Files (x86)\Steam");
-
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var root in roots.Where(Directory.Exists))
-        {
-            result.Add(root);
-            var vdf = Path.Combine(root, "steamapps", "libraryfolders.vdf");
-            if (!File.Exists(vdf)) continue;
-            foreach (Match m in Regex.Matches(File.ReadAllText(vdf), "\"path\"\\s+\"([^\"]+)\""))
-            {
-                var path = m.Groups[1].Value.Replace(@"\\", @"\");
-                if (Directory.Exists(path)) result.Add(path);
-            }
-        }
-        return result;
-    }
-
-    /// <summary>Папки, где Wallpaper Engine хранит обои.</summary>
-    public static IEnumerable<string> ProjectFolders()
-    {
-        foreach (var lib in SteamLibraries())
-        {
-            var dirs = new[]
-            {
-                Path.Combine(lib, "steamapps", "workshop", "content", AppId),
-                Path.Combine(lib, "steamapps", "common", "wallpaper_engine", "projects", "myprojects"),
-                Path.Combine(lib, "steamapps", "common", "wallpaper_engine", "projects", "defaultprojects"),
-            };
-            foreach (var dir in dirs.Where(Directory.Exists))
-                foreach (var project in Directory.EnumerateDirectories(dir))
-                    if (File.Exists(Path.Combine(project, "project.json")))
-                        yield return project;
-        }
-    }
-
-    public sealed record ScanResult(List<WallpaperItem> Items, int Unsupported, int Folders);
-
-    /// <summary>Поиск обоев Wallpaper Engine на дисках (можно вызывать из фонового потока).</summary>
-    public static ScanResult Scan()
-    {
-        var items = new List<WallpaperItem>();
-        int unsupported = 0, folders = 0;
-        foreach (var folder in ProjectFolders())
-        {
-            folders++;
-            try
-            {
-                var item = FromProjectFolder(folder);
-                if (item == null) unsupported++;
-                else items.Add(item);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Импорт " + folder, ex);
-                unsupported++;
-            }
-        }
-        return new ScanResult(items, unsupported, folders);
-    }
-
-    /// <summary>Добавить найденное в библиотеку (в потоке интерфейса).</summary>
-    public static Result Merge(LibraryStore library, ScanResult scan)
-    {
-        int added = 0, skipped = 0;
-        foreach (var item in scan.Items)
-        {
-            if (library.Items.Any(i => string.Equals(i.Path, item.Path, StringComparison.OrdinalIgnoreCase)))
-            {
-                skipped++;
-                continue;
-            }
-            library.Items.Add(item);
-            added++;
-        }
-        if (added > 0) library.NotifyChanged();
-        return new Result(added, skipped, scan.Unsupported, scan.Folders);
-    }
-
     /// <summary>Читает project.json. Возвращает null для неподдерживаемых типов (scene, application).</summary>
     public static WallpaperItem? FromProjectFolder(string folder)
     {
@@ -132,8 +35,7 @@ internal static class WallpaperEngineImport
             Type = type == "video" ? WallpaperType.Video : WallpaperType.Web,
             Path = path,
             Preview = preview != null && File.Exists(Path.Combine(folder, preview)) ? Path.Combine(folder, preview) : null,
-            Origin = "wallpaperengine",
-            WorkshopId = Str(root, "workshopid") ?? Path.GetFileName(folder),
+            Origin = "user",
         };
 
         if (root.TryGetProperty("general", out var general) && general.TryGetProperty("properties", out var props)

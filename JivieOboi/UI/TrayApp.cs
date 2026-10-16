@@ -365,14 +365,38 @@ internal sealed class TrayApp
         Wallpapers.ApplyVolume();
     }
 
+    /// <summary>Всё, что нужно разработчику, чтобы понять, почему не видны обои.</summary>
+    public string DiagnosticsText()
+    {
+        var nl = Environment.NewLine;
+        var text = "Живые обои 2.0 — диагностика" + nl
+            + DesktopHost.Describe()
+            + $"Встраивание: {Wallpapers.EmbedStatus} (настройка: {Settings.DesktopMethod}, удачный: {Settings.LastGoodMethod ?? "нет"}){nl}"
+            + $"Окон обоев: {Wallpapers.Walls.Count}, мониторов: {WF.Screen.AllScreens.Length}{nl}"
+            + string.Join(nl, Wallpapers.Walls.Select(w => $"  {w.Slot.Title}: {w.View.Item.Title} ({w.View.Item.Type}), способ {w.Method}")) + nl
+            + $"WebView2: {(WebWallpaper.IsAvailable ? "есть" : "нет")}, звук: {(AudioSpectrum.Instance.IsRunning ? "захват идёт" : "выключен")}{nl}"
+            + $"Пауза: {Settings.Paused}, авто-пауза: {autoPaused}, заблокирован: {sessionLocked}{nl}";
+        try
+        {
+            var log = System.IO.Path.Combine(Settings.Dir, "error.log");
+            if (System.IO.File.Exists(log))
+            {
+                var lines = System.IO.File.ReadAllLines(log);
+                text += nl + "Последние строки error.log:" + nl + string.Join(nl, lines.Skip(Math.Max(0, lines.Length - 60)));
+            }
+        }
+        catch (Exception ex)
+        {
+            text += nl + "error.log не прочитан: " + ex.Message;
+        }
+        return text;
+    }
+
     public string WriteDiagnostics()
     {
         var path = System.IO.Path.Combine(Settings.Dir, "diagnostics.txt");
         System.IO.Directory.CreateDirectory(Settings.Dir);
-        System.IO.File.WriteAllText(path, DesktopHost.Describe()
-            + $"Окон обоев: {Wallpapers.Walls.Count}, мониторов: {WF.Screen.AllScreens.Length}{Environment.NewLine}"
-            + $"WebView2: {(WebWallpaper.IsAvailable ? "есть" : "нет")}, звук: {(AudioSpectrum.Instance.IsRunning ? "захват идёт" : "выключен")}{Environment.NewLine}"
-            + string.Join(Environment.NewLine, Wallpapers.Walls.Select(w => $"  {w.Slot.Title}: {w.View.Item.Title} ({w.View.Item.Type})")));
+        System.IO.File.WriteAllText(path, DiagnosticsText());
         return path;
     }
 

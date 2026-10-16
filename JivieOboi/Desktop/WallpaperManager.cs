@@ -128,8 +128,8 @@ internal sealed class WallpaperManager
     // ── проверка, что обои видны, и выбор способа встраивания ──
 
     static IReadOnlyList<EmbedMethod> MethodsFor(DesktopTarget t) => t.Raised
-        ? new[] { EmbedMethod.Reparent, EmbedMethod.ChildWindow, EmbedMethod.InsideWorker }
-        : new[] { EmbedMethod.Reparent, EmbedMethod.ChildWindow };
+        ? new[] { EmbedMethod.Container, EmbedMethod.ChildWindow, EmbedMethod.Reparent, EmbedMethod.InsideWorker }
+        : new[] { EmbedMethod.Container, EmbedMethod.ChildWindow, EmbedMethod.Reparent };
 
     EmbedMethod PreferredMethod(DesktopTarget t)
     {
@@ -208,6 +208,7 @@ internal sealed class WallpaperManager
 
     public static string MethodTitle(EmbedMethod m) => m switch
     {
+        EmbedMethod.Container => "окно-контейнер",
         EmbedMethod.Reparent => "перенос окна в рабочий стол",
         EmbedMethod.ChildWindow => "дочернее окно рабочего стола",
         EmbedMethod.InsideWorker => "внутри слоя фона (24H2+)",

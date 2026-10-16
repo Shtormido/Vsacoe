@@ -198,7 +198,7 @@ internal sealed class LibraryStore
         var project = System.IO.Path.Combine(folder, "project.json");
         if (File.Exists(project))
         {
-            var imported = WallpaperEngineImport.FromProjectFolder(folder);
+            var imported = WebProject.FromProjectFolder(folder);
             if (imported != null)
             {
                 Add(imported);
@@ -223,7 +223,7 @@ internal sealed class LibraryStore
 
     static void LoadProjectJson(WallpaperItem item, string folder)
     {
-        var p = WallpaperEngineImport.FromProjectFolder(folder);
+        var p = WebProject.FromProjectFolder(folder);
         if (p == null) return;
         item.Title = p.Title;
         item.Preview = p.Preview;
@@ -258,6 +258,24 @@ internal sealed class LibraryStore
             item.Scene = scene;
             item.Origin = "builtin";
             item.Properties = SceneProperties();
+            index++;
+        }
+
+        // Веб-обои на шейдерах (нужен WebView2 — в Windows 11 он встроен).
+        foreach (var e in BuiltInWeb.All)
+        {
+            var id = "builtin:web-" + e.Id;
+            var item = Find(id);
+            if (item == null)
+            {
+                item = new WallpaperItem { Id = id };
+                Items.Insert(Math.Min(index, Items.Count), item);
+            }
+            item.Title = e.Title;
+            item.Type = WallpaperType.Web;
+            item.Path = BuiltInWeb.PathFor(e);
+            item.Origin = "builtin";
+            item.Properties = BuiltInWeb.Properties(e);
             index++;
         }
     }
