@@ -87,6 +87,8 @@
   const getTrack = (id) => S.tracks.get(id) || S.remote.get(id);
   const hasTrack = (id) => S.tracks.has(id) || S.remote.has(id);
   const isRemote = (t) => !!t && !!t.source;
+  const isExt = (t) => !!t && (t.source === 'spotify' || t.source === 'youtube'); // играют во внешнем плеере
+  let ext = null; // активный внешний движок (Spotify / YouTube) или null
 
   function coverUrl(t, small) {
     if (!t) return null;
@@ -294,9 +296,27 @@
   function closeMenu() { $('#menu').classList.remove('show'); }
   const menuOpen = () => $('#menu').classList.contains('show');
 
+  function servicesMenu(t, x, y) {
+    const query = [t.artist, t.title].filter(Boolean).join(' ');
+    openMenu(x, y, [
+      { header: true, label: 'Найти в сервисе' },
+      ...serviceLinks(query).map((sv) => ({ icon: 'share', label: sv.name, action: () => window.open(sv.url, '_blank', 'noopener') })),
+    ]);
+  }
+
   function trackMenu(id, x, y, ctx = {}) {
     const t = getTrack(id);
     if (!t) return;
+    const findElsewhere = { icon: 'search', label: 'Найти в других сервисах…', action: () => { servicesMenu(t, x, y); return 'keep'; } };
+    if (isExt(t)) {
+      openMenu(x, y, [
+        { icon: 'play', label: 'Слушать', action: () => playIds([id], 0, t.title) },
+        { icon: 'share', label: `Открыть в ${SOURCES[t.source].name}`, action: () => window.open(t.permalink, '_blank', 'noopener') },
+        { icon: 'search', label: 'Ещё у исполнителя', action: () => { ON.source = t.source; go('online', t.artist || t.title); } },
+        'sep', findElsewhere,
+      ]);
+      return;
+    }
     if (!S.tracks.has(id)) { // онлайн-трек, ещё не в медиатеке
       openMenu(x, y, [
         { icon: 'play', label: 'Слушать', action: () => playIds([id], 0, t.title) },
@@ -309,6 +329,7 @@
         ...(t.iaId ? [{ icon: 'disc', label: 'Открыть альбом', action: () => go('ia', t.iaId) }] : []),
         { icon: 'search', label: 'Ещё треки исполнителя', action: () => { ON.source = t.source; go('online', artistOf(t)); } },
         { icon: 'share', label: `Открыть на ${SOURCES[t.source]?.name || 'сайте'}`, action: () => window.open(t.permalink, '_blank', 'noopener') },
+        findElsewhere,
       ]);
       return;
     }
@@ -322,6 +343,7 @@
       { icon: 'user', label: 'Перейти к исполнителю', action: () => go('artist', artistOf(t)) },
     ];
     if (t.album) items.push({ icon: 'disc', label: 'Перейти к альбому', action: () => go('album', t.album) });
+    items.push(findElsewhere);
     items.push({ icon: 'edit', label: 'Изменить название…', action: () => editTrack(id) });
     if (isRemote(t)) items.push({ icon: 'share', label: `Открыть на ${SOURCES[t.source]?.name || 'сайте'}`, action: () => window.open(t.permalink, '_blank', 'noopener') });
     if (ctx.playlistId) items.push('sep', { icon: 'close', label: 'Убрать из этого плейлиста', action: () => removeFromPlaylist(ctx.playlistId, id) });
@@ -541,6 +563,7 @@
   async function toggleLike(id) {
     const t = getTrack(id || S.current);
     if (!t) return;
+    if (isExt(t)) { toast(`Добавляйте в любимое в самом ${SOURCES[t.source].name}`, 'info'); return; }
     t.liked = !t.liked;
     t.likedAt = t.liked ? Date.now() : 0;
     if (S.tracks.has(t.id)) await DB.put('tracks', t);
@@ -732,6 +755,7 @@
 
   async function loadIndex(i, { autoplay = true, startAt = 0 } = {}) {
     if (i < 0 || i >= S.queue.length) return;
+    if (ext) deactivateExt();
     S.qi = i;
     const id = S.queue[i];
     const t = getTrack(id);
@@ -775,6 +799,13 @@
   function playIds(ids, start = 0, label = '', { key = '', wave = false, randomStart = false } = {}) {
     ids = ids.filter((id) => hasTrack(id));
     if (!ids.length) return;
+    const head = getTrack(ids[clamp(start, 0, ids.length - 1)]);
+    if (isExt(head)) {
+      const same = ids.filter((id) => getTrack(id)?.source === head.source);
+      const idx = Math.max(0, same.indexOf(head.id));
+      (head.source === 'spotify' ? Spotify : YouTube).playTracks(same, randomStart ? Math.floor(Math.random() * same.length) : idx, label, key);
+      return;
+    }
     if (randomStart) start = Math.floor(Math.random() * ids.length);
     start = clamp(start, 0, ids.length - 1);
     S.wave = wave;
@@ -793,6 +824,7 @@
   }
 
   function togglePlay() {
+    if (ext) { ext.toggle(); return; }
     if (!S.current) {
       if (S.tracks.size) startWave();
       else openFilePicker();
@@ -806,6 +838,7 @@
   }
 
   function next(auto = false) {
+    if (ext) { ext.next(); return; }
     if (!S.queue.length) return;
     if (auto && S.repeat === 'one') { audio.currentTime = 0; audio.play().catch(() => {}); return; }
     let i = S.qi + 1;
@@ -818,6 +851,7 @@
   }
 
   function prev() {
+    if (ext) { ext.prev(); return; }
     if (!S.queue.length) return;
     if (audio.currentTime > 3) { audio.currentTime = 0; return; }
     let i = S.qi - 1;
@@ -826,6 +860,7 @@
   }
 
   function seekBy(sec) {
+    if (ext) { ext.seek(ext.position() + sec); return; }
     if (!S.current || !isFinite(audio.duration)) return;
     audio.currentTime = clamp(audio.currentTime + sec, 0, audio.duration);
   }
@@ -960,12 +995,15 @@
     }
     if (S.ctxKey === spec && S.current) { togglePlay(); return; }
     if (spec.startsWith('ia:')) { playArchive(spec.slice(3)); return; }
+    if (spec.startsWith('sp-pl:')) { Spotify.playPlaylist(spec.slice(6)); return; }
+    if (spec.startsWith('yt-list:')) { YouTube.playList(spec.slice(8)); return; }
     const r = resolveSpec(spec);
     if (!r || !r.ids.length) { toast('Здесь пока нет треков', 'info'); return; }
     playIds(r.ids, 0, r.label, { key: spec });
   }
   function handleShuffleSpec(spec) {
     if (spec.startsWith('ia:')) { playArchive(spec.slice(3), { shuffle: true }); return; }
+    if (spec.startsWith('sp-pl:')) { Spotify.playPlaylist(spec.slice(6), { shuffle: true }); return; }
     const r = resolveSpec(spec);
     if (!r || !r.ids.length) return;
     if (!S.shuffle) { S.shuffle = true; LS.set('shuffle', true); updateControls(); }
@@ -1002,7 +1040,7 @@
   function setIcon(btn, name) { btn.querySelector('use')?.setAttribute('href', '#i-' + name); }
 
   function updatePlayState() {
-    const playing = !audio.paused && !!S.current;
+    const playing = ext ? ext.playing() : (!audio.paused && !!S.current);
     document.body.classList.toggle('is-playing', playing);
     $('#np').classList.toggle('playing', playing);
     $$('[data-ctl="play"]').forEach((b) => { setIcon(b, playing ? 'pause' : 'play'); b.setAttribute('aria-label', playing ? 'Пауза' : 'Слушать'); });
@@ -1068,6 +1106,7 @@
   }
   function syncAudioSettings() {
     for (const el of [audioMain, audioRaw]) if (el !== audio) { el.volume = audio.volume; el.muted = audio.muted; }
+    ext?.setVolume(audio.muted ? 0 : audio.volume);
   }
   function toggleMute() {
     if (audio.muted || audio.volume === 0) {
@@ -1129,8 +1168,8 @@
   let vdata = null;
 
   function progressTick() {
-    const d = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : (getTrack(S.current)?.duration || 0);
-    const c = audio.currentTime || 0;
+    const d = ext ? ext.duration() : isFinite(audio.duration) && audio.duration > 0 ? audio.duration : (getTrack(S.current)?.duration || 0);
+    const c = ext ? ext.position() : (audio.currentTime || 0);
     const key = Math.round(c * 4) + d;
     if (!seeking && key !== lastProgress) {
       lastProgress = key;
@@ -1181,9 +1220,13 @@
   function notifyNative(force) {
     if (!Native) return;
     const t = getTrack(S.current);
-    const playing = !!t && !audio.paused;
-    const pos = Math.round((audio.currentTime || 0) * 1000);
-    const dur = Math.round((isFinite(audio.duration) ? audio.duration : (t?.duration || 0)) * 1000);
+    const playing = ext ? ext.playing() : (!!t && !audio.paused);
+    const pos = Math.round((ext ? ext.position() : (audio.currentTime || 0)) * 1000);
+    const dur = Math.round((ext ? ext.duration() : isFinite(audio.duration) ? audio.duration : (t?.duration || 0)) * 1000);
+    if (ext?.name === 'spotify') { // у Spotify своё уведомление
+      if (nativeKey !== 'spotify') { nativeKey = 'spotify'; try { Native.playback('', '', '', false, false, 0, 0); } catch { /* мост недоступен */ } }
+      return;
+    }
     const key = [t?.id, t?.title, t?.artist, playing, dur].join('|');
     if (!force && key === nativeKey) return;
     nativeKey = key;
@@ -1209,12 +1252,12 @@
     if (nativeArtId === t.id) try { Native.artwork(data); } catch { /* мост недоступен */ }
   }
   window.mp3upControl = (cmd) => {
-    if (cmd === 'play') { if (S.current) { ensureAudioGraph(); if (!audio.src) loadIndex(S.qi); else audio.play().catch(() => {}); } }
-    else if (cmd === 'pause') audio.pause();
+    if (cmd === 'play') doPlay();
+    else if (cmd === 'pause') doPause();
     else if (cmd === 'toggle') togglePlay();
     else if (cmd === 'next') next();
     else if (cmd === 'prev') prev();
-    else if (cmd.startsWith('seek:')) { const ms = +cmd.slice(5); if (S.current && isFinite(ms)) { audio.currentTime = ms / 1000; notifyNative(true); } }
+    else if (cmd.startsWith('seek:')) { const ms = +cmd.slice(5); if (isFinite(ms)) { doSeek(ms / 1000); notifyNative(true); } }
   };
   window.mp3upBack = () => {
     if (menuOpen()) { closeMenu(); return true; }
@@ -1264,6 +1307,10 @@
   function renderQueue() {
     if (!S.queueOpen) return;
     const body = $('#queueBody');
+    if (ext) {
+      body.innerHTML = `<div class="q-empty">${ic('queue')}<p>Очередью управляет ${ext.label}</p><span>${ext.name === 'spotify' ? 'Следующие треки видны в приложении Spotify.' : 'Видео идут по порядку из выбранного списка.'}</span></div>`;
+      return;
+    }
     const cur = getTrack(S.queue[S.qi]);
     if (!S.queue.length || !cur) {
       body.innerHTML = `<div class="q-empty">${ic('queue')}<p>Очередь пуста</p><span>Включите любой трек, альбом или «Мою волну» — здесь появится то, что будет играть дальше.</span></div>`;
@@ -1296,7 +1343,7 @@
           <div class="eq-slot"><input type="range" class="range always" min="-12" max="12" step="1" data-eq="${i}" aria-label="${EQ_LABELS[i]}"></div>
           <span>${EQ_LABELS[i]}</span>
         </div>`).join('')}</div>
-      <p class="eq-note">${!actx ? 'Эквалайзер недоступен в этом браузере' : audio === audioRaw ? 'Для треков Jamendo эквалайзер не действует: их сервер не разрешает обработку звука' : 'Двигайте ползунки — изменения слышны сразу'}</p>`, { cls: 'wide' });
+      <p class="eq-note">${ext ? `Для ${ext.label} эквалайзер не действует — звук идёт через их плеер` : !actx ? 'Эквалайзер недоступен в этом браузере' : audio === audioRaw ? 'Для треков Jamendo эквалайзер не действует: их сервер не разрешает обработку звука' : 'Двигайте ползунки — изменения слышны сразу'}</p>`, { cls: 'wide' });
     const sync = () => {
       const pn = presetName();
       $$('[data-preset]', m.el).forEach((b) => b.classList.toggle('active', b.dataset.preset === pn));
@@ -1431,8 +1478,8 @@
         <span class="num"><span class="n">${numbers ? i + 1 : (t.trackNo || i + 1)}</span><button class="row-play" data-act="row-play" aria-label="Слушать">${ic('play')}</button><span class="bars"><i></i><i></i><i></i></span></span>
         <span class="ti">${coverHTML(t, 'sm')}<span class="tt"><span class="t1">${esc(t.title)}${isRemote(t) ? ic('globe', 'src') : ''}</span><a class="t2" href="${S.tracks.has(t.id) ? '#/artist/' : '#/online/'}${encodeURIComponent(artistOf(t))}">${esc(artistOf(t))}</a></span></span>
         <span class="al">${t.album ? `<a href="#/album/${encodeURIComponent(t.album)}">${esc(t.album)}</a>` : `<span class="dim">${isRemote(t) ? esc(t.genre || SOURCES[t.source]?.name || '') : '—'}</span>`}</span>
-        <button class="icon-btn like ${t.liked ? 'on' : ''}" data-act="like" data-like="${esc(t.id)}" aria-label="Нравится" title="Нравится">${ic(t.liked ? 'heart-fill' : 'heart')}</button>
-        <span class="dur">${fmt(t.duration)}</span>
+        ${isExt(t) ? '<span></span>' : `<button class="icon-btn like ${t.liked ? 'on' : ''}" data-act="like" data-like="${esc(t.id)}" aria-label="Нравится" title="Нравится">${ic(t.liked ? 'heart-fill' : 'heart')}</button>`}
+        <span class="dur">${t.duration ? fmt(t.duration) : '—'}</span>
         <button class="icon-btn more" data-act="more" aria-label="Ещё" title="Ещё">${ic('more')}</button>
       </div>`).join('')}
     </div>`;
@@ -1658,6 +1705,16 @@
   })();
 
   const SOURCES = {
+    spotify: {
+      name: 'Spotify', url: 'https://open.spotify.com', placeholder: 'Трек или исполнитель в Spotify', ext: true,
+      note: 'ваша подписка Spotify, MP3UP работает через официальный API',
+      genres: [['playlists', 'Мои плейлисты'], ['liked', 'Любимые треки']],
+    },
+    youtube: {
+      name: 'YouTube', url: 'https://www.youtube.com', placeholder: 'Поиск на YouTube или ссылка на видео / плейлист', ext: true,
+      note: 'видео играет во встроенном плеере YouTube — так требуют правила сервиса',
+      genres: [['RU', 'Россия'], ['US', 'США'], ['GB', 'Великобритания'], ['KR', 'Корея'], ['JP', 'Япония'], ['DE', 'Германия']],
+    },
     audius: {
       name: 'Audius', url: 'https://audius.co', placeholder: 'Трек или исполнитель',
       note: 'артисты сами выкладывают туда треки для бесплатного прослушивания',
@@ -1684,24 +1741,28 @@
     results: new Map(),
   };
   const ONLINE_TTL = 15 * 60e3;
-  const curGenre = (src = ON.source) => ON.genre[src] || '';
+  const curGenre = (src = ON.source) => ON.genre[src] || SOURCES[src].genres[0][0];
   const onlineKey = (q, src = ON.source, genre = curGenre(src)) => `${src}|` + (q ? 'q:' + norm(q) : 'g:' + genre);
   const onlineQuery = () => (S.view?.name === 'online' ? (S.view.param || '').trim() : '');
 
   async function loadOnline(q, src = ON.source, genre = curGenre(src)) {
     if (src === 'jamendo' && !Jamendo.hasKey()) return;
+    if (src === 'spotify' && !Spotify.loggedIn()) return;
+    if (src === 'youtube' && !YouTube.hasKey() && !YouTube.parseLink(q)) return;
     const key = onlineKey(q, src, genre);
     if (ON.results.get(key)?.loading) return;
     ON.results.set(key, { loading: true });
     try {
       let res;
       if (src === 'archive') res = { items: await Archive.search(q, genre) };
+      else if (src === 'spotify') res = q ? { tracks: await Spotify.search(q) } : genre === 'liked' ? { tracks: await Spotify.liked() } : { items: await Spotify.playlists(), itemKind: 'sp' };
+      else if (src === 'youtube') res = await YouTube.query(q, genre);
       else if (src === 'jamendo') res = { tracks: q ? await Jamendo.search(q) : await Jamendo.trending(genre) };
       else res = { tracks: q ? await Audius.search(q) : await Audius.trending(genre) };
       ON.results.set(key, { ...res, at: Date.now() });
     } catch (e) {
       console.warn(e);
-      ON.results.set(key, { error: true, auth: !!e.auth });
+      ON.results.set(key, { error: true, auth: !!e.auth, message: e.message });
     }
     fillOnline();
   }
@@ -1738,21 +1799,32 @@
   function onlineResultsHTML(q) {
     const src = ON.source;
     if (src === 'jamendo' && !Jamendo.hasKey()) return jamendoSetupHTML();
+    if (src === 'spotify' && !Spotify.hasClient()) return Spotify.setupHTML();
+    if (src === 'spotify' && !Spotify.loggedIn()) return Spotify.loginHTML();
+    if (src === 'youtube' && !YouTube.hasKey() && !YouTube.parseLink(q)) return YouTube.setupHTML() + (q ? servicesHTML(q) : '');
     const r = ON.results.get(onlineKey(q));
     if (!r || r.loading) return src === 'archive' ? `<div class="grid">${skeletonCards()}</div>` : skeletonRows();
     if (r.error) {
-      if (r.auth) return jamendoSetupHTML('Jamendo не принял ключ — проверьте Client ID.');
+      if (r.auth && src === 'jamendo') return jamendoSetupHTML('Jamendo не принял ключ — проверьте Client ID.');
+      if (r.auth && src === 'spotify') return Spotify.loginHTML(r.message);
+      if (r.auth && src === 'youtube') return YouTube.setupHTML(r.message);
+      if (r.message && (src === 'spotify' || src === 'youtube')) {
+        return emptyBlock('globe', 'Не удалось загрузить', esc(r.message), `<button class="btn btn-primary" data-act="online-retry">Повторить</button>`);
+      }
       return emptyBlock('globe', 'Не удалось загрузить',
         navigator.onLine ? `${SOURCES[src].name} сейчас не отвечает. Попробуйте ещё раз чуть позже.` : 'Нет подключения к интернету. Музыка из медиатеки по-прежнему доступна.',
         `<button class="btn btn-primary" data-act="online-retry">Повторить</button>`);
     }
+    const more = q ? servicesHTML(q) : '';
     if (r.items) {
-      if (!r.items.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название, исполнителя или лейбл.');
-      return `<div class="grid">${r.items.map(archiveCard).join('')}</div>`;
+      if (!r.items.length && !r.tracks?.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название, исполнителя или лейбл.') + more;
+      const cardFn = r.itemKind === 'sp' ? Spotify.playlistCard : r.itemKind === 'yt' ? YouTube.listCard : archiveCard;
+      return `<div class="grid">${r.items.map(cardFn).join('')}</div>`
+        + (r.tracks?.length ? `<div class="section">${trackList(r.tracks, { label: SOURCES[src].name, key: 'online:' + onlineKey(q) })}</div>` : '') + more;
     }
-    if (!r.tracks.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название или имя исполнителя.');
+    if (!r.tracks.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название или имя исполнителя.') + more;
     const name = SOURCES[src].name;
-    return trackList(r.tracks, { label: q ? `${name}: ${q}` : `${name}: в тренде`, key: 'online:' + onlineKey(q) });
+    return trackList(r.tracks, { label: q ? `${name}: ${q}` : `${name}: в тренде`, key: 'online:' + onlineKey(q) }) + more;
   }
   function homeOnlineHTML(trigger) {
     const key = onlineKey('', 'audius', '');
@@ -1765,13 +1837,18 @@
     return list.map((t, i) => card({ href: '#/online', cover: coverHTML(t), title: t.title, sub: esc(artistOf(t)), play: `list:${lid}:${i}` })).join('');
   }
   function fillOnline() {
+    const status = $('#extStatus');
+    if (status) status.innerHTML = Spotify.statusHTML();
     const box = $('#onlineResults');
     if (box && S.view?.name === 'online') box.innerHTML = onlineResultsHTML(onlineQuery());
     const home = $('#homeOnline');
     if (home) home.innerHTML = homeOnlineHTML(false);
     updatePlayState();
   }
-  const onlineTitle = (q) => (q ? `Результаты по запросу «${q}»` : ON.source === 'archive' ? 'Популярное за неделю' : 'В тренде за неделю');
+  const onlineTitle = (q) => (q ? `Результаты по запросу «${q}»`
+    : ON.source === 'archive' ? 'Популярное за неделю'
+      : ON.source === 'spotify' ? (curGenre() === 'liked' ? 'Любимые треки' : 'Мои плейлисты')
+        : ON.source === 'youtube' ? 'Популярная музыка' : 'В тренде за неделю');
   function setOnlineQuery(q) {
     S.view = { name: 'online', param: q || null };
     history.replaceState(null, '', '#/online' + (q ? '/' + encodeURIComponent(q) : ''));
@@ -1814,6 +1891,708 @@
     const tl = toast('Загружаем альбом…', 'load', 0);
     Archive.load(id).then((it) => { tl.close(); start(it); });
   }
+
+  /* ---------- Другие сервисы: только ссылки (у них нет открытого API) ---------- */
+  const OTHER_SERVICES = [
+    ['Яндекс Музыка', (q) => `https://music.yandex.ru/search?text=${q}`],
+    ['КИОН Музыка', (q) => `https://music.mts.ru/search?text=${q}`],
+    ['VK Музыка', (q) => `https://vk.com/audio?q=${q}&section=search`],
+    ['Звук', (q) => `https://zvuk.com/search?query=${q}`],
+    ['Spotify', (q) => `https://open.spotify.com/search/${q}`],
+    ['YouTube Music', (q) => `https://music.youtube.com/search?q=${q}`],
+    ['Apple Music', (q) => `https://music.apple.com/ru/search?term=${q}`],
+  ];
+  const serviceLinks = (query) => OTHER_SERVICES.map(([name, url]) => ({ name, url: url(encodeURIComponent(query)) }));
+  const servicesHTML = (query) => `<div class="svc"><span>Искать «${esc(query)}» в:</span>${serviceLinks(query)
+    .map((sv) => `<a class="chip" href="${esc(sv.url)}" target="_blank" rel="noopener">${esc(sv.name)}</a>`).join('')}</div>`;
+
+  /* ---------- Внешние движки: когда играет Spotify или YouTube, кнопки управляют ими ---------- */
+  function doPlay() {
+    if (ext) { ext.play(); return; }
+    if (!S.current) return;
+    ensureAudioGraph();
+    if (!audio.src) loadIndex(S.qi);
+    else audio.play().catch(() => {});
+  }
+  function doPause() { if (ext) ext.pause(); else audio.pause(); }
+  function doSeek(sec) {
+    if (ext) ext.seek(sec);
+    else if (S.current && isFinite(sec)) audio.currentTime = sec;
+  }
+  function activateExt(engine) {
+    if (ext && ext !== engine) ext.stop();
+    loadToken++; // отменяем загрузку локального трека
+    audio.pause();
+    ext = engine;
+    document.body.classList.add('ext-mode');
+    ext.setVolume(audio.muted ? 0 : audio.volume);
+  }
+  function deactivateExt() {
+    if (!ext) return;
+    const e = ext;
+    ext = null;
+    e.stop();
+    document.body.classList.remove('ext-mode');
+    S.current = S.queue[S.qi] || null;
+    updateNowPlaying();
+    renderQueue();
+  }
+  function onExtState() {
+    if (!ext) return;
+    const id = ext.trackId();
+    if (id && id !== S.current) {
+      S.current = id;
+      const t = getTrack(id);
+      if (t) colorizeRemote(t);
+      updateNowPlaying();
+      renderQueue();
+    } else updatePlayState();
+  }
+  const setupStep = (html) => `<li>${html}</li>`;
+  const copyField = (value) => `<span class="copy-field"><code>${esc(value)}</code><button class="link-btn" data-copy="${esc(value)}">Копировать</button></span>`;
+
+  /* ---------- Spotify: официальный Web API + Web Playback SDK ---------- */
+  const Spotify = (() => {
+    const AUTH = 'https://accounts.spotify.com';
+    const API = 'https://api.spotify.com/v1';
+    const SCOPES = ['streaming', 'user-read-email', 'user-read-private', 'user-read-playback-state', 'user-modify-playback-state',
+      'user-read-currently-playing', 'user-library-read', 'playlist-read-private', 'playlist-read-collaborative'].join(' ');
+    const redirectUri = () => (Native ? 'mp3up://spotify-callback' : location.origin + location.pathname);
+    const clientId = () => LS.get('spotifyClientId', '');
+    let tok = LS.get('spotifyToken', null);
+    const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const randomStr = (n) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return b64url(a).slice(0, n); };
+    const authError = (msg) => Object.assign(new Error(msg), { auth: true });
+
+    /* --- вход (Authorization Code + PKCE, без сервера) --- */
+    async function login() {
+      if (!crypto.subtle) { toast('Вход в Spotify работает только по https или http://127.0.0.1', 'warn', 5000); return; }
+      const verifier = randomStr(64);
+      const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+      const state = randomStr(16);
+      LS.set('spotifyPkce', { verifier, state, redirect: redirectUri() });
+      const u = new URL(AUTH + '/authorize');
+      Object.entries({
+        client_id: clientId(), response_type: 'code', redirect_uri: redirectUri(),
+        code_challenge_method: 'S256', code_challenge: challenge, scope: SCOPES, state,
+      }).forEach(([k, v]) => u.searchParams.set(k, v));
+      location.href = u.toString(); // в Android-приложении откроется браузер
+    }
+    async function tokenRequest(params) {
+      const r = await fetch(AUTH + '/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: clientId(), ...params }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw authError(d.error_description || d.error || 'Spotify не выдал доступ');
+      tok = { access: d.access_token, refresh: d.refresh_token || tok?.refresh, exp: Date.now() + (d.expires_in || 3600) * 1000 };
+      LS.set('spotifyToken', tok);
+      return tok.access;
+    }
+    async function handleCallback(href) {
+      const u = new URL(href);
+      const pk = LS.get('spotifyPkce', null);
+      if (!pk || u.searchParams.get('state') !== pk.state) return false;
+      LS.set('spotifyPkce', null);
+      const code = u.searchParams.get('code');
+      const err = u.searchParams.get('error');
+      if (err || !code) {
+        toast(err === 'access_denied' ? 'Вход в Spotify отменён' : `Spotify не дал войти: ${err || 'нет кода'}`, 'warn', 5000);
+        return true;
+      }
+      try {
+        await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: pk.redirect, code_verifier: pk.verifier });
+        toast('Spotify подключён', 'ok');
+      } catch (e) {
+        toast(`Не удалось войти в Spotify: ${e.message}`, 'warn', 6000);
+      }
+      return true;
+    }
+    async function access() {
+      if (!tok) throw authError('Войдите в Spotify');
+      if (Date.now() < tok.exp - 60e3) return tok.access;
+      if (!tok.refresh) { logout(); throw authError('Сессия Spotify истекла — войдите снова'); }
+      try { return await tokenRequest({ grant_type: 'refresh_token', refresh_token: tok.refresh }); } catch (e) { logout(); throw e; }
+    }
+    function logout() {
+      if (ext === engine) deactivateExt();
+      tok = null;
+      LS.set('spotifyToken', null);
+      for (const k of [...ON.results.keys()]) if (k.startsWith('spotify|')) ON.results.delete(k);
+    }
+    async function api(path, { method = 'GET', query, body } = {}) {
+      const u = new URL(API + path);
+      if (query) for (const [k, v] of Object.entries(query)) if (v !== '' && v != null) u.searchParams.set(k, v);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const r = await fetch(u, {
+          method,
+          headers: { Authorization: 'Bearer ' + await access(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (r.status === 401 && attempt === 0 && tok) { tok.exp = 0; continue; }
+        const text = await r.text();
+        let d = null;
+        try { d = text ? JSON.parse(text) : null; } catch { /* пустой ответ */ }
+        if (!r.ok) {
+          const e = new Error(d?.error?.message || `Spotify ответил ${r.status}`);
+          e.status = r.status;
+          e.reason = d?.error?.reason || '';
+          if (r.status === 401) e.auth = true;
+          throw e;
+        }
+        return d;
+      }
+      throw authError('Войдите в Spotify снова');
+    }
+
+    /* --- данные --- */
+    function toTrack(a) {
+      if (!a || !a.id || (a.type && a.type !== 'track')) return null;
+      const id = 'sp:' + a.id;
+      const known = S.remote.get(id);
+      if (known) return known;
+      const imgs = a.album?.images || [];
+      const t = {
+        id, source: 'spotify', uri: a.uri || `spotify:track:${a.id}`,
+        title: a.name || 'Без названия', artist: (a.artists || []).map((x) => x.name).join(', '), album: '', albumArtist: '',
+        genre: a.album?.name || 'Spotify', duration: (a.duration_ms || 0) / 1000,
+        art: imgs[0]?.url || '', artSmall: (imgs[imgs.length - 1] || imgs[0])?.url || '',
+        permalink: a.external_urls?.spotify || `https://open.spotify.com/track/${a.id}`,
+        cover: null, color: null, addedAt: 0, plays: 0, lastPlayed: 0, liked: false, likedAt: 0,
+      };
+      S.remote.set(id, t);
+      return t;
+    }
+    async function search(q) {
+      // с февраля 2026 Spotify отдаёт не больше 10 треков за запрос — берём три страницы
+      const pages = await Promise.all([0, 10, 20].map((offset) => api('/search', { query: { q, type: 'track', limit: 10, offset } })
+        .catch((e) => { if (offset === 0) throw e; return null; })));
+      const seen = new Set();
+      return pages.flatMap((p) => p?.tracks?.items || []).map(toTrack).filter((t) => t && !seen.has(t.id) && seen.add(t.id));
+    }
+    async function liked() {
+      const out = [];
+      for (let offset = 0; offset < 300; offset += 50) {
+        const d = await api('/me/tracks', { query: { limit: 50, offset } });
+        out.push(...(d?.items || []).map((x) => toTrack(x.track || x.item)));
+        if (!d?.next) break;
+      }
+      return out.filter(Boolean);
+    }
+    async function playlists() {
+      const d = await api('/me/playlists', { query: { limit: 50 } });
+      return (d?.items || []).filter(Boolean).map((p) => {
+        const total = p.items?.total ?? p.tracks?.total;
+        return { id: p.id, title: p.name || 'Плейлист', art: p.images?.[0]?.url || '', sub: [p.owner?.display_name, total != null ? tracksWord(total) : ''].filter(Boolean).join(' · ') };
+      });
+    }
+    const plState = new Map();
+    function playlistState(id) {
+      const st = plState.get(id);
+      if (st) return st;
+      plState.set(id, { loading: true });
+      (async () => {
+        try {
+          const meta = await api(`/playlists/${encodeURIComponent(id)}`, { query: { fields: 'name,uri,images,owner(display_name)' } });
+          const tracks = [];
+          try {
+            for (let offset = 0; offset < 500; offset += 100) {
+              const d = await api(`/playlists/${encodeURIComponent(id)}/items`, { query: { limit: 100, offset } });
+              tracks.push(...(d?.items || []).map((x) => toTrack(x.item || x.track)));
+              if (!d?.next) break;
+            }
+          } catch (e) { if (e.auth) throw e; /* чужой плейлист — Spotify не отдаёт треки */ }
+          plState.set(id, { pl: { id, title: meta?.name || 'Плейлист', art: meta?.images?.[0]?.url || '', owner: meta?.owner?.display_name || '', tracks: tracks.filter(Boolean) } });
+        } catch (e) {
+          plState.set(id, { error: e.message });
+        }
+        if (S.view?.name === 'sp' && S.view.param === id) render();
+      })();
+      return plState.get(id);
+    }
+    const playlistCard = (p) => card({
+      href: `#/sp/${encodeURIComponent(p.id)}`,
+      cover: p.art ? `<img class="cover" src="${esc(p.art)}" alt="" loading="lazy" draggable="false">` : `<div class="cover ph" style="--h:${hashHue(p.title)}">${ic('list')}</div>`,
+      title: p.title, sub: esc(p.sub), play: `sp-pl:${p.id}`,
+    });
+
+    /* --- воспроизведение --- */
+    let sdkPlayer = null;
+    let sdkDevice = null;
+    let sdkState = 'idle'; // idle | loading | ready | failed
+    const st = { playing: false, pos: 0, dur: 0, at: 0, trackId: null, device: '' };
+    let poll = null;
+    let lastPlay = null;
+    const canSDK = () => !Native && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) && 'requestMediaKeySystemAccess' in navigator;
+    const sdkActive = () => !!sdkDevice && st.device === 'MP3UP';
+
+    function loadSDK() {
+      if (!canSDK() || sdkState !== 'idle' || !tok) return;
+      sdkState = 'loading';
+      window.onSpotifyWebPlaybackSDKReady = () => {
+        sdkPlayer = new window.Spotify.Player({
+          name: 'MP3UP',
+          getOAuthToken: (cb) => { access().then(cb).catch(() => {}); },
+          volume: audio.muted ? 0 : audio.volume,
+        });
+        sdkPlayer.addListener('ready', ({ device_id: id }) => { sdkDevice = id; sdkState = 'ready'; fillOnline(); });
+        sdkPlayer.addListener('not_ready', () => { sdkDevice = null; });
+        const fail = ({ message }) => { console.warn('Spotify SDK:', message); sdkState = 'failed'; sdkDevice = null; fillOnline(); };
+        sdkPlayer.addListener('initialization_error', fail);
+        sdkPlayer.addListener('authentication_error', fail);
+        sdkPlayer.addListener('account_error', fail);
+        sdkPlayer.addListener('player_state_changed', (s) => {
+          if (ext !== engine || !s || st.device !== 'MP3UP') return;
+          applyState({ playing: !s.paused, pos: s.position / 1000, dur: s.duration / 1000, track: s.track_window?.current_track });
+        });
+        sdkPlayer.connect();
+      };
+      const sc = document.createElement('script');
+      sc.src = 'https://sdk.scdn.co/spotify-player.js';
+      sc.onerror = () => { sdkState = 'failed'; fillOnline(); };
+      document.head.append(sc);
+    }
+    function statusHTML() {
+      if (!tok) return '';
+      let text;
+      if (sdkState === 'ready') text = 'Музыка играет прямо в MP3UP.';
+      else if (sdkState === 'loading') text = 'Подключаем плеер Spotify…';
+      else if (sdkState === 'failed') text = 'Встроенный плеер Spotify недоступен (нужен Premium) — MP3UP будет управлять приложением Spotify на ваших устройствах.';
+      else text = 'MP3UP управляет приложением Spotify на ваших устройствах — оно должно быть запущено.';
+      return `${ic('globe')}<span>${text}${st.device && ext === engine ? ` Сейчас играет на: <b>${esc(st.device)}</b>.` : ''}</span><button class="link-btn" data-act="spotify-logout">Выйти</button>`;
+    }
+
+    function applyState({ playing, pos, dur, track, device }) {
+      st.playing = playing;
+      st.pos = pos;
+      if (dur) st.dur = dur;
+      st.at = performance.now();
+      if (device != null) st.device = device;
+      const t = track ? toTrack(track) : null;
+      if (t) { st.trackId = t.id; if (dur) t.duration = dur; }
+      onExtState();
+    }
+    async function refresh() {
+      try {
+        const s = await api('/me/player');
+        if (ext !== engine) return;
+        if (!s) { applyState({ playing: false, pos: st.pos, dur: st.dur }); return; }
+        applyState({ playing: !!s.is_playing, pos: (s.progress_ms || 0) / 1000, dur: (s.item?.duration_ms || 0) / 1000, track: s.item, device: s.device?.name || '' });
+      } catch (e) {
+        if (e.auth) { deactivateExt(); render(); }
+      }
+    }
+    function stopPoll() { clearInterval(poll); poll = null; }
+    function startPoll() {
+      stopPoll();
+      poll = setInterval(() => { if (!document.hidden || Native) refresh(); }, sdkActive() ? 15000 : 2500);
+    }
+    function handleErr(e) {
+      if (e.auth) { toast(e.message, 'warn', 4000); logout(); render(); return; }
+      if (e.status === 404 || e.reason === 'NO_ACTIVE_DEVICE') { noDevice(); return; }
+      if (e.status === 403) { toast('Для управления воспроизведением Spotify нужен Premium', 'warn', 5000); return; }
+      toast(`Spotify: ${e.message}`, 'warn', 4000);
+    }
+    function noDevice() {
+      const openUrl = Native ? 'spotify:' : 'https://open.spotify.com';
+      const m = openModal(`
+        <div class="modal-head"><h3>Где играть музыку?</h3><button class="icon-btn round" data-m="close" aria-label="Закрыть">${ic('close')}</button></div>
+        <p class="m-text">${canSDK() ? 'Встроенный плеер Spotify не запустился. ' : ''}Откройте приложение Spotify на телефоне или компьютере (достаточно просто запустить его) и нажмите «Повторить» — MP3UP будет им управлять.</p>
+        <div class="modal-actions">
+          <a class="btn btn-ghost" href="${openUrl}" target="_blank" rel="noopener">${ic('share')}Открыть Spotify</a>
+          <button class="btn btn-primary" data-m="retry">Повторить</button>
+        </div>`);
+      m.el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-m="close"]')) m.close();
+        if (e.target.closest('[data-m="retry"]')) { m.close(true); retry(); }
+      });
+    }
+    async function pickDevice() {
+      if (sdkDevice) return { id: sdkDevice, name: 'MP3UP' };
+      const d = await api('/me/player/devices');
+      const list = (d?.devices || []).filter((x) => !x.is_restricted);
+      return list.find((x) => x.is_active) || list.find((x) => x.type === 'Smartphone') || list[0] || null;
+    }
+    async function start(body, trackId, label, key, { shuffle = false } = {}) {
+      lastPlay = [body, trackId, label, key, { shuffle }];
+      let dev;
+      try { dev = await pickDevice(); } catch (e) { handleErr(e); return; }
+      if (!dev) { noDevice(); return; }
+      activateExt(engine);
+      S.ctxLabel = label;
+      S.ctxKey = key;
+      st.device = dev.name;
+      try {
+        if (shuffle) await api('/me/player/shuffle', { method: 'PUT', query: { state: true, device_id: dev.id } }).catch(() => {});
+        await api('/me/player/play', { method: 'PUT', query: { device_id: dev.id }, body });
+      } catch (e) {
+        deactivateExt();
+        handleErr(e);
+        return;
+      }
+      st.trackId = trackId || st.trackId;
+      applyState({ playing: true, pos: 0, dur: getTrack(trackId)?.duration || 0 });
+      if (!sdkActive()) toast(`Играет в Spotify на «${dev.name}»`, 'ok', 2500);
+      startPoll();
+      setTimeout(refresh, 900);
+    }
+    const retry = () => { if (lastPlay) start(...lastPlay); };
+    function playTracks(ids, idx, label, key) {
+      const list = ids.map(getTrack).filter((t) => t?.source === 'spotify');
+      const first = list[idx] || list[0];
+      if (!first) return;
+      if (key?.startsWith('sp-pl:')) {
+        start({ context_uri: `spotify:playlist:${key.slice(6)}`, offset: { uri: first.uri } }, first.id, label, key);
+        return;
+      }
+      const win = list.slice(Math.max(0, list.indexOf(first)), list.indexOf(first) + 100);
+      start({ uris: win.map((t) => t.uri) }, first.id, label, key);
+    }
+    function playPlaylist(id, { shuffle = false } = {}) {
+      const pl = plState.get(id)?.pl;
+      start({ context_uri: `spotify:playlist:${id}` }, null, pl?.title || 'Плейлист Spotify', 'sp-pl:' + id, { shuffle });
+    }
+    function cmd(fn, optimistic) {
+      if (optimistic) {
+        if ('playing' in optimistic) { st.pos = engine.position(); st.at = performance.now(); st.playing = optimistic.playing; }
+        if ('pos' in optimistic) { st.pos = optimistic.pos; st.at = performance.now(); }
+        onExtState();
+      }
+      Promise.resolve().then(fn).then(() => setTimeout(refresh, 700)).catch(handleErr);
+    }
+    let volTimer;
+    const engine = {
+      name: 'spotify',
+      label: 'Spotify',
+      playing: () => st.playing,
+      position: () => Math.min(st.dur || Infinity, st.pos + (st.playing ? (performance.now() - st.at) / 1000 : 0)),
+      duration: () => st.dur,
+      trackId: () => st.trackId,
+      toggle() { if (st.playing) this.pause(); else this.play(); },
+      play() { cmd(() => (sdkActive() ? sdkPlayer.resume() : api('/me/player/play', { method: 'PUT' })), { playing: true }); },
+      pause() { cmd(() => (sdkActive() ? sdkPlayer.pause() : api('/me/player/pause', { method: 'PUT' })), { playing: false }); },
+      next() { cmd(() => (sdkActive() ? sdkPlayer.nextTrack() : api('/me/player/next', { method: 'POST' }))); },
+      prev() { cmd(() => (sdkActive() ? sdkPlayer.previousTrack() : api('/me/player/previous', { method: 'POST' }))); },
+      seek(sec) {
+        sec = clamp(sec, 0, st.dur || 0);
+        cmd(() => (sdkActive() ? sdkPlayer.seek(Math.round(sec * 1000)) : api('/me/player/seek', { method: 'PUT', query: { position_ms: Math.round(sec * 1000) } })), { pos: sec });
+      },
+      setVolume(v) {
+        clearTimeout(volTimer);
+        volTimer = setTimeout(() => {
+          if (sdkActive()) sdkPlayer.setVolume(v).catch(() => {});
+          else if (tok && ext === engine) api('/me/player/volume', { method: 'PUT', query: { volume_percent: Math.round(v * 100) } }).catch(() => {});
+        }, 300);
+      },
+      stop() {
+        stopPoll();
+        if (st.playing) Promise.resolve().then(() => (sdkActive() ? sdkPlayer.pause() : api('/me/player/pause', { method: 'PUT' }))).catch(() => {});
+        st.playing = false;
+      },
+    };
+
+    /* --- настройка --- */
+    function setupHTML(error) {
+      const fileMode = location.protocol === 'file:';
+      const localhost = location.hostname === 'localhost';
+      return `<div class="setup-card">
+        <h3>Подключите свой Spotify</h3>
+        <p>MP3UP работает через официальный API Spotify. Нужны <b>Spotify Premium</b> и ваш личный бесплатный ключ приложения (Client ID):</p>
+        ${fileMode ? '<p class="setup-error">Сейчас MP3UP открыт как файл — Spotify так не пустит. Откройте плеер через сайт, start.bat / start.sh или Android-приложение.</p>' : ''}
+        ${localhost ? `<p class="setup-error">Spotify не принимает адрес «localhost». Откройте MP3UP по адресу <b>${esc(location.href.replace('localhost', '127.0.0.1'))}</b>.</p>` : ''}
+        <ol>
+          ${setupStep('Откройте <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>, войдите и нажмите <b>Create app</b>.')}
+          ${setupStep(`Название и описание — любые. В поле <b>Redirect URIs</b> добавьте адрес: ${copyField(redirectUri())}${Native ? '' : ' Если пользуетесь и Android-приложением, добавьте ещё ' + copyField('mp3up://spotify-callback')}`)}
+          ${setupStep('В пункте <b>APIs used</b> отметьте <b>Web API</b> и <b>Web Playback SDK</b>, сохраните.')}
+          ${setupStep('Откройте настройки приложения, скопируйте <b>Client ID</b> и вставьте сюда.')}
+        </ol>
+        <div class="setup-row">
+          <input class="input" id="spotifyKey" placeholder="Client ID" value="${esc(clientId())}" autocomplete="off" spellcheck="false">
+          <button class="btn btn-primary" data-act="spotify-save">Сохранить</button>
+        </div>
+        ${error ? `<p class="setup-error">${esc(error)}</p>` : ''}
+        <p class="dim">Spotify официально не работает в России — нужен действующий аккаунт с Premium. Ключ хранится только на этом устройстве.</p>
+      </div>`;
+    }
+    function loginHTML(error) {
+      return `<div class="setup-card">
+        <h3>Войдите в Spotify</h3>
+        <p>Откроется страница Spotify — войдите и разрешите доступ. После этого здесь появятся ваши плейлисты, «Любимые треки» и поиск.</p>
+        ${error ? `<p class="setup-error">${esc(error)}</p>` : ''}
+        <div class="setup-row"><button class="btn btn-primary lg" data-act="spotify-login">${ic('user')}Войти через Spotify</button></div>
+        <p class="dim">Не получается? Проверьте, что в настройках приложения Spotify указан Redirect URI ${copyField(redirectUri())} <button class="link-btn" data-act="spotify-client-reset">Сменить Client ID</button></p>
+      </div>`;
+    }
+    function saveClient() {
+      const input = $('#spotifyKey');
+      const id = input?.value.trim();
+      if (!id || !/^[0-9a-f]{32}$/i.test(id)) {
+        toast('Client ID — это 32 символа из цифр и букв a–f', 'warn', 4000);
+        input?.classList.remove('err'); void input?.offsetWidth; input?.classList.add('err');
+        return;
+      }
+      LS.set('spotifyClientId', id);
+      render();
+    }
+    function resetClient() { logout(); LS.set('spotifyClientId', ''); }
+
+    return {
+      hasClient: () => !!clientId(), loggedIn: () => !!tok && !!clientId(),
+      login, logout, handleCallback, saveClient, resetClient, setupHTML, loginHTML, statusHTML,
+      search, liked, playlists, playlistState, forgetPlaylist: (id) => plState.delete(id), playlistCard,
+      loadSDK, playTracks, playPlaylist, retry, engine,
+    };
+  })();
+
+  /* ---------- YouTube: официальный встроенный плеер (IFrame API) ---------- */
+  const YouTube = (() => {
+    const API = 'https://www.googleapis.com/youtube/v3';
+    const key = () => LS.get('youtubeKey', '');
+    const decode = (s) => { const el = document.createElement('textarea'); el.innerHTML = s || ''; return el.value; };
+    function isoDur(v) {
+      const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(v || '');
+      return m ? (+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0) : 0;
+    }
+    function toTrack(v) {
+      const id = 'yt:' + v.id;
+      const known = S.remote.get(id);
+      if (known) { if (!known.duration && v.duration) known.duration = v.duration; return known; }
+      const t = {
+        id, source: 'youtube', videoId: v.id,
+        title: decode(v.title) || 'Видео YouTube', artist: decode(v.channel).replace(/ - Topic$/, ''), album: '', albumArtist: '',
+        genre: 'YouTube', duration: v.duration || 0,
+        art: v.thumb || `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`, artSmall: `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`,
+        permalink: `https://www.youtube.com/watch?v=${v.id}`,
+        cover: null, color: null, addedAt: 0, plays: 0, lastPlayed: 0, liked: false, likedAt: 0,
+      };
+      S.remote.set(id, t);
+      return t;
+    }
+    async function get(path, params, apiKey = key()) {
+      const u = new URL(API + path);
+      for (const [k, v] of Object.entries(params)) if (v !== '' && v != null) u.searchParams.set(k, v);
+      u.searchParams.set('key', apiKey);
+      const r = await fetch(u);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const reason = d?.error?.errors?.[0]?.reason || '';
+        const msg = reason === 'quotaExceeded' ? 'Дневной лимит запросов YouTube исчерпан — поиск снова заработает завтра. Ссылки работают и сейчас.'
+          : reason === 'accessNotConfigured' ? 'В проекте Google не включён YouTube Data API v3 — включите его и попробуйте снова.'
+            : /API key/i.test(d?.error?.message || '') || reason === 'keyInvalid' ? 'YouTube не принял ключ — проверьте его.'
+              : d?.error?.message || `YouTube ответил ${r.status}`;
+        throw Object.assign(new Error(msg), { auth: reason === 'keyInvalid' || reason === 'accessNotConfigured' || /API key/i.test(d?.error?.message || '') });
+      }
+      return d;
+    }
+    const mapVideo = (v) => toTrack({
+      id: v.id, title: v.snippet?.title, channel: v.snippet?.channelTitle,
+      thumb: v.snippet?.thumbnails?.high?.url || v.snippet?.thumbnails?.medium?.url, duration: isoDur(v.contentDetails?.duration),
+    });
+    async function details(ids) {
+      if (!ids.length) return [];
+      const d = await get('/videos', { part: 'snippet,contentDetails', id: ids.join(','), maxResults: 50 });
+      const byId = new Map((d.items || []).map((v) => [v.id, v]));
+      return ids.map((id) => byId.get(id)).filter(Boolean).map(mapVideo);
+    }
+    function parseLink(s) {
+      if (!s || !/youtu/i.test(s)) return null;
+      try {
+        const u = new URL(s.trim().startsWith('http') ? s.trim() : 'https://' + s.trim());
+        if (!/(^|\.)(youtube\.com|youtu\.be)$/i.test(u.hostname)) return null;
+        let v = u.searchParams.get('v');
+        if (/youtu\.be$/i.test(u.hostname)) v = u.pathname.slice(1, 12);
+        const m = u.pathname.match(/\/(shorts|embed|live)\/([\w-]{11})/);
+        if (m) v = m[2];
+        const list = u.searchParams.get('list');
+        v = v && /^[\w-]{11}$/.test(v) ? v : null;
+        return v || list ? { v, list } : null;
+      } catch { return null; }
+    }
+    async function oembed(id) {
+      try {
+        const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id));
+        const d = await r.json();
+        return toTrack({ id, title: d.title, channel: d.author_name, thumb: d.thumbnail_url });
+      } catch { return toTrack({ id, title: 'Видео YouTube', channel: '' }); }
+    }
+    async function query(q, region) {
+      const link = parseLink(q);
+      if (link) {
+        const tracks = link.v ? [key() ? (await details([link.v]).catch(() => []))[0] || await oembed(link.v) : await oembed(link.v)] : [];
+        const items = link.list ? [{ list: link.list, title: 'Плейлист YouTube', sub: 'Включить весь плейлист' }] : [];
+        return items.length ? { items, itemKind: 'yt', tracks } : { tracks };
+      }
+      if (!q) {
+        const d = await get('/videos', { part: 'snippet,contentDetails', chart: 'mostPopular', videoCategoryId: '10', regionCode: region || 'RU', maxResults: 40 });
+        return { tracks: (d.items || []).map(mapVideo) };
+      }
+      const d = await get('/search', { part: 'snippet', type: 'video', maxResults: 30, q, regionCode: region || 'RU' });
+      return { tracks: await details((d.items || []).map((x) => x.id?.videoId).filter(Boolean)) };
+    }
+    const listCard = (it) => card({
+      href: `https://www.youtube.com/playlist?list=${encodeURIComponent(it.list)}`,
+      cover: `<div class="cover ph" style="--h:0">${ic('list')}</div>`, title: it.title, sub: esc(it.sub), play: `yt-list:${it.list}`,
+    });
+
+    /* --- плеер --- */
+    let yt = null;
+    let apiReady = null;
+    let box = null;
+    const st = { playing: false, trackId: null };
+    function ensureBox() {
+      if (box) return box;
+      box = document.createElement('div');
+      box.className = 'yt-box';
+      box.innerHTML = `<div class="yt-head"><svg class="ic"><use href="#i-play"/></svg><span id="ytTitle">YouTube</span>
+        <button class="icon-btn sm" data-act="yt-big" title="Крупнее / мельче" aria-label="Крупнее">${ic('expand')}</button>
+        <button class="icon-btn sm" data-act="yt-close" title="Остановить YouTube" aria-label="Закрыть">${ic('close')}</button></div>
+        <div class="yt-video"><div id="ytFrame"></div></div>`;
+      document.body.append(box);
+      return box;
+    }
+    function loadAPI() {
+      if (apiReady) return apiReady;
+      apiReady = new Promise((resolve, reject) => {
+        if (window.YT?.Player) { resolve(); return; }
+        window.onYouTubeIframeAPIReady = () => resolve();
+        const sc = document.createElement('script');
+        sc.src = 'https://www.youtube.com/iframe_api';
+        sc.onerror = () => { apiReady = null; reject(new Error('Не удалось загрузить плеер YouTube — проверьте интернет')); };
+        document.head.append(sc);
+      });
+      return apiReady;
+    }
+    async function ensurePlayer() {
+      ensureBox();
+      await loadAPI();
+      if (yt) return yt;
+      return new Promise((resolve) => {
+        const vars = { playsinline: 1, rel: 0, fs: 0, modestbranding: 1 };
+        if (location.protocol.startsWith('http')) vars.origin = location.origin;
+        yt = new window.YT.Player('ytFrame', {
+          width: '100%', height: '100%', playerVars: vars,
+          events: {
+            onReady: () => resolve(yt),
+            onStateChange: (e) => onState(e.data),
+            onError: (e) => {
+              const blocked = e.data === 101 || e.data === 150;
+              toast(blocked ? 'Автор запретил показывать это видео вне YouTube — пропускаем' : 'YouTube не смог воспроизвести видео', 'warn', 3500);
+              setTimeout(() => { try { yt.nextVideo(); } catch { /* конец списка */ } }, 1200);
+            },
+          },
+        });
+      });
+    }
+    function currentTrack() {
+      const vd = yt?.getVideoData?.() || {};
+      if (!vd.video_id) return null;
+      const t = getTrack('yt:' + vd.video_id) || toTrack({ id: vd.video_id, title: vd.title, channel: vd.author });
+      if ((t.title === 'Видео YouTube' || !t.title) && vd.title) t.title = vd.title;
+      if (!t.artist && vd.author) t.artist = vd.author;
+      const d = yt.getDuration?.();
+      if (d) t.duration = d;
+      return t;
+    }
+    function onState(s) {
+      if (ext !== engine) return;
+      st.playing = s === 1 || s === 3;
+      const t = currentTrack();
+      if (t) {
+        st.trackId = t.id;
+        const title = $('#ytTitle');
+        if (title) title.textContent = `${t.artist ? t.artist + ' — ' : ''}${t.title}`;
+      }
+      onExtState();
+    }
+    async function begin(load, label, key) {
+      activateExt(engine);
+      S.ctxLabel = label;
+      S.ctxKey = key;
+      ensureBox().classList.add('show');
+      try {
+        await ensurePlayer();
+        if (ext !== engine) return;
+        load(yt);
+        engine.setVolume(audio.muted ? 0 : audio.volume);
+      } catch (e) {
+        toast(e.message, 'warn', 4000);
+        deactivateExt();
+      }
+    }
+    function playTracks(ids, idx, label, key) {
+      const list = ids.map(getTrack).filter((t) => t?.source === 'youtube').slice(0, 200);
+      if (!list.length) return;
+      st.trackId = list[idx]?.id || list[0].id;
+      begin((p) => p.loadPlaylist(list.map((t) => t.videoId), clamp(idx, 0, list.length - 1)), label || 'YouTube', key);
+    }
+    function playList(listId) {
+      begin((p) => p.loadPlaylist({ list: listId, listType: 'playlist', index: 0 }), 'Плейлист YouTube', 'yt-list:' + listId);
+    }
+    const call = (fn) => { try { return yt && fn(yt); } catch { return undefined; } };
+    const engine = {
+      name: 'youtube',
+      label: 'YouTube',
+      playing: () => st.playing,
+      position: () => call((p) => p.getCurrentTime()) || 0,
+      duration: () => call((p) => p.getDuration()) || getTrack(st.trackId)?.duration || 0,
+      trackId: () => st.trackId,
+      toggle() { if (st.playing) this.pause(); else this.play(); },
+      play() { call((p) => p.playVideo()); },
+      pause() { call((p) => p.pauseVideo()); },
+      next() { call((p) => p.nextVideo()); },
+      prev() { call((p) => (p.getCurrentTime() > 3 ? p.seekTo(0, true) : p.previousVideo())); },
+      seek(sec) { call((p) => p.seekTo(Math.max(0, sec), true)); },
+      setVolume(v) { call((p) => { p.setVolume(Math.round(v * 100)); if (v === 0) p.mute(); else p.unMute(); }); },
+      stop() {
+        call((p) => p.pauseVideo());
+        st.playing = false;
+        box?.classList.remove('show', 'big');
+      },
+    };
+
+    /* --- настройка --- */
+    function setupHTML(error) {
+      return `<div class="setup-card">
+        <h3>YouTube в MP3UP</h3>
+        <p><b>Ссылки работают сразу:</b> вставьте в строку поиска выше ссылку на видео или плейлист YouTube — и он заиграет.</p>
+        <p>Для поиска и чартов нужен бесплатный ключ YouTube Data API:</p>
+        <ol>
+          ${setupStep('Откройте <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3 в Google Cloud</a>, создайте проект (если попросит) и нажмите <b>Enable</b>.')}
+          ${setupStep('Перейдите в <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials</a> → <b>Create credentials</b> → <b>API key</b>.')}
+          ${setupStep('Скопируйте ключ и вставьте сюда.')}
+        </ol>
+        <div class="setup-row">
+          <input class="input" id="youtubeKey" placeholder="API key" value="${esc(key())}" autocomplete="off" spellcheck="false">
+          <button class="btn btn-primary" data-act="yt-save">Подключить</button>
+        </div>
+        ${error ? `<p class="setup-error">${esc(error)}</p>` : ''}
+        <p class="dim">Бесплатно — около 100 поисков в день. Ключ хранится только на этом устройстве. Видео играет во встроенном плеере YouTube — так требуют правила сервиса.</p>
+      </div>`;
+    }
+    async function saveKey() {
+      const input = $('#youtubeKey');
+      const k = input?.value.trim();
+      if (!k) { input?.classList.remove('err'); void input?.offsetWidth; input?.classList.add('err'); return; }
+      const t = toast('Проверяем ключ…', 'load', 0);
+      try {
+        await get('/videos', { part: 'id', id: 'dQw4w9WgXcQ' }, k);
+        LS.set('youtubeKey', k);
+        for (const x of [...ON.results.keys()]) if (x.startsWith('youtube|')) ON.results.delete(x);
+        t.close();
+        toast('YouTube подключён', 'ok');
+        render();
+      } catch (e) {
+        t.close();
+        toast(e.message, 'warn', 5000);
+      }
+    }
+    return {
+      hasKey: () => !!key(), parseLink, query, listCard, setupHTML, saveKey,
+      resetKey: () => { LS.set('youtubeKey', ''); for (const x of [...ON.results.keys()]) if (x.startsWith('youtube|')) ON.results.delete(x); },
+      playTracks, playList, toggleBig: () => box?.classList.toggle('big'), engine,
+    };
+  })();
 
   /* ---------- Экраны ---------- */
   const views = {
@@ -1888,7 +2667,7 @@
       const all = allTracks();
       const q = S.q.trim();
       const onlineBtn = q ? `<a class="btn btn-primary" href="#/online/${encodeURIComponent(q)}">${ic('globe')}Искать «${esc(q)}» в Audius</a>` : `<a class="btn btn-primary" href="#/online">${ic('globe')}Слушать онлайн</a>`;
-      if (!all.length) return { html: emptyBlock('search', 'В медиатеке пока пусто', 'Добавьте свои MP3 или найдите бесплатную музыку онлайн.', onlineBtn) };
+      if (!all.length) return { html: emptyBlock('search', 'В медиатеке пока пусто', 'Добавьте свои MP3 или найдите музыку онлайн.', onlineBtn) + (q ? servicesHTML(q) : '') };
       if (!q) {
         const genres = new Map();
         all.forEach((t) => { if (t.genre) { const k = norm(t.genre); const g = genres.get(k) || { name: t.genre, n: 0 }; g.n++; genres.set(k, g); } });
@@ -1906,7 +2685,7 @@
       const artists = getArtists().filter((a) => norm(a.name).includes(nq));
       const albums = getAlbums().filter((a) => norm(a.name).includes(nq) || norm(a.artist).includes(nq));
       if (!tracks.length && !artists.length && !albums.length) {
-        return { html: emptyBlock('search', `В медиатеке нет «${esc(q)}»`, 'Зато можно поискать среди бесплатных треков онлайн.', onlineBtn) };
+        return { html: emptyBlock('search', `В медиатеке нет «${esc(q)}»`, 'Зато можно поискать среди бесплатных треков онлайн.', onlineBtn) + servicesHTML(q) };
       }
       const bestArtist = artists.find((a) => norm(a.name).startsWith(nq));
       let best = '';
@@ -1925,25 +2704,46 @@
         ${tracks.length > 5 ? `<section class="section"><div class="sec-head"><h2>Все треки · ${tracks.length}</h2></div>${trackList(tracks.slice(0, 200), { label: `Поиск: ${q}` })}</section>` : ''}
         ${artists.length ? `<section class="section"><div class="sec-head"><h2>Исполнители</h2></div><div class="shelf">${artists.slice(0, 20).map(artistCard).join('')}</div></section>` : ''}
         ${albums.length ? `<section class="section"><div class="sec-head"><h2>Альбомы</h2></div><div class="shelf">${albums.slice(0, 20).map(albumCard).join('')}</div></section>` : ''}
-        <div class="online-cta">${onlineBtn}</div>` };
+        <div class="online-cta">${onlineBtn}</div>
+        ${servicesHTML(q)}` };
     },
 
     online(q) {
       q = (q || '').trim();
       const src = SOURCES[ON.source];
       if (!onlineFresh(onlineKey(q))) setTimeout(() => loadOnline(q), 0);
-      const needsKey = ON.source === 'jamendo' && !Jamendo.hasKey();
+      const needsKey = (ON.source === 'jamendo' && !Jamendo.hasKey()) || (ON.source === 'spotify' && !Spotify.loggedIn());
+      if (ON.source === 'spotify' && Spotify.loggedIn()) Spotify.loadSDK();
       return { html: `
         <div class="page-head"><div><h1>Онлайн</h1><p class="page-sub">Бесплатная и легальная музыка — без подписки и рекламы</p></div></div>
         <div class="tabs source-tabs">${Object.entries(SOURCES).map(([k, x]) => `<button class="tab ${k === ON.source ? 'active' : ''}" data-source="${k}">${x.name}</button>`).join('')}</div>
+        ${ON.source === 'spotify' && Spotify.loggedIn() ? `<div class="ext-status" id="extStatus">${Spotify.statusHTML()}</div>` : ''}
         ${needsKey ? '' : `<label class="online-search">${ic('search')}<input id="onlineQ" type="search" placeholder="${esc(src.placeholder)}" value="${esc(q)}" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>
         <div class="chips" id="onlineGenres" ${q ? 'hidden' : ''}>${src.genres.map(([g, l]) => `<button class="chip ${g === curGenre() ? 'active' : ''}" data-genre="${esc(g)}">${l}</button>`).join('')}</div>`}
         <section class="section online-section">
           ${needsKey ? '' : `<div class="sec-head"><h2 id="onlineTitle">${esc(onlineTitle(q))}</h2></div>`}
           <div id="onlineResults">${onlineResultsHTML(q)}</div>
         </section>
-        <p class="online-note">${ic('globe')}<span>Музыку предоставляет <a href="${src.url}" target="_blank" rel="noopener">${src.name}</a> — ${src.note}. Нужен интернет. Нажмите ♥, чтобы сохранить трек в медиатеку.${ON.source === 'jamendo' ? ' Для треков Jamendo не работают эквалайзер и визуализатор — их сервер это не разрешает.' : ''}${ON.source === 'jamendo' && Jamendo.hasKey() ? ' <button class="link-btn" data-act="jamendo-reset">Сменить ключ</button>' : ''}</span></p>`,
+        <p class="online-note">${ic('globe')}<span>Музыку предоставляет <a href="${src.url}" target="_blank" rel="noopener">${src.name}</a> — ${src.note}. Нужен интернет.${src.ext ? '' : ' Нажмите ♥, чтобы сохранить трек в медиатеку.'}${ON.source === 'youtube' && YouTube.hasKey() ? ' <button class="link-btn" data-act="yt-reset">Сменить ключ</button>' : ''}${ON.source === 'jamendo' ? ' Для треков Jamendo не работают эквалайзер и визуализатор — их сервер это не разрешает.' : ''}${ON.source === 'jamendo' && Jamendo.hasKey() ? ' <button class="link-btn" data-act="jamendo-reset">Сменить ключ</button>' : ''}</span></p>`,
       color: { h: 268, s: 62, l: 50 } };
+    },
+
+    sp(id) {
+      if (!Spotify.loggedIn()) {
+        return { html: emptyBlock('globe', 'Войдите в Spotify', 'Плейлисты Spotify доступны после входа в разделе «Онлайн».', '<a class="btn btn-primary" href="#/online">Перейти</a>') };
+      }
+      const st = Spotify.playlistState(id);
+      if (!st || st.loading) return { html: `<div class="hero"><div class="hero-cover"><div class="sk-card"><i></i></div></div></div>${skeletonRows()}` };
+      if (st.error) return { html: emptyBlock('globe', 'Не удалось загрузить плейлист', esc(st.error), `<button class="btn btn-primary" data-act="spotify-pl-retry" data-id="${esc(id)}">Повторить</button>`) };
+      const pl = st.pl;
+      const total = pl.tracks.reduce((a, t) => a + (t.duration || 0), 0);
+      const extra = `<span class="spacer"></span><a class="btn btn-ghost" href="https://open.spotify.com/playlist/${encodeURIComponent(id)}" target="_blank" rel="noopener">${ic('share')}<span>Открыть в Spotify</span></a>`;
+      return { html: `
+        ${hero({ kind: 'Плейлист · Spotify', title: pl.title, cover: pl.art ? `<img class="cover" src="${esc(pl.art)}" alt="">` : `<div class="cover ph" style="--h:${hashHue(pl.title)}">${ic('list')}</div>`,
+          sub: [pl.owner && `<b>${esc(pl.owner)}</b>`, pl.tracks.length && `${tracksWord(pl.tracks.length)}, ${fmtLong(total)}`].filter(Boolean).join(' · '), spec: 'sp-pl:' + id, count: 1, extra })}
+        ${pl.tracks.length ? trackList(pl.tracks, { label: pl.title, key: 'sp-pl:' + id })
+          : emptyBlock('list', 'Spotify не показывает треки этого плейлиста', 'Так Spotify ограничивает доступ к чужим плейлистам. Но его можно включить целиком кнопкой ▶ выше.')}`,
+      color: { h: 141, s: 55, l: 38 } };
     },
 
     ia(id) {
@@ -2193,7 +2993,13 @@
           case 'install': installApp(); return;
           case 'back': history.back(); return;
           case 'forward': history.forward(); return;
-          case 'np-artist': { const tr = getTrack(S.current); if (tr) { setNp(false); go('artist', artistOf(tr)); } return; }
+          case 'np-artist': {
+            const tr = getTrack(S.current);
+            if (!tr) return;
+            setNp(false);
+            if (isRemote(tr) && !S.tracks.has(tr.id)) { if (SOURCES[tr.source]) ON.source = tr.source; go('online', artistOf(tr)); } else go('artist', artistOf(tr));
+            return;
+          }
         }
       }
 
@@ -2202,6 +3008,26 @@
         ON.source = sourceBtn.dataset.source;
         LS.set('onlineSource', ON.source);
         render();
+        return;
+      }
+      const copyBtn = t.closest('[data-copy]');
+      if (copyBtn) {
+        navigator.clipboard?.writeText(copyBtn.dataset.copy).then(() => toast('Скопировано', 'ok', 1500), () => toast('Не удалось скопировать — выделите текст вручную', 'warn'));
+        return;
+      }
+      const extAct = t.closest('[data-act^="spotify-"], [data-act^="yt-"]');
+      if (extAct) {
+        const a = extAct.dataset.act;
+        if (a === 'spotify-save') Spotify.saveClient();
+        if (a === 'spotify-login') Spotify.login();
+        if (a === 'spotify-logout') { Spotify.logout(); render(); }
+        if (a === 'spotify-client-reset') { Spotify.resetClient(); render(); }
+        if (a === 'spotify-devices') Spotify.retry();
+        if (a === 'spotify-pl-retry') { Spotify.forgetPlaylist(extAct.dataset.id); render(); }
+        if (a === 'yt-save') YouTube.saveKey();
+        if (a === 'yt-reset') { YouTube.resetKey(); render(); }
+        if (a === 'yt-close') deactivateExt();
+        if (a === 'yt-big') YouTube.toggleBig();
         return;
       }
       const ia = t.closest('[data-act^="ia-"], [data-act^="jamendo-"]');
@@ -2282,6 +3108,8 @@
     });
     document.addEventListener('keydown', (e) => {
       if (e.target.id === 'jamendoKey' && e.key === 'Enter') saveJamendoKey();
+      if (e.target.id === 'spotifyKey' && e.key === 'Enter') Spotify.saveClient();
+      if (e.target.id === 'youtubeKey' && e.key === 'Enter') YouTube.saveKey();
       if (e.target.id === 'onlineQ' && e.key === 'Enter') { clearTimeout(onlineTimer); setOnlineQuery(e.target.value.trim()); e.target.blur(); }
     });
 
@@ -2323,7 +3151,7 @@
       const el = e.target;
       if (el.classList.contains('seek')) {
         seeking = true;
-        const d = audio.duration || getTrack(S.current)?.duration || 0;
+        const d = ext ? ext.duration() : (audio.duration || getTrack(S.current)?.duration || 0);
         el.style.setProperty('--p', el.value / 10 + '%');
         $$('.t-cur').forEach((x) => { x.textContent = fmt((el.value / 1000) * d); });
       } else if (el.classList.contains('vol')) {
@@ -2333,7 +3161,8 @@
     document.addEventListener('change', (e) => {
       const el = e.target;
       if (el.classList.contains('seek')) {
-        if (S.current && isFinite(audio.duration)) audio.currentTime = (el.value / 1000) * audio.duration;
+        if (ext) ext.seek((el.value / 1000) * ext.duration());
+        else if (S.current && isFinite(audio.duration)) audio.currentTime = (el.value / 1000) * audio.duration;
         seeking = false;
         lastProgress = -1;
       }
@@ -2379,13 +3208,13 @@
     if ('mediaSession' in navigator) {
       const ms = navigator.mediaSession;
       const set = (a, fn) => { try { ms.setActionHandler(a, fn); } catch { /* не поддерживается */ } };
-      set('play', () => { if (S.current) audio.play().catch(() => {}); });
-      set('pause', () => audio.pause());
+      set('play', doPlay);
+      set('pause', doPause);
       set('previoustrack', prev);
       set('nexttrack', () => next());
       set('seekbackward', () => seekBy(-10));
       set('seekforward', () => seekBy(10));
-      set('seekto', (d) => { if (isFinite(d.seekTime)) audio.currentTime = d.seekTime; });
+      set('seekto', (d) => { if (isFinite(d.seekTime)) doSeek(d.seekTime); });
     }
 
     // Web Audio можно запустить только после действия пользователя
@@ -2464,6 +3293,14 @@
       toast('Браузер не дал доступ к хранилищу — медиатека не сохранится после закрытия', 'warn', 7000);
     }
     restoreSession();
+    if (/[?&](code|error)=/.test(location.search)) { // вернулись со страницы входа Spotify
+      const href = location.href;
+      history.replaceState(null, '', location.pathname + '#/online');
+      if (await Spotify.handleCallback(href)) { ON.source = 'spotify'; LS.set('onlineSource', 'spotify'); }
+    }
+    window.mp3upSpotifyCallback = async (href) => {
+      if (await Spotify.handleCallback(href)) { ON.source = 'spotify'; LS.set('onlineSource', 'spotify'); go('online'); }
+    };
     render();
     updateNowPlaying();
     updateControls();

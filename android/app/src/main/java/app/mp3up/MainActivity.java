@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
 import android.webkit.ValueCallback;
@@ -57,6 +58,7 @@ public class MainActivity extends Activity {
     /** Файлы, открытые через «Открыть с помощью» / «Поделиться». */
     private final List<Uri> shared = new ArrayList<>();
     private final List<Uri> pendingShare = new ArrayList<>();
+    private String pendingAuth = null; // mp3up://spotify-callback?code=…
     private boolean webReady = false;
     private boolean askedNotifications = false;
 
@@ -81,6 +83,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true); // встроенный плеер YouTube
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .setDomain(HOST)
@@ -196,6 +199,10 @@ public class MainActivity extends Activity {
     private void collectShared(Intent intent) {
         if (intent == null || intent.getAction() == null) return;
         String action = intent.getAction();
+        if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null && "mp3up".equals(intent.getData().getScheme())) {
+            pendingAuth = intent.getData().toString();
+            return;
+        }
         if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
             pendingShare.add(intent.getData());
         } else if (Intent.ACTION_SEND.equals(action)) {
@@ -212,6 +219,10 @@ public class MainActivity extends Activity {
     }
 
     private void deliverShared() {
+        if (pendingAuth != null) {
+            web.evaluateJavascript("window.mp3upSpotifyCallback && window.mp3upSpotifyCallback(" + JSONObject.quote(pendingAuth) + ")", null);
+            pendingAuth = null;
+        }
         if (pendingShare.isEmpty()) return;
         try {
             JSONArray arr = new JSONArray();

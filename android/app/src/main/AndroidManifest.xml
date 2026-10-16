@@ -34,6 +34,13 @@
                 <data android:scheme="file" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <!-- Возврат после входа в Spotify -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mp3up" android:host="spotify-callback" />
+            </intent-filter>
             <!-- «Поделиться → MP3UP» -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
