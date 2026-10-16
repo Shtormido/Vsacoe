@@ -53,7 +53,8 @@
 
   /* ---------- Состояние ---------- */
   const S = {
-    tracks: new Map(),
+    tracks: new Map(),   // медиатека: свои файлы и сохранённые онлайн-треки
+    remote: new Map(),   // онлайн-треки Audius, которые встречались в этой сессии
     playlists: new Map(),
     queue: [],        // текущий порядок воспроизведения (id)
     baseQueue: [],    // исходный порядок (для выключения перемешивания)
@@ -80,8 +81,13 @@
   const allTracks = () => [...S.tracks.values()];
   const likedTracks = () => allTracks().filter((t) => t.liked).sort((a, b) => (b.likedAt || 0) - (a.likedAt || 0));
 
-  function coverUrl(t) {
-    if (!t || !t.cover) return null;
+  const getTrack = (id) => S.tracks.get(id) || S.remote.get(id);
+  const hasTrack = (id) => S.tracks.has(id) || S.remote.has(id);
+  const isRemote = (t) => !!t && t.source === 'audius';
+
+  function coverUrl(t, small) {
+    if (!t) return null;
+    if (!t.cover) return (small && t.artSmall) || t.art || null;
     let u = coverCache.get(t.id);
     if (!u) { u = URL.createObjectURL(t.cover); coverCache.set(t.id, u); }
     return u;
@@ -93,8 +99,8 @@
   const cssColor = (c, a = 1) => `hsl(${c.h} ${c.s}% ${c.l}% / ${a})`;
 
   function coverHTML(t, cls = '') {
-    const u = coverUrl(t);
-    if (u) return `<img class="cover ${cls}" src="${u}" alt="" loading="lazy" draggable="false">`;
+    const u = coverUrl(t, cls === 'sm' || cls === 'xs');
+    if (u) return `<img class="cover ${cls}" src="${esc(u)}" alt="" loading="lazy" draggable="false">`;
     return `<div class="cover ph ${cls}" style="--h:${hashHue(t ? artistOf(t) + (t.album || t.title) : '')}">${ic('note')}</div>`;
   }
 
@@ -124,7 +130,7 @@
     for (const a of m.values()) {
       a.artist = a.artists.size > 2 ? 'Разные исполнители' : [...a.artists.keys()].join(', ');
       a.tracks.sort((x, y) => (x.trackNo || 999) - (y.trackNo || 999) || collator.compare(x.title, y.title));
-      a.coverTrack = a.tracks.find((t) => t.cover) || a.tracks[0];
+      a.coverTrack = a.tracks.find((t) => t.cover || t.art) || a.tracks[0];
       a.addedAt = Math.max(...a.tracks.map((t) => t.addedAt));
       a.plays = a.tracks.reduce((s, t) => s + (t.plays || 0), 0);
       a.year = a.tracks.find((t) => t.year)?.year || '';
@@ -143,7 +149,7 @@
       a.tracks.push(t);
     }
     for (const a of m.values()) {
-      a.coverTrack = a.tracks.find((t) => t.cover) || a.tracks[0];
+      a.coverTrack = a.tracks.find((t) => t.cover || t.art) || a.tracks[0];
       a.plays = a.tracks.reduce((s, t) => s + (t.plays || 0), 0);
       a.albums = new Set(a.tracks.filter((t) => t.album).map((t) => norm(t.album))).size;
     }
@@ -158,7 +164,7 @@
     const urls = [];
     for (const t of playlistTracks(p)) {
       const k = t.album ? norm(t.album) : t.id;
-      if (!t.cover || seen.has(k)) continue;
+      if (!coverUrl(t) || seen.has(k)) continue;
       seen.add(k); urls.push(coverUrl(t));
       if (urls.length === 4) break;
     }
@@ -286,8 +292,22 @@
   const menuOpen = () => $('#menu').classList.contains('show');
 
   function trackMenu(id, x, y, ctx = {}) {
-    const t = S.tracks.get(id);
+    const t = getTrack(id);
     if (!t) return;
+    if (!S.tracks.has(id)) { // онлайн-трек, ещё не в медиатеке
+      openMenu(x, y, [
+        { icon: 'play', label: 'Слушать', action: () => playIds([id], 0, t.title) },
+        { icon: 'next-up', label: 'Играть следующим', action: () => queueNext([id]) },
+        { icon: 'queue', label: 'Добавить в очередь', action: () => queueAdd([id]) },
+        { icon: 'plus', label: 'Добавить в плейлист…', action: () => { playlistPicker([id], x, y); return 'keep'; } },
+        'sep',
+        { icon: 'heart', label: 'Добавить в «Любимые»', action: () => toggleLike(id) },
+        { icon: 'library', label: 'Сохранить в медиатеку', action: () => saveRemote([id]) },
+        { icon: 'search', label: 'Ещё треки исполнителя', action: () => go('online', artistOf(t)) },
+        { icon: 'share', label: 'Открыть на Audius', action: () => window.open(t.permalink, '_blank', 'noopener') },
+      ]);
+      return;
+    }
     const items = [
       { icon: 'play', label: 'Слушать', action: () => playIds([id], 0, t.title) },
       { icon: 'next-up', label: 'Играть следующим', action: () => queueNext([id]) },
@@ -299,6 +319,7 @@
     ];
     if (t.album) items.push({ icon: 'disc', label: 'Перейти к альбому', action: () => go('album', t.album) });
     items.push({ icon: 'edit', label: 'Изменить название…', action: () => editTrack(id) });
+    if (isRemote(t)) items.push({ icon: 'share', label: 'Открыть на Audius', action: () => window.open(t.permalink, '_blank', 'noopener') });
     if (ctx.playlistId) items.push('sep', { icon: 'close', label: 'Убрать из этого плейлиста', action: () => removeFromPlaylist(ctx.playlistId, id) });
     items.push('sep', { icon: 'trash', label: 'Удалить из медиатеки', danger: true, action: () => deleteTracks([id]) });
     openMenu(x, y, items);
@@ -469,6 +490,7 @@
   async function addToPlaylist(pid, ids) {
     const p = S.playlists.get(pid);
     if (!p) return;
+    await saveRemote(ids.filter((id) => !S.tracks.has(id)), { silent: true });
     const fresh = ids.filter((id) => !p.trackIds.includes(id));
     if (!fresh.length) { toast(`Уже есть в «${p.name}»`, 'info'); return; }
     p.trackIds.push(...fresh);
@@ -513,11 +535,12 @@
   }
 
   async function toggleLike(id) {
-    const t = S.tracks.get(id || S.current);
+    const t = getTrack(id || S.current);
     if (!t) return;
     t.liked = !t.liked;
     t.likedAt = t.liked ? Date.now() : 0;
-    await DB.put('tracks', t);
+    if (S.tracks.has(t.id)) await DB.put('tracks', t);
+    else await saveRemote([t.id], { silent: true });
     toast(t.liked ? 'Добавлено в «Любимые треки»' : 'Убрано из «Любимых треков»', t.liked ? 'ok' : 'info', 1800);
     if (S.view?.name === 'liked' || S.view?.name === 'home') render();
     else updateLikeUI();
@@ -525,7 +548,7 @@
   }
 
   async function deleteTracks(ids) {
-    const t = S.tracks.get(ids[0]);
+    const t = getTrack(ids[0]);
     const ok = await confirmBox(
       ids.length > 1 ? `Удалить ${tracksWord(ids.length)}?` : 'Удалить трек?',
       ids.length > 1 ? 'Треки будут удалены из медиатеки и всех плейлистов.' : `«${t?.title}» будет удалён из медиатеки и всех плейлистов. Исходный файл на диске останется.`);
@@ -549,8 +572,40 @@
     renderAll();
   }
 
+  /* Сохранить онлайн-трек в медиатеку (играет из интернета) */
+  async function saveRemote(ids, { silent = false } = {}) {
+    let n = 0;
+    for (const id of ids) {
+      const t = S.remote.get(id);
+      if (!t || S.tracks.has(id)) continue;
+      t.addedAt = Date.now() - n;
+      S.tracks.set(id, t);
+      await DB.put('tracks', t);
+      if (!t.color) colorizeRemote(t);
+      n++;
+    }
+    if (n && !silent) toast(n > 1 ? `Сохранено в медиатеку: ${tracksWord(n)}` : 'Сохранено в медиатеку', 'ok');
+    if (n) { renderSidebar(); updateLikeUI(); }
+  }
+
+  /* Цвет оформления по обложке онлайн-трека */
+  async function colorizeRemote(t) {
+    if (!t.art || t.color || t._colorizing) return;
+    t._colorizing = true;
+    try {
+      const blob = await (await fetch(t.artSmall || t.art)).blob();
+      t.color = await dominantColor(blob);
+      if (t.color && S.tracks.has(t.id)) DB.put('tracks', t).catch(() => {});
+      if (t.color && S.current === t.id) {
+        document.documentElement.style.setProperty('--np', cssColor(t.color));
+        vizColor = t.color;
+      }
+    } catch { /* без цвета */ }
+    delete t._colorizing;
+  }
+
   function editTrack(id) {
-    const t = S.tracks.get(id);
+    const t = getTrack(id);
     if (!t) return;
     const m = openModal(`
       <h3>Информация о треке</h3>
@@ -675,20 +730,27 @@
     if (i < 0 || i >= S.queue.length) return;
     S.qi = i;
     const id = S.queue[i];
-    const t = S.tracks.get(id);
+    const t = getTrack(id);
     const token = ++loadToken;
     if (!t) { removeQueueAt(i); return; }
     S.current = id;
     S.counted = false;
     updateNowPlaying();
     renderQueue();
-    let rec;
-    try { rec = await DB.get('files', id); } catch (e) { console.error(e); }
-    if (token !== loadToken) return;
-    if (!rec || !rec.blob) { toast('Файл трека не найден', 'warn'); return; }
+    let src;
+    if (isRemote(t)) {
+      src = Audius.streamUrl(t.audiusId);
+      colorizeRemote(t);
+    } else {
+      let rec;
+      try { rec = await DB.get('files', id); } catch (e) { console.error(e); }
+      if (token !== loadToken) return;
+      if (!rec || !rec.blob) { toast('Файл трека не найден', 'warn'); return; }
+      src = URL.createObjectURL(rec.blob);
+    }
     if (objectUrl) URL.revokeObjectURL(objectUrl);
-    objectUrl = URL.createObjectURL(rec.blob);
-    audio.src = objectUrl;
+    objectUrl = src.startsWith('blob:') ? src : null;
+    audio.src = src;
     if (startAt > 0) audio.addEventListener('loadedmetadata', () => { audio.currentTime = Math.min(startAt, (audio.duration || startAt) - 1); }, { once: true });
     saveSession();
     if (autoplay) {
@@ -699,7 +761,7 @@
   }
 
   function playIds(ids, start = 0, label = '', { key = '', wave = false, randomStart = false } = {}) {
-    ids = ids.filter((id) => S.tracks.has(id));
+    ids = ids.filter((id) => hasTrack(id));
     if (!ids.length) return;
     if (randomStart) start = Math.floor(Math.random() * ids.length);
     start = clamp(start, 0, ids.length - 1);
@@ -793,7 +855,7 @@
 
   /* Очередь */
   function queueAdd(ids) {
-    ids = ids.filter((id) => S.tracks.has(id));
+    ids = ids.filter((id) => hasTrack(id));
     if (!ids.length) return;
     if (!S.queue.length) { playIds(ids, 0, 'Очередь'); return; }
     S.queue.push(...ids);
@@ -802,7 +864,7 @@
     saveSession(); renderQueue();
   }
   function queueNext(ids) {
-    ids = ids.filter((id) => S.tracks.has(id));
+    ids = ids.filter((id) => hasTrack(id));
     if (!ids.length) return;
     if (!S.queue.length) { playIds(ids, 0, 'Очередь'); return; }
     S.queue.splice(S.qi + 1, 0, ...ids);
@@ -903,16 +965,18 @@
     LS.set('session', {
       queue: S.queue.slice(0, 2000), baseQueue: S.baseQueue.slice(0, 2000), qi: S.qi,
       time: audio.currentTime || 0, key: S.ctxKey, label: S.ctxLabel, wave: S.wave,
+      remote: [...new Set(S.queue)].filter((id) => !S.tracks.has(id) && S.remote.has(id)).slice(0, 500).map((id) => S.remote.get(id)),
     });
   }
   function restoreSession() {
     const s = LS.get('session', null);
     if (!s || !Array.isArray(s.queue)) return;
-    const queue = s.queue.filter((id) => S.tracks.has(id));
+    (s.remote || []).forEach((t) => { if (t && t.id && !S.tracks.has(t.id)) S.remote.set(t.id, t); });
+    const queue = s.queue.filter((id) => hasTrack(id));
     if (!queue.length) return;
     const curId = s.queue[s.qi];
     S.queue = queue;
-    S.baseQueue = (s.baseQueue || queue).filter((id) => S.tracks.has(id));
+    S.baseQueue = (s.baseQueue || queue).filter((id) => hasTrack(id));
     S.qi = Math.max(0, queue.indexOf(curId));
     S.ctxKey = s.key || '';
     S.ctxLabel = s.label || '';
@@ -943,7 +1007,7 @@
     $$('.row.playing').forEach((r) => r.classList.remove('playing'));
     if (S.current) $$(`.row[data-id="${S.current}"]`).forEach((r) => r.classList.add('playing'));
     $$('.sp-item').forEach((el) => el.classList.toggle('playing', !!S.current && el.dataset.key === S.ctxKey));
-    const t = S.tracks.get(S.current);
+    const t = getTrack(S.current);
     document.title = t ? `${playing ? '▶ ' : ''}${t.title} — ${artistOf(t)} · MP3UP` : 'MP3UP — твоя музыка';
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = S.current ? (playing ? 'playing' : 'paused') : 'none';
     notifyNative();
@@ -959,7 +1023,7 @@
   }
 
   function updateLikeUI() {
-    const t = S.tracks.get(S.current);
+    const t = getTrack(S.current);
     $$('[data-ctl="like"]').forEach((b) => {
       const on = !!t?.liked;
       b.classList.toggle('on', on);
@@ -967,7 +1031,7 @@
       b.setAttribute('aria-label', on ? 'Убрать из любимых' : 'Нравится');
     });
     $$('[data-like]').forEach((b) => {
-      const tr = S.tracks.get(b.dataset.like);
+      const tr = getTrack(b.dataset.like);
       const on = !!tr?.liked;
       b.classList.toggle('on', on);
       setIcon(b, on ? 'heart-fill' : 'heart');
@@ -998,7 +1062,7 @@
   }
 
   function updateNowPlaying() {
-    const t = S.tracks.get(S.current);
+    const t = getTrack(S.current);
     $('#player').classList.toggle('no-track', !t);
     if (!t) {
       $('#pCover').innerHTML = '';
@@ -1031,7 +1095,7 @@
       try {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: t.title, artist: artistOf(t), album: t.album || '',
-          artwork: u ? [{ src: u, sizes: '512x512', type: t.cover.type || 'image/jpeg' }] : [],
+          artwork: u ? [{ src: u, sizes: '512x512', type: t.cover?.type || 'image/jpeg' }] : [],
         });
       } catch { /* необязательно */ }
     }
@@ -1046,7 +1110,7 @@
   let vdata = null;
 
   function progressTick() {
-    const d = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : (S.tracks.get(S.current)?.duration || 0);
+    const d = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : (getTrack(S.current)?.duration || 0);
     const c = audio.currentTime || 0;
     const key = Math.round(c * 4) + d;
     if (!seeking && key !== lastProgress) {
@@ -1097,7 +1161,7 @@
   let nativeArtId = null;
   function notifyNative(force) {
     if (!Native) return;
-    const t = S.tracks.get(S.current);
+    const t = getTrack(S.current);
     const playing = !!t && !audio.paused;
     const pos = Math.round((audio.currentTime || 0) * 1000);
     const dur = Math.round((isFinite(audio.duration) ? audio.duration : (t?.duration || 0)) * 1000);
@@ -1114,6 +1178,7 @@
     if (u) {
       try {
         const img = new Image();
+        img.crossOrigin = 'anonymous';
         img.src = u;
         await img.decode();
         const c = document.createElement('canvas');
@@ -1180,14 +1245,14 @@
   function renderQueue() {
     if (!S.queueOpen) return;
     const body = $('#queueBody');
-    const cur = S.tracks.get(S.queue[S.qi]);
+    const cur = getTrack(S.queue[S.qi]);
     if (!S.queue.length || !cur) {
       body.innerHTML = `<div class="q-empty">${ic('queue')}<p>Очередь пуста</p><span>Включите любой трек, альбом или «Мою волну» — здесь появится то, что будет играть дальше.</span></div>`;
       return;
     }
     const upcoming = [];
     for (let k = S.qi + 1; k < S.queue.length && upcoming.length < 150; k++) {
-      const t = S.tracks.get(S.queue[k]);
+      const t = getTrack(S.queue[k]);
       if (t) upcoming.push(qrow(t, k));
     }
     const left = S.queue.length - S.qi - 1;
@@ -1345,8 +1410,8 @@
       ${tracks.map((t, i) => `
       <div class="row ${t.id === S.current ? 'playing' : ''}" data-id="${t.id}" data-i="${i}">
         <span class="num"><span class="n">${numbers ? i + 1 : (t.trackNo || i + 1)}</span><button class="row-play" data-act="row-play" aria-label="Слушать">${ic('play')}</button><span class="bars"><i></i><i></i><i></i></span></span>
-        <span class="ti">${coverHTML(t, 'sm')}<span class="tt"><span class="t1">${esc(t.title)}</span><a class="t2" href="#/artist/${encodeURIComponent(artistOf(t))}">${esc(artistOf(t))}</a></span></span>
-        <span class="al">${t.album ? `<a href="#/album/${encodeURIComponent(t.album)}">${esc(t.album)}</a>` : '<span class="dim">—</span>'}</span>
+        <span class="ti">${coverHTML(t, 'sm')}<span class="tt"><span class="t1">${esc(t.title)}${isRemote(t) ? ic('globe', 'src') : ''}</span><a class="t2" href="${S.tracks.has(t.id) ? '#/artist/' : '#/online/'}${encodeURIComponent(artistOf(t))}">${esc(artistOf(t))}</a></span></span>
+        <span class="al">${t.album ? `<a href="#/album/${encodeURIComponent(t.album)}">${esc(t.album)}</a>` : `<span class="dim">${isRemote(t) ? esc(t.genre || 'Audius') : '—'}</span>`}</span>
         <button class="icon-btn like ${t.liked ? 'on' : ''}" data-act="like" data-like="${t.id}" aria-label="Нравится" title="Нравится">${ic(t.liked ? 'heart-fill' : 'heart')}</button>
         <span class="dur">${fmt(t.duration)}</span>
         <button class="icon-btn more" data-act="more" aria-label="Ещё" title="Ещё">${ic('more')}</button>
@@ -1400,10 +1465,117 @@
         <div class="welcome-actions">
           <button class="btn btn-primary lg" data-act="add-music">${ic('upload')}Выбрать файлы</button>
           <button class="btn btn-ghost lg" data-act="add-folder">${ic('folder')}Выбрать папку</button>
+          <a class="btn btn-ghost lg" href="#/online">${ic('globe')}Слушать онлайн</a>
         </div>
         <div class="dropzone" data-act="add-music">${ic('note')}<span>или перетащите музыку сюда</span></div>
         <p class="privacy">Файлы никуда не загружаются — всё остаётся в вашем браузере.</p>
       </div>`;
+  }
+
+  /* ---------- Онлайн: бесплатная музыка Audius ---------- */
+  const Audius = (() => {
+    const API = 'https://api.audius.co/v1';
+    const APP = 'MP3UP';
+    async function get(path, params) {
+      const u = new URL(API + path);
+      for (const [k, v] of Object.entries(params)) if (v !== '' && v != null) u.searchParams.set(k, v);
+      u.searchParams.set('app_name', APP);
+      const r = await fetch(u);
+      if (!r.ok) throw new Error('Audius ' + r.status);
+      return (await r.json()).data || [];
+    }
+    const playable = (a) => a && a.is_streamable !== false && !a.is_stream_gated && a.access?.stream !== false && !a.is_delete && a.is_available !== false;
+    function toTrack(a) {
+      const id = 'au:' + a.id;
+      const known = S.tracks.get(id) || S.remote.get(id);
+      if (known) return known;
+      const art = a.artwork || {};
+      const t = {
+        id, source: 'audius', audiusId: a.id,
+        title: a.title || 'Без названия', artist: a.user?.name || '', album: '', albumArtist: '',
+        genre: a.genre || '', year: (a.release_date || '').slice(0, 4), trackNo: 0,
+        duration: a.duration || 0,
+        art: art['480x480'] || art['1000x1000'] || art['150x150'] || '',
+        artSmall: art['150x150'] || art['480x480'] || '',
+        permalink: a.permalink ? 'https://audius.co' + a.permalink : 'https://audius.co',
+        cover: null, color: null, addedAt: 0, plays: 0, lastPlayed: 0, liked: false, likedAt: 0,
+      };
+      S.remote.set(id, t);
+      return t;
+    }
+    return {
+      streamUrl: (id) => `${API}/tracks/${encodeURIComponent(id)}/stream?app_name=${APP}`,
+      trending: async (genre) => (await get('/tracks/trending', { genre, time: 'week', limit: 60 })).filter(playable).map(toTrack),
+      search: async (query) => (await get('/tracks/search', { query, limit: 60 })).filter(playable).map(toTrack),
+    };
+  })();
+
+  const ONLINE_GENRES = [['', 'Все'], ['Electronic', 'Электроника'], ['Hip-Hop/Rap', 'Хип-хоп'], ['Pop', 'Поп'], ['Rock', 'Рок'],
+    ['Alternative', 'Альтернатива'], ['Lo-Fi', 'Lo-Fi'], ['House', 'Хаус'], ['Techno', 'Техно'], ['Trap', 'Трэп'], ['R&B/Soul', 'R&B'],
+    ['Drum & Bass', 'Драм-н-бэйс'], ['Ambient', 'Эмбиент'], ['Jazz', 'Джаз'], ['Classical', 'Классика'], ['Metal', 'Метал'], ['Soundtrack', 'Саундтреки']];
+  const ON = { genre: LS.get('onlineGenre', ''), results: new Map() };
+  const ONLINE_TTL = 15 * 60e3;
+  const onlineKey = (q, genre = ON.genre) => (q ? 'q:' + norm(q) : 'g:' + genre);
+  const onlineQuery = () => (S.view?.name === 'online' ? (S.view.param || '').trim() : '');
+
+  async function loadOnline(q, genre = ON.genre) {
+    const key = onlineKey(q, genre);
+    const cur = ON.results.get(key);
+    if (cur?.loading) return;
+    ON.results.set(key, { loading: true });
+    try {
+      const tracks = q ? await Audius.search(q) : await Audius.trending(genre);
+      ON.results.set(key, { tracks, at: Date.now() });
+    } catch (e) {
+      console.warn(e);
+      ON.results.set(key, { error: true });
+    }
+    fillOnline();
+  }
+  function onlineFresh(key) {
+    const r = ON.results.get(key);
+    return r && (r.loading || r.error || Date.now() - r.at < ONLINE_TTL);
+  }
+  const skeletonRows = () => `<div class="sk-list">${'<div class="sk-row"><i></i><span><b></b><b></b></span></div>'.repeat(8)}</div>`;
+  const skeletonCards = () => '<div class="sk-card"><i></i><b></b><b></b></div>'.repeat(7);
+
+  function onlineResultsHTML(q) {
+    const r = ON.results.get(onlineKey(q));
+    if (!r || r.loading) return skeletonRows();
+    if (r.error) {
+      return emptyBlock('globe', 'Не удалось загрузить',
+        navigator.onLine ? 'Audius сейчас не отвечает. Попробуйте ещё раз чуть позже.' : 'Нет подключения к интернету. Музыка из медиатеки по-прежнему доступна.',
+        `<button class="btn btn-primary" data-act="online-retry">Повторить</button>`);
+    }
+    if (!r.tracks.length) return emptyBlock('search', 'Ничего не нашлось', 'Попробуйте другое название или имя исполнителя.');
+    return trackList(r.tracks, { label: q ? `Audius: ${q}` : 'Audius: в тренде', key: 'online:' + onlineKey(q) });
+  }
+  function homeOnlineHTML(trigger) {
+    const key = onlineKey('', '');
+    if (trigger && !onlineFresh(key)) setTimeout(() => loadOnline('', ''), 0);
+    const r = ON.results.get(key);
+    if (!r || r.loading) return skeletonCards();
+    if (r.error) return `<p class="dim shelf-note">${navigator.onLine ? 'Audius сейчас не отвечает' : 'Нет подключения к интернету'}</p>`;
+    const list = r.tracks.slice(0, 16);
+    const lid = regList(list.map((t) => t.id), 'Audius: в тренде', 'online:' + key);
+    return list.map((t, i) => card({ href: '#/online', cover: coverHTML(t), title: t.title, sub: esc(artistOf(t)), play: `list:${lid}:${i}` })).join('');
+  }
+  function fillOnline() {
+    const box = $('#onlineResults');
+    if (box && S.view?.name === 'online') box.innerHTML = onlineResultsHTML(onlineQuery());
+    const home = $('#homeOnline');
+    if (home) home.innerHTML = homeOnlineHTML(false);
+    updatePlayState();
+  }
+  function setOnlineQuery(q) {
+    S.view = { name: 'online', param: q || null };
+    history.replaceState(null, '', '#/online' + (q ? '/' + encodeURIComponent(q) : ''));
+    const genres = $('#onlineGenres');
+    if (genres) genres.hidden = !!q;
+    const title = $('#onlineTitle');
+    if (title) title.textContent = q ? `Результаты по запросу «${q}»` : 'В тренде за неделю';
+    if (!onlineFresh(onlineKey(q))) loadOnline(q);
+    fillOnline();
   }
 
   /* ---------- Экраны ---------- */
@@ -1453,6 +1625,11 @@
           <div class="shelf">${recent.map((t, i) => card({ href: t.album ? `#/album/${encodeURIComponent(t.album)}` : `#/artist/${encodeURIComponent(artistOf(t))}`, cover: coverHTML(t), title: t.title, sub: esc(artistOf(t)), play: `list:${recentLid}:${i}` })).join('')}</div>
         </section>
 
+        <section class="section">
+          <div class="sec-head"><h2>В тренде на Audius</h2><a href="#/online">Показать все</a></div>
+          <div class="shelf" id="homeOnline">${homeOnlineHTML(true)}</div>
+        </section>
+
         ${top.length ? `<section class="section">
           <div class="sec-head"><h2>Часто слушаете</h2><a href="#/library/tracks" data-sort="plays">Показать все</a></div>
           ${trackList(top, { label: 'Часто слушаете', key: 'top', compact: true })}
@@ -1473,7 +1650,8 @@
     search() {
       const all = allTracks();
       const q = S.q.trim();
-      if (!all.length) return { html: emptyBlock('search', 'Пока нечего искать', 'Добавьте музыку — и здесь можно будет мгновенно найти любой трек, альбом или исполнителя.', `<button class="btn btn-primary" data-act="add-music">${ic('upload')}Добавить музыку</button>`) };
+      const onlineBtn = q ? `<a class="btn btn-primary" href="#/online/${encodeURIComponent(q)}">${ic('globe')}Искать «${esc(q)}» в Audius</a>` : `<a class="btn btn-primary" href="#/online">${ic('globe')}Слушать онлайн</a>`;
+      if (!all.length) return { html: emptyBlock('search', 'В медиатеке пока пусто', 'Добавьте свои MP3 или найдите бесплатную музыку онлайн.', onlineBtn) };
       if (!q) {
         const genres = new Map();
         all.forEach((t) => { if (t.genre) { const k = norm(t.genre); const g = genres.get(k) || { name: t.genre, n: 0 }; g.n++; genres.set(k, g); } });
@@ -1491,7 +1669,7 @@
       const artists = getArtists().filter((a) => norm(a.name).includes(nq));
       const albums = getAlbums().filter((a) => norm(a.name).includes(nq) || norm(a.artist).includes(nq));
       if (!tracks.length && !artists.length && !albums.length) {
-        return { html: emptyBlock('search', `Ничего не нашлось по запросу «${esc(q)}»`, 'Проверьте написание или попробуйте искать по исполнителю или альбому.') };
+        return { html: emptyBlock('search', `В медиатеке нет «${esc(q)}»`, 'Зато можно поискать среди бесплатных треков онлайн.', onlineBtn) };
       }
       const bestArtist = artists.find((a) => norm(a.name).startsWith(nq));
       let best = '';
@@ -1509,7 +1687,23 @@
         </div>
         ${tracks.length > 5 ? `<section class="section"><div class="sec-head"><h2>Все треки · ${tracks.length}</h2></div>${trackList(tracks.slice(0, 200), { label: `Поиск: ${q}` })}</section>` : ''}
         ${artists.length ? `<section class="section"><div class="sec-head"><h2>Исполнители</h2></div><div class="shelf">${artists.slice(0, 20).map(artistCard).join('')}</div></section>` : ''}
-        ${albums.length ? `<section class="section"><div class="sec-head"><h2>Альбомы</h2></div><div class="shelf">${albums.slice(0, 20).map(albumCard).join('')}</div></section>` : ''}` };
+        ${albums.length ? `<section class="section"><div class="sec-head"><h2>Альбомы</h2></div><div class="shelf">${albums.slice(0, 20).map(albumCard).join('')}</div></section>` : ''}
+        <div class="online-cta">${onlineBtn}</div>` };
+    },
+
+    online(q) {
+      q = (q || '').trim();
+      if (!onlineFresh(onlineKey(q))) setTimeout(() => loadOnline(q), 0);
+      return { html: `
+        <div class="page-head"><div><h1>Онлайн</h1><p class="page-sub">Бесплатная музыка от артистов на Audius — без подписки и рекламы</p></div></div>
+        <label class="online-search">${ic('search')}<input id="onlineQ" type="search" placeholder="Трек или исполнитель" value="${esc(q)}" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>
+        <div class="chips" id="onlineGenres" ${q ? 'hidden' : ''}>${ONLINE_GENRES.map(([g, l]) => `<button class="chip ${g === ON.genre ? 'active' : ''}" data-genre="${esc(g)}">${l}</button>`).join('')}</div>
+        <section class="section online-section">
+          <div class="sec-head"><h2 id="onlineTitle">${q ? `Результаты по запросу «${esc(q)}»` : 'В тренде за неделю'}</h2></div>
+          <div id="onlineResults">${onlineResultsHTML(q)}</div>
+        </section>
+        <p class="online-note">${ic('globe')}<span>Треки предоставляет <a href="https://audius.co" target="_blank" rel="noopener">Audius</a> — артисты сами выкладывают их для бесплатного прослушивания. Нужен интернет. Нажмите ♥, чтобы сохранить трек в медиатеку.</span></p>`,
+      color: { h: 268, s: 62, l: 50 } };
     },
 
     library(tab) {
@@ -1576,7 +1770,7 @@
       if (!p) return { html: emptyBlock('list', 'Плейлист не найден', 'Возможно, он был удалён.', '<a class="btn btn-primary" href="#/library/playlists">Все плейлисты</a>') };
       const list = playlistTracks(p);
       const total = list.reduce((s, t) => s + (t.duration || 0), 0);
-      const first = list.find((t) => t.cover) || list[0];
+      const first = list.find((t) => t.cover || t.art) || list[0];
       const extra = `
         <span class="spacer"></span>
         <button class="btn btn-ghost" data-act="pl-add" data-id="${p.id}">${ic('plus')}<span>Добавить треки</span></button>
@@ -1738,8 +1932,24 @@
           case 'install': installApp(); return;
           case 'back': history.back(); return;
           case 'forward': history.forward(); return;
-          case 'np-artist': { const tr = S.tracks.get(S.current); if (tr) { setNp(false); go('artist', artistOf(tr)); } return; }
+          case 'np-artist': { const tr = getTrack(S.current); if (tr) { setNp(false); go('artist', artistOf(tr)); } return; }
         }
+      }
+
+      const genreBtn = t.closest('[data-genre]');
+      if (genreBtn) {
+        ON.genre = genreBtn.dataset.genre;
+        LS.set('onlineGenre', ON.genre);
+        $$('[data-genre]').forEach((b) => b.classList.toggle('active', b === genreBtn));
+        if (!onlineFresh(onlineKey(''))) loadOnline('');
+        fillOnline();
+        return;
+      }
+      if (t.closest('[data-act="online-retry"]')) {
+        ON.results.delete(onlineKey(onlineQuery()));
+        loadOnline(onlineQuery());
+        fillOnline();
+        return;
       }
 
       const sortLink = t.closest('[data-sort]');
@@ -1759,6 +1969,17 @@
       }
     });
 
+    // Битая обложка (сервер недоступен) — показываем заглушку
+    document.addEventListener('error', (e) => {
+      const img = e.target;
+      if (!(img instanceof HTMLImageElement) || !img.classList.contains('cover')) return;
+      const ph = document.createElement('div');
+      ph.className = img.className + ' ph';
+      ph.style.setProperty('--h', hashHue(img.getAttribute('src')));
+      ph.innerHTML = ic('note');
+      img.replaceWith(ph);
+    }, true);
+
     // Правый клик по треку
     document.addEventListener('contextmenu', (e) => {
       const row = e.target.closest('.row');
@@ -1774,6 +1995,17 @@
       $('#topbar').classList.toggle('scrolled', $('#main').scrollTop > 10);
     }, { passive: true });
     window.addEventListener('resize', closeMenu);
+
+    // Поиск онлайн
+    let onlineTimer;
+    document.addEventListener('input', (e) => {
+      if (e.target.id !== 'onlineQ') return;
+      clearTimeout(onlineTimer);
+      onlineTimer = setTimeout(() => setOnlineQuery(e.target.value.trim()), 450);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.target.id === 'onlineQ' && e.key === 'Enter') { clearTimeout(onlineTimer); setOnlineQuery(e.target.value.trim()); e.target.blur(); }
+    });
 
     // Сортировка медиатеки
     document.addEventListener('change', (e) => {
@@ -1813,7 +2045,7 @@
       const el = e.target;
       if (el.classList.contains('seek')) {
         seeking = true;
-        const d = audio.duration || S.tracks.get(S.current)?.duration || 0;
+        const d = audio.duration || getTrack(S.current)?.duration || 0;
         el.style.setProperty('--p', el.value / 10 + '%');
         $$('.t-cur').forEach((x) => { x.textContent = fmt((el.value / 1000) * d); });
       } else if (el.classList.contains('vol')) {
@@ -1835,24 +2067,24 @@
     audio.addEventListener('ended', () => next(true));
     audio.addEventListener('error', () => {
       if (!S.current || !audio.getAttribute('src')) return;
-      const t = S.tracks.get(S.current);
-      toast(`Не удалось воспроизвести «${t?.title || 'трек'}»`, 'warn', 3500);
+      const t = getTrack(S.current);
+      toast(isRemote(t) && !navigator.onLine ? 'Нет интернета — онлайн-трек не загрузится' : `Не удалось воспроизвести «${t?.title || 'трек'}»`, 'warn', 3500);
       if (S.qi < S.queue.length - 1) setTimeout(() => next(true), 1200);
     });
     audio.addEventListener('loadedmetadata', () => {
-      const t = S.tracks.get(S.current);
+      const t = getTrack(S.current);
       if (t && isFinite(audio.duration) && Math.abs((t.duration || 0) - audio.duration) > 1) {
         t.duration = audio.duration;
-        DB.put('tracks', t).catch(() => {});
+        if (S.tracks.has(t.id)) DB.put('tracks', t).catch(() => {});
       }
     });
     audio.addEventListener('timeupdate', () => {
-      const t = S.tracks.get(S.current);
+      const t = getTrack(S.current);
       if (t && !S.counted && !audio.paused && audio.currentTime > Math.min(30, (audio.duration || 60) * 0.5)) {
         S.counted = true;
         t.plays = (t.plays || 0) + 1;
         t.lastPlayed = Date.now();
-        DB.put('tracks', t).catch(() => {});
+        if (S.tracks.has(t.id)) DB.put('tracks', t).catch(() => {});
       }
       if (Date.now() - lastSessionSave > 5000) saveSession();
       if ('mediaSession' in navigator && navigator.mediaSession.setPositionState && isFinite(audio.duration)) {
@@ -1937,6 +2169,7 @@
   /* ---------- Запуск ---------- */
   async function init() {
     applyTheme(LS.get('theme', matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+    audio.crossOrigin = 'anonymous';
     audio.volume = clamp(LS.get('vol', 0.8), 0, 1);
     audio.muted = LS.get('muted', false);
     bindUI();

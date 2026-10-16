@@ -792,6 +792,39 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
 .drop-box b { font-size: 22px; }
 .drop-box span { color: var(--text-2); }
 
+/* ---------- Онлайн (Audius) ---------- */
+.page-sub { color: var(--text-2); font-weight: 600; margin-top: 6px; }
+.online-search {
+  display: flex; align-items: center; gap: 12px;
+  height: 54px; padding: 0 18px; margin-bottom: 16px; max-width: 640px;
+  border-radius: 16px; background: var(--surface); border: 1.5px solid var(--border);
+  color: var(--text-2); cursor: text; transition: border-color .15s;
+}
+.online-search:focus-within { border-color: var(--accent); color: var(--text); }
+.online-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: none; font-size: 16px; font-weight: 600; }
+.online-search input::placeholder { color: var(--text-3); font-weight: 500; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.online-section { margin-top: 26px; }
+.online-note { display: flex; gap: 10px; align-items: flex-start; margin-top: 28px; padding: 14px 16px; border-radius: 14px; background: var(--surface-2); color: var(--text-2); font-size: 13px; max-width: 760px; }
+.online-note .ic { width: 18px; height: 18px; color: var(--accent); }
+.online-note a { color: var(--text); font-weight: 700; text-decoration: underline; }
+.online-cta { margin-top: 32px; display: flex; justify-content: center; }
+.shelf-note { padding: 20px 4px; }
+.t1 .ic.src { width: 13px; height: 13px; margin-left: 6px; vertical-align: -1px; color: var(--text-3); }
+
+.sk-list { display: flex; flex-direction: column; gap: 4px; }
+.sk-row { display: flex; align-items: center; gap: 14px; height: 60px; padding: 0 12px; }
+.sk-row i, .sk-row b, .sk-card i, .sk-card b { display: block; border-radius: 8px; background: var(--surface-2); animation: sk 1.2s ease-in-out infinite; }
+.sk-row i { width: 42px; height: 42px; border-radius: 6px; }
+.sk-row span { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.sk-row b { height: 12px; width: 38%; }
+.sk-row b + b { width: 22%; }
+.sk-card { padding: 12px; }
+.sk-card i { aspect-ratio: 1; border-radius: 10px; margin-bottom: 12px; }
+.sk-card b { height: 12px; width: 80%; margin-bottom: 8px; }
+.sk-card b + b { width: 50%; }
+@keyframes sk { 50% { opacity: .45; } }
+
 /* ---------- Android-приложение ---------- */
 .is-android [data-act="add-folder"], .is-android .dropzone, .is-android .privacy { display: none !important; }
 
@@ -865,12 +898,16 @@ a.t2:hover { color: var(--text); text-decoration: underline; }
   .p-controls .icon-btn .ic { width: 22px; height: 22px; }
 
   .bottom-nav {
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    display: grid; grid-template-columns: repeat(5, 1fr);
     padding: 6px 8px calc(6px + var(--safe-b));
     background: var(--bg-2);
     border-top: 1px solid var(--border);
   }
-  .bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0; color: var(--text-3); font-size: 11px; font-weight: 700; }
+  .bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0; color: var(--text-3); font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+  .online-search { height: 50px; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips .chip { flex: none; }
   .bottom-nav a.active { color: var(--text); }
   .bottom-nav a.active .ic { color: var(--accent); }
   .bottom-nav .ic { width: 24px; height: 24px; }
