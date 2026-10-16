@@ -127,7 +127,7 @@ internal sealed partial class MainWindow
             S.LockHotkey = v;
             S.Save();
             app.ApplyHotkey();
-        }, "Win+L тоже работает, но перехватить его Windows не даёт — откроется сразу экран ввода пароля."));
+        }, "Обычный Win+L сразу открывает экран ввода пароля Windows (там будет кадр из обоев)."));
 
         stack.Children.Add(Ui.Section("Картинка экрана ввода пароля"));
         stack.Children.Add(Ui.ToggleRow("Ставить кадр обоев при блокировке", S.LockScreenSync, v => { S.LockScreenSync = v; S.Save(); }));
@@ -187,6 +187,18 @@ internal sealed partial class MainWindow
             S.Save();
             app.Wallpapers.Build();
         }, 320), $"Подключено мониторов: {WallpaperSlot.Monitors().Count}. В режиме «разные» выберите монитор в поле «Куда ставить» в библиотеке."));
+        stack.Children.Add(Ui.Row("Способ встраивания в рабочий стол", Ui.Combo(new[]
+        {
+            ("Автоматически (рекомендуется)", "auto"),
+            ("1 — перенос окна в рабочий стол", nameof(EmbedMethod.Reparent)),
+            ("2 — дочернее окно рабочего стола", nameof(EmbedMethod.ChildWindow)),
+            ("3 — внутри слоя фона (Windows 11 24H2+)", nameof(EmbedMethod.InsideWorker)),
+        }, S.DesktopMethod, v =>
+        {
+            S.DesktopMethod = v;
+            S.Save();
+            app.Wallpapers.Recheck();
+        }, 320), "Сейчас: " + app.Wallpapers.EmbedStatus + ". Программа сама проверяет, видны ли обои, и при неудаче пробует другой способ."));
         stack.Children.Add(Ui.Row("Масштаб видео и картинок", Ui.Combo(new[]
         {
             ("Заполнить экран (с обрезкой)", "UniformToFill"), ("Вписать целиком", "Uniform"), ("Растянуть", "Fill"),
@@ -241,6 +253,11 @@ internal sealed partial class MainWindow
         }));
         system.Children.Add(Ui.Button("Диагностика рабочего стола", () =>
             Process.Start(new ProcessStartInfo(app.WriteDiagnostics()) { UseShellExecute = true })));
+        system.Children.Add(Ui.Button("Проверить обои на рабочем столе", () =>
+        {
+            app.Wallpapers.Recheck();
+            app.Notify("Проверяю, видны ли обои на рабочем столе… Сверните окна на пару секунд.");
+        }));
         system.Children.Add(Ui.Button("Обновить превью", () =>
         {
             try { Directory.Delete(Thumbnails.Folder, true); } catch { /* нет папки */ }

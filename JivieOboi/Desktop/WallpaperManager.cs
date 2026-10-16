@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -23,6 +24,12 @@ internal sealed class WallpaperManager
     int playlistIndex;
     bool paused = true, deep;
     string buildSignature = "";
+    EmbedMethod method = EmbedMethod.Reparent;
+    readonly HashSet<EmbedMethod> failedMethods = new();
+    int verifyGeneration, inconclusiveRetries;
+
+    /// <summary>Как обои встроены в рабочий стол и видны ли они (для настроек и диагностики).</summary>
+    public string EmbedStatus { get; private set; } = "ещё не проверено";
 
     public event Action? Changed;
     public event Action<string>? Problem;
@@ -72,9 +79,17 @@ internal sealed class WallpaperManager
         }
 
         var signature = $"{s.Stretch}|{s.SceneFps}|{s.VideoEngine}|{s.Mode}";
-        if (force || newTarget != target || signature != buildSignature) DisposeAll();
+        bool targetChanged = newTarget != target;
+        if (targetChanged)
+        {
+            // Новый рабочий стол (первый запуск, перезапуск Explorer) — способ встраивания проверяем заново.
+            failedMethods.Clear();
+            method = PreferredMethod(newTarget.Value);
+        }
+        if (force || targetChanged || signature != buildSignature) DisposeAll();
         target = newTarget;
         buildSignature = signature;
+        bool created = false;
 
         var slots = WallpaperSlot.Current(s);
         foreach (var old in walls.ToList())
@@ -94,7 +109,8 @@ internal sealed class WallpaperManager
             {
                 var view = new WallpaperView(ItemFor(slot), s, soundAllowed: slot.Primary, desktopRole: true);
                 view.PreviewCaptured += OnPreviewCaptured;
-                walls.Add(new DesktopWallpaper(target.Value, slot, view));
+                walls.Add(new DesktopWallpaper(target.Value, slot, view, method));
+                created = true;
             }
             catch (Exception ex)
             {
@@ -106,7 +122,97 @@ internal sealed class WallpaperManager
         UpdateMouse();
         ApplyPlaylistTimer();
         Changed?.Invoke();
+        if (created && targetChanged) _ = VerifyAsync(++verifyGeneration, 900);
     }
+
+    // ── проверка, что обои видны, и выбор способа встраивания ──
+
+    static IReadOnlyList<EmbedMethod> MethodsFor(DesktopTarget t) => t.Raised
+        ? new[] { EmbedMethod.Reparent, EmbedMethod.ChildWindow, EmbedMethod.InsideWorker }
+        : new[] { EmbedMethod.Reparent, EmbedMethod.ChildWindow };
+
+    EmbedMethod PreferredMethod(DesktopTarget t)
+    {
+        var all = MethodsFor(t);
+        if (Enum.TryParse<EmbedMethod>(s.DesktopMethod, out var fixedMethod) && all.Contains(fixedMethod)) return fixedMethod;
+        if (Enum.TryParse<EmbedMethod>(s.LastGoodMethod, out var good) && all.Contains(good)) return good;
+        return all[0];
+    }
+
+    /// <summary>Проверить ещё раз (кнопка в настройках, смена способа вручную).</summary>
+    public void Recheck()
+    {
+        target = null; // заставит Build выбрать способ и проверить заново
+        inconclusiveRetries = 0;
+        Build(force: true);
+    }
+
+    async Task VerifyAsync(int generation, int delayMs)
+    {
+        await Task.Delay(delayMs); // даём окну отрисоваться
+        if (generation != verifyGeneration || target is not DesktopTarget t) return;
+        var wall = walls.FirstOrDefault(w => w.Slot.Primary) ?? walls.FirstOrDefault();
+        if (wall == null) return;
+        if (deep)
+        {
+            // Игра на весь экран или экран заблокирован — проверить нельзя, попробуем позже.
+            _ = VerifyAsync(generation, 30000);
+            return;
+        }
+
+        wall.ShowProbe(true);
+        await Task.Delay(400);
+        bool? visible = generation == verifyGeneration ? DesktopProbe.Check(wall.Slot.Bounds, DesktopWallpaper.ProbeColor) : null;
+        wall.ShowProbe(false);
+        if (generation != verifyGeneration) return;
+
+        string name = MethodTitle(method);
+        switch (visible)
+        {
+            case true:
+                EmbedStatus = $"{name} — обои видны (проверено)";
+                if (s.LastGoodMethod != method.ToString())
+                {
+                    s.LastGoodMethod = method.ToString();
+                    s.Save();
+                }
+                Log.Write("Обои видны, способ встраивания: " + method);
+                break;
+
+            case null:
+                EmbedStatus = $"{name} — проверить не удалось: рабочий стол закрыт окнами";
+                if (++inconclusiveRetries <= 10) _ = VerifyAsync(generation, 20000);
+                break;
+
+            case false:
+                failedMethods.Add(method);
+                Log.Write($"Обои не видны при способе {method}.{Environment.NewLine}{DesktopHost.Describe()}");
+                var next = MethodsFor(t).FirstOrDefault(m => !failedMethods.Contains(m), (EmbedMethod)(-1));
+                if (Enum.IsDefined(next) && !Enum.TryParse<EmbedMethod>(s.DesktopMethod, out _))
+                {
+                    method = next;
+                    EmbedStatus = $"пробую способ «{MethodTitle(next)}»…";
+                    DisposeAll();
+                    Build();
+                    _ = VerifyAsync(++verifyGeneration, 900);
+                }
+                else
+                {
+                    EmbedStatus = $"{name} — обои НЕ видны";
+                    Problem?.Invoke("Не получилось показать обои на рабочем столе. Откройте «Настройки» → «Диагностика рабочего стола» и пришлите файл разработчику.");
+                }
+                break;
+        }
+        Changed?.Invoke();
+    }
+
+    public static string MethodTitle(EmbedMethod m) => m switch
+    {
+        EmbedMethod.Reparent => "перенос окна в рабочий стол",
+        EmbedMethod.ChildWindow => "дочернее окно рабочего стола",
+        EmbedMethod.InsideWorker => "внутри слоя фона (24H2+)",
+        _ => m.ToString(),
+    };
 
     void DisposeAll()
     {

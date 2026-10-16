@@ -66,6 +66,12 @@ internal sealed class TrayApp
     public void Start(bool openWindow)
     {
         Library.MigrateFrom(Settings);
+        if (Settings.IsFirstRun)
+        {
+            // Автономная работа: с первого запуска программа сама стартует вместе с Windows.
+            Autostart.Set(true);
+            Settings.Save();
+        }
         if (Autostart.IsEnabled) Autostart.Set(true); // обновить путь и ключ /tray после обновления программы
         CreateTray();
         CreateMessageWindow();

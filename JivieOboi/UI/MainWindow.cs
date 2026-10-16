@@ -23,9 +23,11 @@ internal sealed partial class MainWindow : Window
     readonly TrayApp app;
     readonly ListBox nav = new();
     readonly ContentControl host = new();
-    readonly WrapPanel cards = new() { Margin = new Thickness(0, 4, 0, 24) };
-    readonly StackPanel details = new();
-    readonly TextBox search = new() { Width = 220, Margin = new Thickness(0, 0, 8, 8) };
+    // Страница библиотеки собирается заново при каждом открытии вкладки, поэтому эти элементы
+    // тоже создаются заново: элемент WPF не может принадлежать двум родителям сразу.
+    WrapPanel cards = new();
+    StackPanel details = new();
+    TextBox search = new();
     readonly Button pauseButton = new() { HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 8, 12, 8) };
     readonly TextBlock status = new() { Opacity = 0.7, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4, 0, 4, 8) };
     readonly DispatcherTimer saveDebounce = new() { Interval = TimeSpan.FromMilliseconds(700) };
@@ -138,13 +140,26 @@ internal sealed partial class MainWindow : Window
     void ShowPage(int index)
     {
         FlushSave();
-        host.Content = index switch
+        try
         {
-            1 => PlaylistPage(),
-            2 => LockPage(),
-            3 => SettingsPage(),
-            _ => LibraryPage(),
-        };
+            host.Content = index switch
+            {
+                1 => PlaylistPage(),
+                2 => LockPage(),
+                3 => SettingsPage(),
+                _ => LibraryPage(),
+            };
+        }
+        catch (Exception ex)
+        {
+            // Ошибка не должна молча оставлять пустую или старую вкладку.
+            Log.Error("Вкладка " + index, ex);
+            host.Content = Ui.Page(new TextBlock
+            {
+                Text = "Не удалось открыть вкладку: " + ex.Message + "\n\nПодробности — в error.log (Настройки → Открыть папку настроек).",
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
     }
 
     void UpdateStatus()
@@ -164,6 +179,11 @@ internal sealed partial class MainWindow : Window
 
     UIElement LibraryPage()
     {
+        var query = search.Text;
+        cards = new WrapPanel { Margin = new Thickness(0, 4, 0, 24) };
+        details = new StackPanel();
+        search = new TextBox { Width = 220, Margin = new Thickness(0, 0, 8, 8), Text = query };
+
         var grid = new Grid { Margin = new Thickness(24, 16, 16, 0) };
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

@@ -58,9 +58,6 @@ internal sealed class MouseForwarder : IDisposable
     [DllImport("kernel32.dll")]
     static extern uint GetCurrentThreadId();
 
-    [DllImport("user32.dll")]
-    static extern IntPtr WindowFromPoint(Native.POINT point);
-
     readonly Dispatcher ui;
     readonly HookProc proc;
     readonly Thread thread;
@@ -150,14 +147,7 @@ internal sealed class MouseForwarder : IDisposable
         ui.BeginInvoke(() => Mouse?.Invoke(type, new Point(pt.X, pt.Y), button));
 
     /// <summary>Курсор над пустым рабочим столом (а не над окном программы).</summary>
-    static bool OverDesktop(Native.POINT pt)
-    {
-        var h = WindowFromPoint(pt);
-        if (h == IntPtr.Zero) return false;
-        var cls = Native.ClassName(h);
-        if (cls == "SysListView32") cls = Native.ClassName(Native.GetParent(h));
-        return cls is "SHELLDLL_DefView" or "WorkerW" or "Progman";
-    }
+    static bool OverDesktop(Native.POINT pt) => Native.IsDesktopAt(pt);
 
     public void Dispose()
     {

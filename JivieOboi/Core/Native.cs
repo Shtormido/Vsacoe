@@ -7,7 +7,10 @@ namespace JivieOboi;
 /// <summary>Win32 API, которое нужно для встраивания окна в рабочий стол и для блокировки.</summary>
 internal static class Native
 {
+    public const int GWL_STYLE = -16;
     public const int GWL_EXSTYLE = -20;
+    public const long WS_POPUP = 0x80000000L, WS_CAPTION = 0x00C00000L, WS_THICKFRAME = 0x00040000L,
+        WS_SYSMENU = 0x00080000L, WS_MINIMIZEBOX = 0x00020000L, WS_MAXIMIZEBOX = 0x00010000L;
     public const int WS_CHILD = 0x40000000;
     public const int WS_VISIBLE = 0x10000000;
     public const int WS_CLIPSIBLINGS = 0x04000000;
@@ -19,7 +22,8 @@ internal static class Native
     public const uint GW_HWNDLAST = 1, GW_CHILD = 5;
 
     public const uint LWA_ALPHA = 0x2;
-    public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10, SWP_SHOWWINDOW = 0x40;
+    public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10,
+        SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40;
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public static readonly IntPtr HWND_BOTTOM = new(1);
 
@@ -83,6 +87,24 @@ internal static class Native
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+
+    [DllImport("gdi32.dll")]
+    public static extern uint GetPixel(IntPtr dc, int x, int y);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -201,6 +223,21 @@ internal static class Native
         var sb = new StringBuilder(256);
         GetClassName(hwnd, sb, sb.Capacity);
         return sb.ToString();
+    }
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    /// <summary>
+    /// В этой точке экрана виден рабочий стол (иконки, обои), а не окно программы.
+    /// Всё, что принадлежит рабочему столу, в итоге лежит внутри Progman или WorkerW.
+    /// </summary>
+    public static bool IsDesktopAt(POINT pt)
+    {
+        var h = WindowFromPoint(pt);
+        if (h == IntPtr.Zero) return false;
+        var root = GetAncestor(h, 2 /* GA_ROOT */);
+        return ClassName(root == IntPtr.Zero ? h : root) is "Progman" or "WorkerW";
     }
 
     public static bool IsOwnWindow(IntPtr hwnd)

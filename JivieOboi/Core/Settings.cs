@@ -22,6 +22,10 @@ internal sealed class Settings
     /// <summary>"webview" — Chromium (WebView2), "wmf" — Windows Media Foundation.</summary>
     public string VideoEngine { get; set; } = "webview";
     public bool AudioReactive { get; set; } = true;
+    /// <summary>Способ встраивания в рабочий стол: "auto" или имя способа (Reparent, ChildWindow, InsideWorker).</summary>
+    public string DesktopMethod { get; set; } = "auto";
+    /// <summary>Способ, при котором обои точно были видны (подбирается автоматически).</summary>
+    public string? LastGoodMethod { get; set; }
     /// <summary>Передавать мышь в веб-обои (интерактивные обои).</summary>
     public bool Interactive { get; set; } = true;
 
@@ -60,6 +64,10 @@ internal sealed class Settings
 
     static string FileOnDisk => Path.Combine(Dir, "settings.json");
 
+    /// <summary>Настроек ещё не было — первый запуск программы.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsFirstRun { get; private set; }
+
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     public static Settings Load()
@@ -73,7 +81,7 @@ internal sealed class Settings
         {
             Log.Error("Чтение настроек", ex);
         }
-        return new Settings();
+        return new Settings { IsFirstRun = !File.Exists(FileOnDisk) };
     }
 
     public void Save()

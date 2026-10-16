@@ -20,7 +20,18 @@ public static class Program
             Log.Error("Необработанная ошибка", e.Exception);
             e.Handled = true;
         };
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write("Критическая ошибка: " + e.ExceptionObject);
+        bool trayMode = false;
+        var started = DateTime.UtcNow;
+        bool restarted = args.Any(a => a.Equals("/restarted", StringComparison.OrdinalIgnoreCase));
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            Log.Write("Критическая ошибка: " + e.ExceptionObject);
+            if (!trayMode) return;
+            // Автономность: перезапускаемся сами.
+            // Защита от бесконечного цикла: упали сразу после перезапуска — больше не перезапускаемся.
+            if (restarted && (DateTime.UtcNow - started).TotalSeconds < 60) return;
+            try { System.Diagnostics.Process.Start(Environment.ProcessPath!, "/tray /restarted"); } catch { /* как получится */ }
+        };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
             Log.Error("Фоновая задача", e.Exception);
@@ -41,6 +52,12 @@ public static class Program
         }
 
         using var mutex = new Mutex(true, @"Local\JivieOboi.SingleInstance", out bool isFirst);
+        if (!isFirst && restarted)
+        {
+            // Перезапуск после сбоя: ждём, пока упавшая копия окончательно закроется.
+            try { isFirst = mutex.WaitOne(TimeSpan.FromSeconds(20)); }
+            catch (AbandonedMutexException) { isFirst = true; }
+        }
         if (!isFirst)
         {
             // Уже запущены — просим первую копию показать окно библиотеки.
@@ -48,6 +65,7 @@ public static class Program
             return 0;
         }
 
+        trayMode = true;
         WF.Application.EnableVisualStyles();
         bool openWindow = !args.Any(a => a.Equals("/tray", StringComparison.OrdinalIgnoreCase));
         var tray = new TrayApp();
