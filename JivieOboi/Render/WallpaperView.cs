@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -9,7 +10,7 @@ using JivieOboi.Scenes;
 
 namespace JivieOboi;
 
-/// <summary>Содержимое обоев: видео, GIF, картинка или встроенная сцена.</summary>
+/// <summary>Содержимое обоев: встроенная анимация, видео, веб-страница, GIF или картинка.</summary>
 internal sealed class WallpaperView : Grid, IDisposable
 {
     public static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -20,18 +21,29 @@ internal sealed class WallpaperView : Grid, IDisposable
 
     readonly Settings settings;
     readonly bool soundAllowed;
+    readonly bool desktopRole;
     MediaElement? media;
     GifPlayer? gif;
     SceneElement? scene;
-    bool paused = true;
+    WebWallpaper? web;
+    bool paused = true, deep;
+
+    public WallpaperItem Item { get; }
 
     /// <summary>Если обои — обычная картинка, её можно сразу отдать экрану блокировки.</summary>
     public string? ImageFile { get; private set; }
 
-    public WallpaperView(Settings settings, bool soundAllowed)
+    /// <summary>Веб-обои сделали снимок для превью (только на рабочем столе).</summary>
+    public event Action<WallpaperItem, BitmapSource>? PreviewCaptured;
+
+    public bool IsWeb => web != null;
+
+    public WallpaperView(WallpaperItem item, Settings settings, bool soundAllowed, bool desktopRole)
     {
+        Item = item;
         this.settings = settings;
         this.soundAllowed = soundAllowed;
+        this.desktopRole = desktopRole;
         Background = Brushes.Black;
         ClipToBounds = true;
         IsHitTestVisible = false;
@@ -41,8 +53,8 @@ internal sealed class WallpaperView : Grid, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error("Загрузка обоев", ex);
-            ShowFallback($"Не удалось открыть файл: {ex.Message}");
+            Log.Error("Загрузка обоев " + item.Title, ex);
+            ShowFallback($"Не удалось открыть «{item.Title}»: {ex.Message}");
         }
     }
 
@@ -50,18 +62,38 @@ internal sealed class WallpaperView : Grid, IDisposable
 
     void Build()
     {
-        var path = settings.FilePath;
-        if (settings.SourceType == "file" && !string.IsNullOrWhiteSpace(path))
+        var path = Item.Path;
+        switch (Item.Type)
         {
-            if (!File.Exists(path))
-            {
-                ShowFallback($"Файл не найден: {path}");
+            case WallpaperType.Scene:
+                scene = SceneCatalog.Create(Item.Scene ?? "aurora", settings.SceneFps, SceneOptions.From(Item));
+                Children.Add(scene);
                 return;
-            }
 
-            var ext = Path.GetExtension(path);
-            if (VideoExtensions.Contains(ext))
-            {
+            case WallpaperType.Url:
+                if (!RequireWebView()) return;
+                AddWeb();
+                return;
+        }
+
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            ShowFallback($"Файл не найден: {path}");
+            return;
+        }
+
+        switch (Item.Type)
+        {
+            case WallpaperType.Web:
+                if (!RequireWebView()) return;
+                AddWeb();
+                return;
+
+            case WallpaperType.Video when settings.VideoEngine == "webview" && WebWallpaper.IsAvailable:
+                AddWeb();
+                return;
+
+            case WallpaperType.Video:
                 media = new MediaElement
                 {
                     LoadedBehavior = MediaState.Manual,
@@ -78,22 +110,18 @@ internal sealed class WallpaperView : Grid, IDisposable
                 media.MediaFailed += (_, e) =>
                 {
                     Log.Error("Видео", e.ErrorException);
-                    ShowFallback("Windows не смогла воспроизвести видео. Попробуйте MP4 (H.264).");
+                    ShowFallback("Windows не смогла воспроизвести видео. Включите движок Chromium в настройках или попробуйте MP4 (H.264).");
                 };
                 Children.Add(media);
                 return;
-            }
 
-            if (ext.Equals(".gif", StringComparison.OrdinalIgnoreCase))
-            {
+            case WallpaperType.Gif:
                 gif = new GifPlayer(path) { Stretch = StretchMode };
                 RenderOptions.SetBitmapScalingMode(gif, BitmapScalingMode.HighQuality);
                 Children.Add(gif);
                 return;
-            }
 
-            if (ImageExtensions.Contains(ext))
-            {
+            default:
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.UriSource = new Uri(path);
@@ -105,14 +133,21 @@ internal sealed class WallpaperView : Grid, IDisposable
                 Children.Add(image);
                 ImageFile = path;
                 return;
-            }
-
-            ShowFallback($"Неподдерживаемый формат: {ext}");
-            return;
         }
+    }
 
-        scene = SceneCatalog.Create(settings.Scene, settings.SceneFps);
-        Children.Add(scene);
+    bool RequireWebView()
+    {
+        if (WebWallpaper.IsAvailable) return true;
+        ShowFallback("Для веб-обоев нужен Microsoft Edge WebView2 Runtime (в Windows 11 он встроен): https://go.microsoft.com/fwlink/p/?LinkId=2124703");
+        return false;
+    }
+
+    void AddWeb()
+    {
+        web = new WebWallpaper(Item, settings, soundAllowed, capturePreview: desktopRole);
+        web.PreviewCaptured += frame => PreviewCaptured?.Invoke(Item, frame);
+        Children.Add(web);
     }
 
     void ShowFallback(string message)
@@ -122,16 +157,18 @@ internal sealed class WallpaperView : Grid, IDisposable
         gif?.Stop();
         gif = null;
         scene?.Stop();
+        web?.Dispose();
+        web = null;
         Children.Clear();
 
-        scene = SceneCatalog.Create("aurora", settings.SceneFps);
+        scene = SceneCatalog.Create("aurora", settings.SceneFps, new SceneOptions { Audio = false });
         Children.Add(scene);
         Children.Add(new TextBlock
         {
             Text = message,
-            Foreground = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)),
+            Foreground = new SolidColorBrush(Color.FromArgb(210, 255, 255, 255)),
             FontSize = 16,
-            Margin = new Thickness(24),
+            Margin = new Thickness(24, 24, 24, 72),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Bottom,
             TextWrapping = TextWrapping.Wrap,
@@ -139,10 +176,15 @@ internal sealed class WallpaperView : Grid, IDisposable
         if (!paused) scene.Start();
     }
 
-    public void SetPaused(bool value)
+    /// <param name="value">Остановить анимацию.</param>
+    /// <param name="deepPause">Экран не виден (игра, блокировка) — можно освободить ресурсы целиком.</param>
+    public void SetPaused(bool value, bool deepPause = false)
     {
-        if (paused == value) return;
+        bool deepNow = value && deepPause;
+        if (paused == value && deep == deepNow) return;
         paused = value;
+        deep = deepNow;
+        web?.SetPaused(value, deepNow);
         if (paused)
         {
             media?.Pause();
@@ -159,14 +201,27 @@ internal sealed class WallpaperView : Grid, IDisposable
 
     public void ApplyVolume(double volume)
     {
+        web?.ApplyVolume(volume);
         if (media == null) return;
         media.IsMuted = !soundAllowed || volume <= 0;
         media.Volume = Math.Clamp(volume, 0, 1);
     }
 
-    /// <summary>Снимок текущего кадра в физических пикселях.</summary>
-    public BitmapSource? CaptureFrame()
+    /// <summary>Пользователь поменял свойства обоев в библиотеке.</summary>
+    public void ApplyProperties()
     {
+        if (scene != null && Item.Type == WallpaperType.Scene) scene.Options = SceneOptions.From(Item);
+        web?.ApplyProperties();
+    }
+
+    public void PushAudio(float[] values) => web?.PushAudio(values);
+
+    public void PushMouse(string type, double x, double y, int button) => web?.PushMouse(type, x, y, button);
+
+    /// <summary>Снимок текущего кадра в физических пикселях.</summary>
+    public async Task<BitmapSource?> CaptureFrameAsync()
+    {
+        if (web != null) return await web.CaptureAsync();
         if (ActualWidth < 1 || ActualHeight < 1) return null;
         double sx = 1, sy = 1;
         var source = PresentationSource.FromVisual(this);
@@ -195,6 +250,8 @@ internal sealed class WallpaperView : Grid, IDisposable
         }
         gif?.Stop();
         scene?.Stop();
+        web?.Dispose();
+        web = null;
         Children.Clear();
     }
 }

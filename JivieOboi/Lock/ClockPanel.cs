@@ -16,7 +16,7 @@ internal sealed class ClockPanel : Grid
     readonly TextBlock date;
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
 
-    public ClockPanel()
+    public ClockPanel(bool showHint)
     {
         IsHitTestVisible = false;
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -58,7 +58,7 @@ internal sealed class ClockPanel : Grid
             Effect = Shadow(),
         };
         SetRow(hint, 2);
-        Children.Add(hint);
+        if (showHint) Children.Add(hint);
         hint.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromSeconds(1.5))
         {
             BeginTime = TimeSpan.FromSeconds(5),

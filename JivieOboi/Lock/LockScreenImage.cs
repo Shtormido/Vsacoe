@@ -27,7 +27,7 @@ internal static class LockScreenImage
         if (view.ImageFile is string file && IsSupportedFile(file))
             return await SetFileAsync(file);
 
-        var frame = view.CaptureFrame();
+        var frame = await view.CaptureFrameAsync();
         return frame != null && await SetBitmapAsync(frame);
     }
 

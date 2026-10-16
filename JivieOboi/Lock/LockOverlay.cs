@@ -7,48 +7,81 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
-using WF = System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace JivieOboi.Lock;
 
 /// <summary>
-/// «Живой экран блокировки»: полноэкранные окна с обоями и часами на всех мониторах.
+/// «Живой экран блокировки» на всех подключённых мониторах: на каждом — свои обои
+/// (как на рабочем столе или отдельные для блокировки), часы — на всех или только на основном.
+/// Подключили или отключили монитор — окна пересоздаются на лету.
 /// Любое действие пользователя вызывает <see cref="Dismissed"/>, после чего вызывающий код
 /// блокирует компьютер и Windows показывает обычный экран ввода пароля.
 /// </summary>
 internal sealed class LockOverlay
 {
     readonly Settings settings;
+    readonly Func<WallpaperSlot, WallpaperItem> itemFor;
     readonly List<OverlayWindow> windows = new();
     readonly DispatcherTimer guard = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    readonly DispatcherTimer displayDebounce = new() { Interval = TimeSpan.FromMilliseconds(800) };
     DateTime shownAt;
-    bool armed, fired, wasForeground;
+    bool armed, fired, wasForeground, closed;
     uint lastInput;
     Native.POINT cursorAtArm;
 
     public event Action? Dismissed;
 
-    public LockOverlay(Settings settings)
+    public LockOverlay(Settings settings, Func<WallpaperSlot, WallpaperItem> itemFor)
     {
         this.settings = settings;
+        this.itemFor = itemFor;
         guard.Tick += (_, _) => Guard();
+        displayDebounce.Tick += (_, _) =>
+        {
+            displayDebounce.Stop();
+            if (closed) return;
+            CloseWindows();
+            CreateWindows();
+        };
     }
 
     public WallpaperView? PrimaryView =>
-        (windows.FirstOrDefault(w => w.IsPrimary) ?? windows.FirstOrDefault())?.View;
+        (windows.FirstOrDefault(w => w.Slot.Primary) ?? windows.FirstOrDefault())?.View;
 
     public void Show()
     {
-        foreach (var screen in WF.Screen.AllScreens)
+        CreateWindows();
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        AudioSpectrum.Instance.Updated += OnAudio;
+        shownAt = DateTime.UtcNow;
+        guard.Start();
+    }
+
+    void CreateWindows()
+    {
+        foreach (var slot in WallpaperSlot.Current(settings))
         {
-            var window = new OverlayWindow(screen, settings);
+            var window = new OverlayWindow(slot, itemFor(slot), settings,
+                showClock: settings.ShowClock && (settings.ClockOnAllMonitors || slot.Primary),
+                showHint: slot.Primary);
             window.UserInput += Fire;
             windows.Add(window);
             window.Show();
         }
-        (windows.FirstOrDefault(w => w.IsPrimary) ?? windows.FirstOrDefault())?.Activate();
-        shownAt = DateTime.UtcNow;
-        guard.Start();
+        (windows.FirstOrDefault(w => w.Slot.Primary) ?? windows.FirstOrDefault())?.Activate();
+    }
+
+    void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
+        Application.Current?.Dispatcher.BeginInvoke(() =>
+        {
+            displayDebounce.Stop();
+            displayDebounce.Start();
+        });
+
+    void OnAudio(float[] values)
+    {
+        foreach (var w in windows) w.View.PushAudio(values);
     }
 
     /// <summary>
@@ -67,6 +100,7 @@ internal sealed class LockOverlay
             Native.GetCursorPos(out cursorAtArm);
             return;
         }
+        if (displayDebounce.IsEnabled) return; // окна пересоздаются — фокус мог потеряться
 
         bool ours = Native.IsOwnWindow(Native.GetForegroundWindow());
         if (ours) wasForeground = true;
@@ -90,9 +124,8 @@ internal sealed class LockOverlay
         Dismissed?.Invoke();
     }
 
-    public void Close()
+    void CloseWindows()
     {
-        guard.Stop();
         foreach (var w in windows)
         {
             try
@@ -107,21 +140,31 @@ internal sealed class LockOverlay
         }
         windows.Clear();
     }
+
+    public void Close()
+    {
+        if (closed) return;
+        closed = true;
+        guard.Stop();
+        displayDebounce.Stop();
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        AudioSpectrum.Instance.Updated -= OnAudio;
+        CloseWindows();
+    }
 }
 
 internal sealed class OverlayWindow : Window
 {
-    readonly System.Drawing.Rectangle bounds;
     Point? firstMouse;
 
     public WallpaperView View { get; }
-    public bool IsPrimary { get; }
+    public WallpaperSlot Slot { get; }
     public event Action? UserInput;
 
-    public OverlayWindow(WF.Screen screen, Settings settings)
+    public OverlayWindow(WallpaperSlot slot, WallpaperItem item, Settings settings, bool showClock, bool showHint)
     {
-        bounds = screen.Bounds;
-        IsPrimary = screen.Primary;
+        Slot = slot;
+        var b = slot.Bounds;
 
         Title = "Живые обои — экран блокировки";
         WindowStyle = WindowStyle.None;
@@ -131,15 +174,15 @@ internal sealed class OverlayWindow : Window
         Background = Brushes.Black;
         Cursor = Cursors.None;
         WindowStartupLocation = WindowStartupLocation.Manual;
-        Left = bounds.X;
-        Top = bounds.Y;
-        Width = bounds.Width;
-        Height = bounds.Height;
+        Left = b.X;
+        Top = b.Y;
+        Width = b.Width;
+        Height = b.Height;
 
-        View = new WallpaperView(settings, soundAllowed: false);
+        View = new WallpaperView(item, settings, soundAllowed: false, desktopRole: false);
         var root = new Grid();
         root.Children.Add(View);
-        if (settings.ShowClock) root.Children.Add(new ClockPanel());
+        if (showClock) root.Children.Add(new ClockPanel(showHint));
         Content = root;
 
         SourceInitialized += (_, _) => Place();
@@ -164,7 +207,8 @@ internal sealed class OverlayWindow : Window
     void Place()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
+        var b = Slot.Bounds;
         if (hwnd != IntPtr.Zero)
-            Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, bounds.X, bounds.Y, bounds.Width, bounds.Height, Native.SWP_SHOWWINDOW);
+            Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, b.X, b.Y, b.Width, b.Height, Native.SWP_SHOWWINDOW);
     }
 }

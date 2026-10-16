@@ -1,5 +1,5 @@
 @echo off
-rem Сборка одного exe-файла (нужен .NET 8 SDK: https://dotnet.microsoft.com/download/dotnet/8.0)
+rem Сборка одного exe-файла (нужен .NET 10 SDK: https://dotnet.microsoft.com/download/dotnet/10.0)
 rem   build.bat         - для обычных ПК (x64)
 rem   build.bat arm64   - для ноутбуков на ARM (Snapdragon и т.п.)
 set RID=win-x64

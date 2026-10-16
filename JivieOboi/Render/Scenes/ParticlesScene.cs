@@ -14,20 +14,22 @@ internal sealed class ParticlesScene : SceneElement
 
     static readonly Brush Background = Frozen(new RadialGradientBrush(
         Color.FromRgb(0x0B, 0x1A, 0x33), Color.FromRgb(0x02, 0x04, 0x0A)));
-    static readonly Brush Dot = Frozen(new SolidColorBrush(Color.FromArgb(230, 170, 225, 255)));
-    static readonly Pen[] Pens = CreatePens();
+    Brush dot = Brushes.White;
+    Pen[] pens = Array.Empty<Pen>();
 
     readonly Random rnd = new();
     Particle[] ps = Array.Empty<Particle>();
 
-    public ParticlesScene(int fps) : base(fps) { }
+    public ParticlesScene(int fps, SceneOptions options) : base(fps, options) => OnOptionsChanged();
 
-    static Pen[] CreatePens()
+    protected override void OnOptionsChanged()
     {
-        var pens = new Pen[20];
+        var c = FromHsv(205 + Options.Hue, 0.53, 1);
+        pens = new Pen[20];
         for (int i = 0; i < pens.Length; i++)
-            pens[i] = Frozen(new Pen(new SolidColorBrush(Color.FromArgb((byte)(i * 9), 120, 200, 255)), 1));
-        return pens;
+            pens[i] = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromArgb((byte)(i * 9), c.R, c.G, c.B))), 1));
+        var d = FromHsv(205 + Options.Hue, 0.33, 1, 230);
+        dot = Frozen(new SolidColorBrush(d));
     }
 
     protected override void OnResize(double w, double h)
@@ -65,6 +67,9 @@ internal sealed class ParticlesScene : SceneElement
     {
         dc.DrawRectangle(Background, null, new Rect(0, 0, w, h));
         var cursor = CursorInside(w, h);
+        double bass = Bass;
+        double link = LinkDistance * (1 + 0.5 * bass);
+        dt *= 1 + 2.5 * bass;
 
         for (int i = 0; i < ps.Length; i++)
         {
@@ -77,15 +82,15 @@ internal sealed class ParticlesScene : SceneElement
             if (p.Y > h) { p.Y = h; p.Vy = -Math.Abs(p.Vy); }
         }
 
-        const double link2 = LinkDistance * LinkDistance;
+        double link2 = link * link;
         for (int i = 0; i < ps.Length; i++)
         {
             for (int j = i + 1; j < ps.Length; j++)
             {
                 double dx = ps[i].X - ps[j].X, dy = ps[i].Y - ps[j].Y, d2 = dx * dx + dy * dy;
                 if (d2 >= link2) continue;
-                double a = 1 - Math.Sqrt(d2) / LinkDistance;
-                dc.DrawLine(Pens[(int)(a * 19)], new Point(ps[i].X, ps[i].Y), new Point(ps[j].X, ps[j].Y));
+                double a = 1 - Math.Sqrt(d2) / link;
+                dc.DrawLine(pens[(int)(a * 19)], new Point(ps[i].X, ps[i].Y), new Point(ps[j].X, ps[j].Y));
             }
 
             if (cursor is Point c)
@@ -93,7 +98,7 @@ internal sealed class ParticlesScene : SceneElement
                 double dx = c.X - ps[i].X, dy = c.Y - ps[i].Y, d = Math.Sqrt(dx * dx + dy * dy);
                 if (d < CursorDistance)
                 {
-                    dc.DrawLine(Pens[19], new Point(ps[i].X, ps[i].Y), c);
+                    dc.DrawLine(pens[19], new Point(ps[i].X, ps[i].Y), c);
                     ps[i].X += dx / d * 12 * dt; // лёгкое притяжение
                     ps[i].Y += dy / d * 12 * dt;
                 }
@@ -101,6 +106,6 @@ internal sealed class ParticlesScene : SceneElement
         }
 
         foreach (var p in ps)
-            dc.DrawEllipse(Dot, null, new Point(p.X, p.Y), p.R, p.R);
+            dc.DrawEllipse(dot, null, new Point(p.X, p.Y), p.R * (1 + bass), p.R * (1 + bass));
     }
 }

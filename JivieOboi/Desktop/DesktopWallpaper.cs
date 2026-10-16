@@ -1,23 +1,47 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Rect = System.Drawing.Rectangle;
 using WF = System.Windows.Forms;
 
 namespace JivieOboi;
 
-/// <summary>Окно обоев на одном мониторе, встроенное в рабочий стол позади иконок.</summary>
+/// <summary>Где показываются обои: один монитор или все сразу (режим «растянуть»).</summary>
+internal sealed record WallpaperSlot(string Key, Rect Bounds, bool Primary, string Title)
+{
+    public const string SpanKey = "span";
+
+    /// <summary>Области показа для текущего режима и набора мониторов.</summary>
+    public static List<WallpaperSlot> Current(Settings s)
+    {
+        if (s.Mode == "span")
+            return new() { new WallpaperSlot(SpanKey, WF.SystemInformation.VirtualScreen, true, "Все мониторы") };
+        return Monitors();
+    }
+
+    public static List<WallpaperSlot> Monitors() => WF.Screen.AllScreens
+        .OrderBy(sc => sc.Bounds.X).ThenBy(sc => sc.Bounds.Y)
+        .Select((sc, i) => new WallpaperSlot(sc.DeviceName, sc.Bounds, sc.Primary,
+            $"Монитор {i + 1}{(sc.Primary ? " (основной)" : "")} — {sc.Bounds.Width}×{sc.Bounds.Height}"))
+        .ToList();
+}
+
+/// <summary>Окно обоев, встроенное в рабочий стол позади иконок.</summary>
 internal sealed class DesktopWallpaper : IDisposable
 {
     readonly HwndSource source;
 
     public WallpaperView View { get; }
-    public bool IsPrimary { get; }
+    public WallpaperSlot Slot { get; }
     public IntPtr Handle => source.Handle;
 
-    public DesktopWallpaper(DesktopTarget target, WF.Screen screen, Settings settings)
+    public DesktopWallpaper(DesktopTarget target, WallpaperSlot slot, WallpaperView view)
     {
-        IsPrimary = screen.Primary;
-        var b = screen.Bounds;
+        Slot = slot;
+        View = view;
+        var b = slot.Bounds;
         var origin = new Native.POINT { X = b.X, Y = b.Y };
         Native.ScreenToClient(target.Parent, ref origin);
 
@@ -34,7 +58,6 @@ internal sealed class DesktopWallpaper : IDisposable
         if (target.Raised) Native.SetLayeredWindowAttributes(source.Handle, 0, 255, Native.LWA_ALPHA);
         if (source.CompositionTarget != null) source.CompositionTarget.BackgroundColor = Colors.Black;
 
-        View = new WallpaperView(settings, soundAllowed: IsPrimary);
         source.RootVisual = View;
         DesktopHost.FixZOrder(source.Handle, target);
     }

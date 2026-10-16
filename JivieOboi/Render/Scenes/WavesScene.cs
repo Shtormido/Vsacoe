@@ -13,13 +13,14 @@ internal sealed class WavesScene : SceneElement
     static readonly Brush Background = Frozen(new LinearGradientBrush(
         Color.FromRgb(0x0D, 0x02, 0x21), Color.FromRgb(0x03, 0x00, 0x0A), 90));
 
-    public WavesScene(int fps) : base(fps) { }
+    public WavesScene(int fps, SceneOptions options) : base(fps, options) { }
 
     protected override void Draw(DrawingContext dc, double w, double h, double t, double dt)
     {
         dc.DrawRectangle(Background, null, new Rect(0, 0, w, h));
         double step = Math.Max(6, w / 240);
         var points = new List<Point>((int)(w / step) + 4);
+        double amp = 1 + 0.9 * Bass;
 
         for (int i = 0; i < Lines; i++)
         {
@@ -29,7 +30,7 @@ internal sealed class WavesScene : SceneElement
             {
                 double nx = x / w;
                 double y = h * (0.55 + (k - 0.5) * 0.25)
-                           + h * 0.08 * Math.Sin(nx * Math.PI * 2 * (1.2 + k * 0.6) + t * (0.6 + k * 0.3) + i)
+                           + amp * h * 0.08 * Math.Sin(nx * Math.PI * 2 * (1.2 + k * 0.6) + t * (0.6 + k * 0.3) + i)
                            + h * 0.04 * Math.Sin(nx * Math.PI * 2 * 3.1 - t * 0.9 + k * 5);
                 points.Add(new Point(x, y));
             }
@@ -42,7 +43,7 @@ internal sealed class WavesScene : SceneElement
             }
             geometry.Freeze();
 
-            var c = FromHsv(280 + 70 * Math.Sin(t * 0.1 + k * 2), 0.75, 1);
+            var c = FromHsv(280 + Options.Hue + 70 * Math.Sin(t * 0.1 + k * 2), 0.75, 1);
             var glow = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromArgb(38, c.R, c.G, c.B))), 9));
             var pen = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromArgb(210, c.R, c.G, c.B))), 1.6));
             dc.DrawGeometry(null, glow, geometry);

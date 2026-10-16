@@ -18,7 +18,7 @@ internal sealed class AuroraScene : SceneElement
     readonly Blob[] blobs;
     readonly Star[] stars;
 
-    public AuroraScene(int fps) : base(fps)
+    public AuroraScene(int fps, SceneOptions options) : base(fps, options)
     {
         var r = new Random();
         blobs = new Blob[6];
@@ -52,11 +52,12 @@ internal sealed class AuroraScene : SceneElement
         }
 
         double size = Math.Max(w, h);
+        double pulse = 1 + 0.35 * Bass;
         foreach (var b in blobs)
         {
             double x = w * (0.5 + 0.45 * Math.Sin(t * b.SpeedX + b.PhaseX));
             double y = h * (0.5 + 0.45 * Math.Cos(t * b.SpeedY + b.PhaseY));
-            var c = FromHsv(b.Hue + t * 4, 0.75, 1);
+            var c = FromHsv(b.Hue + t * 4 + Options.Hue, 0.75, 1);
             var brush = new RadialGradientBrush(new GradientStopCollection
             {
                 new(Color.FromArgb(105, c.R, c.G, c.B), 0),
@@ -64,7 +65,7 @@ internal sealed class AuroraScene : SceneElement
                 new(Color.FromArgb(0, c.R, c.G, c.B), 1),
             });
             brush.Freeze();
-            double radius = size * b.Radius * (0.9 + 0.1 * Math.Sin(t * 0.2 + b.PhaseX));
+            double radius = size * b.Radius * (0.9 + 0.1 * Math.Sin(t * 0.2 + b.PhaseX)) * pulse;
             dc.DrawEllipse(brush, null, new Point(x, y), radius, radius);
         }
     }

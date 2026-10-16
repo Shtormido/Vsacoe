@@ -22,7 +22,7 @@ internal sealed class MatrixScene : SceneElement
     const string Chars = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFZ:.=*+-<>";
 
     static readonly Typeface Face = new(new FontFamily("MS Gothic, Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-    static readonly Brush[] LevelBrushes = CreateBrushes();
+    Brush[] levelBrushes = Array.Empty<Brush>();
 
     readonly Random rnd = new();
     readonly Dictionary<int, FormattedText> cache = new();
@@ -30,18 +30,20 @@ internal sealed class MatrixScene : SceneElement
     int rows;
     double pixelsPerDip = 1;
 
-    public MatrixScene(int fps) : base(Math.Min(fps, 30)) { }
+    public MatrixScene(int fps, SceneOptions options) : base(Math.Min(fps, 30), options) => OnOptionsChanged();
 
-    static Brush[] CreateBrushes()
+    protected override void OnOptionsChanged()
     {
+        double hue = 135 + Options.Hue;
         var result = new Brush[Levels];
-        result[0] = Frozen(new SolidColorBrush(Color.FromRgb(0xD8, 0xFF, 0xD8)));
+        result[0] = Frozen(new SolidColorBrush(FromHsv(hue, 0.15, 1)));
         for (int i = 1; i < Levels; i++)
         {
             byte a = (byte)(255 * (1 - (i - 1) / (double)(Levels - 1)) * 0.9 + 20);
-            result[i] = Frozen(new SolidColorBrush(Color.FromArgb(a, 0x20, 0xFF, 0x50)));
+            result[i] = Frozen(new SolidColorBrush(FromHsv(hue, 0.87, 1, a)));
         }
-        return result;
+        levelBrushes = result;
+        cache.Clear();
     }
 
     protected override void OnResize(double w, double h)
@@ -71,7 +73,7 @@ internal sealed class MatrixScene : SceneElement
         if (!cache.TryGetValue(key, out var ft))
         {
             ft = new FormattedText(Chars[ch].ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                Face, Cell * 0.9, LevelBrushes[level], pixelsPerDip);
+                Face, Cell * 0.9, levelBrushes[level], pixelsPerDip);
             cache[key] = ft;
         }
         return ft;
@@ -83,10 +85,11 @@ internal sealed class MatrixScene : SceneElement
         if (Math.Abs(ppd - pixelsPerDip) > 0.001) { pixelsPerDip = ppd; cache.Clear(); }
 
         dc.DrawRectangle(Brushes.Black, null, new Rect(0, 0, w, h));
+        double boost = 1 + 1.5 * Bass;
         for (int ci = 0; ci < columns.Length; ci++)
         {
             var c = columns[ci];
-            c.Head += c.Speed * dt;
+            c.Head += c.Speed * dt * boost;
             if (c.Head - c.Length > rows) Reset(c, false);
             if (rnd.NextDouble() < 0.3) c.Glyphs[rnd.Next(rows)] = rnd.Next(Chars.Length);
 
