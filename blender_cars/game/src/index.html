@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<title>Drift Restomod</title>
+<style>
+  :root { --acc: #ff4d2e; --acc2: #ffc531; --panel: rgba(14, 17, 21, 0.72); --txt: #f3f5f7; --mut: #a8b0b8; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #101418; color: var(--txt);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #101418; z-index: 50; }
+  #loading .box { text-align: center; }
+  #loading h1 { font-size: clamp(28px, 6vw, 56px); margin: 0 0 8px; letter-spacing: 2px; font-style: italic; }
+  #loading h1 span { color: var(--acc); }
+  #loading p { color: var(--mut); margin: 0; }
+  #load-err { color: #ff8a80; max-width: 520px; margin-top: 16px !important; }
+
+  #menu { position: fixed; left: 0; right: 0; bottom: 0; padding: 18px max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+    background: linear-gradient(to top, rgba(10,12,15,0.92), rgba(10,12,15,0.55) 70%, rgba(10,12,15,0)); z-index: 10; }
+  #menu .logo { position: fixed; top: max(14px, env(safe-area-inset-top)); left: 18px; font-weight: 900; font-style: italic; font-size: clamp(22px, 4vw, 36px); letter-spacing: 1px;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+  #menu .logo span { color: var(--acc); }
+  .sel { display: flex; align-items: center; gap: 14px; max-width: 980px; margin: 0 auto; }
+  .arrow { flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.12); color: #fff; font-size: 26px; cursor: pointer; }
+  .arrow:hover { background: rgba(255,255,255,0.22); }
+  .info { flex: 1; min-width: 0; }
+  #car-count { color: var(--mut); font-size: 13px; letter-spacing: 1px; }
+  #car-name { font-size: clamp(24px, 4.2vw, 40px); font-weight: 800; margin: 2px 0; line-height: 1.1; }
+  #car-desc { color: var(--mut); margin-bottom: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 22px; max-width: 560px; }
+  .stat { font-size: 12px; color: var(--mut); }
+  .stat b { color: var(--txt); font-weight: 600; float: right; }
+  .bar { height: 5px; background: rgba(255,255,255,0.12); border-radius: 3px; margin-top: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc2), var(--acc)); border-radius: 3px; transition: width .3s; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  #btn-go { border: 0; border-radius: 12px; padding: 14px 34px; font-size: 18px; font-weight: 800; color: #fff; cursor: pointer;
+    background: linear-gradient(135deg, #ff6a3d, #e8261b); box-shadow: 0 6px 24px rgba(232,38,27,0.45); }
+  .ghost { border: 1px solid rgba(255,255,255,0.25); background: transparent; color: var(--txt); border-radius: 10px; padding: 10px 14px; cursor: pointer; font-size: 13px; }
+  .help { color: var(--mut); font-size: 12px; line-height: 1.5; }
+  .touch .help.keys { display: none; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .tl { position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); background: var(--panel); border-radius: 12px; padding: 10px 14px; min-width: 150px; }
+  .tl .row { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--mut); }
+  .tl .row b { color: var(--txt); font-variant-numeric: tabular-nums; }
+  .tl .big { font-size: 22px; font-weight: 800; color: var(--txt); font-variant-numeric: tabular-nums; }
+  #minimap { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); width: 140px; height: 140px; border-radius: 12px; }
+  .speedo { position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); text-align: right; }
+  #speed { font-size: 64px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
+  .unit { color: var(--mut); font-size: 13px; }
+  #gear { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 6px; background: var(--acc); font-weight: 800; }
+  .rpm { width: 190px; height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; margin-top: 6px; margin-left: auto; overflow: hidden; }
+  #rpm-bar { height: 100%; width: 0; background: linear-gradient(90deg, #4ade80, #facc15 70%, #ef4444); }
+  #drift { position: absolute; top: 16%; left: 50%; transform: translate(-50%, 0) scale(0.8); text-align: center; opacity: 0; transition: opacity .2s, transform .2s; }
+  #drift.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  #drift .lbl { font-weight: 900; font-style: italic; letter-spacing: 3px; color: var(--acc2); font-size: 18px; text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+  #drift-pts { font-size: 46px; font-weight: 900; font-style: italic; text-shadow: 0 3px 16px rgba(0,0,0,0.6); font-variant-numeric: tabular-nums; }
+  #drift-mul { color: var(--acc); font-weight: 900; font-size: 26px; margin-left: 8px; }
+  #drift-ang { color: var(--mut); font-size: 14px; }
+  #popups { position: absolute; top: 34%; left: 50%; transform: translateX(-50%); width: 300px; height: 0; }
+  .popup { position: absolute; left: 0; right: 0; text-align: center; font-size: 30px; font-weight: 900; font-style: italic; color: #7CFC9A;
+    text-shadow: 0 3px 14px rgba(0,0,0,0.6); animation: up 1.4s ease-out forwards; }
+  .popup.bad { color: #ff6b5b; }
+  .popup.mul { color: var(--acc2); }
+  @keyframes up { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-70px); opacity: 0; } }
+  #toast { position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%); background: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 14px;
+    opacity: 0; transition: opacity .3s; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+  #toast.show { opacity: 1; }
+  #flash { position: absolute; inset: 0; background: rgba(255,60,40,0.25); opacity: 0; transition: opacity .15s; }
+  #flash.on { opacity: 1; }
+
+  #touch { display: none; position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+  .touch #hud:not(.hidden) ~ #touch { display: block; }
+  .tbtn { position: absolute; pointer-events: auto; border-radius: 18px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.22);
+    color: #fff; font-weight: 800; display: grid; place-items: center; font-size: 15px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .tbtn.on { background: rgba(255,255,255,0.38); }
+  #t-left, #t-right { bottom: max(20px, env(safe-area-inset-bottom)); width: 84px; height: 84px; font-size: 30px; }
+  #t-left { left: max(16px, env(safe-area-inset-left)); }
+  #t-right { left: calc(max(16px, env(safe-area-inset-left)) + 96px); }
+  #t-gas { right: max(16px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); width: 92px; height: 120px; background: rgba(60,200,110,0.3); }
+  #t-brake { right: calc(max(16px, env(safe-area-inset-right)) + 104px); bottom: max(20px, env(safe-area-inset-bottom)); width: 80px; height: 80px; background: rgba(240,80,60,0.3); }
+  #t-hb { right: calc(max(16px, env(safe-area-inset-right)) + 104px); bottom: calc(max(20px, env(safe-area-inset-bottom)) + 92px); width: 80px; height: 64px; font-size: 12px; background: rgba(255,200,40,0.28); }
+  #t-cam, #t-menu { top: calc(max(12px, env(safe-area-inset-top)) + 150px); width: 52px; height: 40px; font-size: 12px; border-radius: 10px; }
+  #t-cam { right: max(12px, env(safe-area-inset-right)); }
+  #t-menu { right: calc(max(12px, env(safe-area-inset-right)) + 60px); }
+  .touch .speedo { bottom: auto; right: auto; left: max(12px, env(safe-area-inset-left)); top: calc(max(12px, env(safe-area-inset-top)) + 128px); text-align: left; }
+  .touch .rpm { margin-left: 0; width: 150px; }
+  .touch #speed { font-size: 40px; }
+  .touch #drift { top: calc(max(12px, env(safe-area-inset-top)) + 200px); }
+  .touch #popups { top: 45%; }
+  .touch #toast { bottom: auto; top: 40%; }
+  @media (max-width: 640px) {
+    .tl { min-width: 0; padding: 8px 10px; }
+    #minimap { width: 110px; height: 110px; }
+    .touch #t-cam, .touch #t-menu { top: calc(max(12px, env(safe-area-inset-top)) + 118px); }
+    .touch .speedo { top: calc(max(12px, env(safe-area-inset-top)) + 122px); }
+    .stats { grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+    .arrow { width: 44px; height: 44px; font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="loading"><div class="box">
+  <h1>DRIFT <span>RESTOMOD</span></h1>
+  <p id="load-msg">Загрузка машин…</p>
+  <p id="load-err"></p>
+</div></div>
+
+<div id="menu" class="hidden">
+  <div class="logo">DRIFT <span>RESTOMOD</span></div>
+  <div class="sel">
+    <button class="arrow" id="btn-prev" aria-label="Предыдущая">‹</button>
+    <div class="info">
+      <div id="car-count"></div>
+      <div id="car-name"></div>
+      <div id="car-desc"></div>
+      <div class="stats">
+        <div class="stat">Мощность <b id="v-power"></b><div class="bar"><i id="b-power"></i></div></div>
+        <div class="stat">Масса <b id="v-weight"></b><div class="bar"><i id="b-weight"></i></div></div>
+        <div class="stat">Сцепление<div class="bar"><i id="b-grip"></i></div></div>
+        <div class="stat">Руль, привод <b id="v-drive"></b><div class="bar"><i id="b-steer"></i></div></div>
+      </div>
+      <div class="actions">
+        <button id="btn-go">Поехали!</button>
+        <button class="ghost" id="btn-assist">Помощь в заносе: вкл</button>
+      </div>
+      <p class="help keys">↑/W — газ · ↓/S — тормоз/назад · ←→/A D — руль · Пробел — ручник · C — камера · R — на трассу · H — помощь · M — звук · Esc — меню. Геймпад тоже работает.</p>
+      <p class="help">Держи машину боком, чтобы набирать очки дрифта. Чем дольше занос, тем выше множитель. Удар о стену обнуляет комбо.</p>
+    </div>
+    <button class="arrow" id="btn-next" aria-label="Следующая">›</button>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="tl">
+    <div class="row">Очки <b class="big" id="score">0</b></div>
+    <div class="row">Рекорд <b id="best">0</b></div>
+    <div class="row">Круг <b id="lap">0:00.00</b></div>
+    <div class="row">Лучший <b id="lap-best">—</b></div>
+    <div class="row">Кругов <b id="lap-n">0</b></div>
+  </div>
+  <canvas id="minimap" width="160" height="160"></canvas>
+  <div id="drift"><div class="lbl">ДРИФТ</div><div><span id="drift-pts">0</span><span id="drift-mul">x1</span></div><div id="drift-ang"></div></div>
+  <div id="popups"></div>
+  <div class="speedo"><span id="speed">0</span> <span class="unit">км/ч</span><span id="gear">N</span><div class="rpm"><div id="rpm-bar"></div></div></div>
+  <div id="toast"></div>
+  <div id="flash"></div>
+</div>
+
+<div id="touch">
+  <div class="tbtn" id="t-left">◀</div>
+  <div class="tbtn" id="t-right">▶</div>
+  <div class="tbtn" id="t-gas">ГАЗ</div>
+  <div class="tbtn" id="t-brake">ТОРМ</div>
+  <div class="tbtn" id="t-hb">РУЧНИК</div>
+  <div class="tbtn" id="t-cam">CAM</div>
+  <div class="tbtn" id="t-menu">МЕНЮ</div>
+</div>
+
+<script>
+/*__GAME_JS__*/
+</script>
+<script>
+const ASSETS = /*__ASSETS__*/;
+(async function boot() {
+  const msg = document.getElementById('load-msg');
+  try {
+    if (typeof DecompressionStream === 'undefined') throw new Error('Браузер слишком старый: нужен Chrome 80+, Safari 16.4+ или Firefox 113+.');
+    const gunzip = async (b64) => {
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return new Response(stream).arrayBuffer();
+    };
+    msg.textContent = 'Распаковка движка…';
+    const threeSrc = new TextDecoder().decode(await gunzip(ASSETS.three));
+    const THREE = await import(URL.createObjectURL(new Blob([threeSrc], { type: 'text/javascript' })));
+    const cars = [];
+    for (let i = 0; i < ASSETS.cars.length; i++) {
+      msg.textContent = `Распаковка машин… ${i + 1}/${ASSETS.cars.length}`;
+      cars.push(await gunzip(ASSETS.cars[i]));
+    }
+    msg.textContent = 'Сборка трассы…';
+    await new Promise((r) => setTimeout(r, 0));
+    await window.runGame(THREE, cars);
+  } catch (e) {
+    console.error(e);
+    document.getElementById('load-err').textContent = 'Ошибка: ' + (e && e.message ? e.message : e);
+  }
+})();
+</script>
+</body>
+</html>
