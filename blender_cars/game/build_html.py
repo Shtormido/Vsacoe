@@ -25,8 +25,11 @@ def main():
         if os.path.exists(p):
             with open(p, "rb") as f:
                 cars.append(b64(f.read()))
-    with open(os.path.join(HERE, "src", "game.js"), encoding="utf-8") as f:
-        game = f.read()
+    game = ""
+    for part in ("physics.js", "city.js", "track.js", "game.js"):
+        with open(os.path.join(HERE, "src", part), encoding="utf-8") as f:
+            game += f.read() + "\n"
+    game = game.replace("</script", "<\\/script")
     with open(os.path.join(HERE, "src", "index.html"), encoding="utf-8") as f:
         html = f.read()
     html = html.replace("/*__GAME_JS__*/", game)

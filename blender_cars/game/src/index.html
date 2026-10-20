@@ -41,7 +41,12 @@
   #btn-go { border: 0; border-radius: 12px; padding: 14px 34px; font-size: 18px; font-weight: 800; color: #fff; cursor: pointer;
     background: linear-gradient(135deg, #ff6a3d, #e8261b); box-shadow: 0 6px 24px rgba(232,38,27,0.45); }
   .ghost { border: 1px solid rgba(255,255,255,0.25); background: transparent; color: var(--txt); border-radius: 10px; padding: 10px 14px; cursor: pointer; font-size: 13px; }
-  .help { color: var(--mut); font-size: 12px; line-height: 1.5; }
+  .help { color: var(--mut); font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .chip-l { color: var(--mut); font-size: 12px; margin-right: 2px; }
+  .chip { border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.08); color: var(--txt); border-radius: 999px; padding: 6px 11px; font-size: 12px; cursor: pointer; }
+  .chip.act { background: var(--acc); border-color: var(--acc); font-weight: 700; }
+  .chip.off { color: var(--mut); background: transparent; }
   .touch .help.keys { display: none; }
 
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
@@ -49,13 +54,17 @@
   .tl .row { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--mut); }
   .tl .row b { color: var(--txt); font-variant-numeric: tabular-nums; }
   .tl .big { font-size: 22px; font-weight: 800; color: var(--txt); font-variant-numeric: tabular-nums; }
-  #minimap { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); width: 140px; height: 140px; border-radius: 12px; }
+  #minimap { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); width: 150px; height: 150px; }
+  #mapname { color: var(--acc2); font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
   .speedo { position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); text-align: right; }
   #speed { font-size: 64px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 2px 14px rgba(0,0,0,0.5); }
   .unit { color: var(--mut); font-size: 13px; }
   #gear { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 6px; background: var(--acc); font-weight: 800; }
   .rpm { width: 190px; height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; margin-top: 6px; margin-left: auto; overflow: hidden; }
-  #rpm-bar { height: 100%; width: 0; background: linear-gradient(90deg, #4ade80, #facc15 70%, #ef4444); }
+  .rpm { position: relative; }
+  #rpm-bar { height: 100%; width: 0; background: linear-gradient(90deg, #4ade80, #facc15 75%, #ef4444); }
+  .rpm .red { position: absolute; right: 0; top: 0; bottom: 0; width: 8%; background: rgba(239,68,68,0.35); }
+  #gear.shift { background: #facc15; color: #111; }
   #drift { position: absolute; top: 16%; left: 50%; transform: translate(-50%, 0) scale(0.8); text-align: center; opacity: 0; transition: opacity .2s, transform .2s; }
   #drift.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
   #drift .lbl { font-weight: 900; font-style: italic; letter-spacing: 3px; color: var(--acc2); font-size: 18px; text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
@@ -87,18 +96,28 @@
   #t-hb { right: calc(max(16px, env(safe-area-inset-right)) + 104px); bottom: calc(max(20px, env(safe-area-inset-bottom)) + 92px); width: 80px; height: 64px; font-size: 12px; background: rgba(255,200,40,0.28); }
   #t-cam, #t-menu { top: calc(max(12px, env(safe-area-inset-top)) + 150px); width: 52px; height: 40px; font-size: 12px; border-radius: 10px; }
   #t-cam { right: max(12px, env(safe-area-inset-right)); }
+  #t-up, #t-down { display: none; right: max(16px, env(safe-area-inset-right)); width: 92px; height: 52px; font-size: 26px; }
+  #t-up { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 192px); }
+  #t-down { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 132px); }
+  .manual #t-up, .manual #t-down { display: grid; }
   #t-menu { right: calc(max(12px, env(safe-area-inset-right)) + 60px); }
-  .touch .speedo { bottom: auto; right: auto; left: max(12px, env(safe-area-inset-left)); top: calc(max(12px, env(safe-area-inset-top)) + 128px); text-align: left; }
+  #leftcol { display: contents; }
+  .touch #leftcol { display: flex; flex-direction: column; gap: 8px; position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); }
+  .touch #leftcol .tl { position: static; }
+  .touch .tl .opt { display: none; }
+  .touch .speedo { position: static; text-align: left; }
   .touch .rpm { margin-left: 0; width: 150px; }
   .touch #speed { font-size: 40px; }
-  .touch #drift { top: calc(max(12px, env(safe-area-inset-top)) + 200px); }
+  .touch #drift { top: calc(max(12px, env(safe-area-inset-top)) + 240px); }
   .touch #popups { top: 45%; }
-  .touch #toast { bottom: auto; top: 40%; }
+  .touch #toast { bottom: auto; top: 56%; }
   @media (max-width: 640px) {
     .tl { min-width: 0; padding: 8px 10px; }
     #minimap { width: 110px; height: 110px; }
     .touch #t-cam, .touch #t-menu { top: calc(max(12px, env(safe-area-inset-top)) + 118px); }
-    .touch .speedo { top: calc(max(12px, env(safe-area-inset-top)) + 122px); }
+    .help, #car-desc { display: none; }
+    .chip { padding: 5px 9px; font-size: 11px; }
+    #menu { padding-top: 10px; }
     .stats { grid-template-columns: 1fr 1fr; gap: 4px 12px; }
     .arrow { width: 44px; height: 44px; font-size: 22px; }
   }
@@ -127,29 +146,46 @@
         <div class="stat">Сцепление<div class="bar"><i id="b-grip"></i></div></div>
         <div class="stat">Руль, привод <b id="v-drive"></b><div class="bar"><i id="b-steer"></i></div></div>
       </div>
+      <div class="chips">
+        <span class="chip-l">Карта</span>
+        <button class="chip" id="m-city">Город</button>
+        <button class="chip" id="m-track">Полигон</button>
+      </div>
+      <div class="chips">
+        <button class="chip" id="o-auto"></button>
+        <button class="chip" id="o-abs"></button>
+        <button class="chip" id="o-tcs"></button>
+        <button class="chip" id="o-steerHelp"></button>
+        <button class="chip" id="o-driftHelp"></button>
+      </div>
       <div class="actions">
         <button id="btn-go">Поехали!</button>
-        <button class="ghost" id="btn-assist">Помощь в заносе: вкл</button>
       </div>
-      <p class="help keys">↑/W — газ · ↓/S — тормоз/назад · ←→/A D — руль · Пробел — ручник · C — камера · R — на трассу · H — помощь · M — звук · Esc — меню. Геймпад тоже работает.</p>
-      <p class="help">Держи машину боком, чтобы набирать очки дрифта. Чем дольше занос, тем выше множитель. Удар о стену обнуляет комбо.</p>
+      <p class="help keys">W/↑ газ · S/↓ тормоз (на месте — назад) · A D/← → руль · Пробел ручник · Q/E передачи · C камера · R поставить на колёса · M звук · Esc меню · геймпад тоже работает</p>
+      <p class="help">Реалистичная физика: шины с кругом трения, перенос веса, мотор с коробкой и самоблоком. Занос — газом или ручником, ловите его контррулём. Очки дают угол и скорость, удар о стену сбрасывает комбо.</p>
     </div>
     <button class="arrow" id="btn-next" aria-label="Следующая">›</button>
   </div>
 </div>
 
 <div id="hud" class="hidden">
+  <div id="leftcol">
   <div class="tl">
+    <div class="row"><span id="mapname"></span></div>
     <div class="row">Очки <b class="big" id="score">0</b></div>
-    <div class="row">Рекорд <b id="best">0</b></div>
-    <div class="row">Круг <b id="lap">0:00.00</b></div>
-    <div class="row">Лучший <b id="lap-best">—</b></div>
-    <div class="row">Кругов <b id="lap-n">0</b></div>
+    <div class="row opt">Рекорд <b id="best">0</b></div>
+    <div class="row opt">Лучшее комбо <b id="bestcombo">0</b></div>
+    <div id="lapbox">
+      <div class="row">Круг <b id="lap">0:00.00</b></div>
+      <div class="row">Лучший <b id="lap-best">—</b></div>
+      <div class="row">Кругов <b id="lap-n">0</b></div>
+    </div>
   </div>
-  <canvas id="minimap" width="160" height="160"></canvas>
+  <div class="speedo"><span id="speed">0</span> <span class="unit">км/ч</span><span id="gear">N</span><div class="rpm"><div id="rpm-bar"></div><i class="red"></i></div><div class="unit"><span id="rpm-n">0</span> об/мин</div></div>
+  </div>
+  <canvas id="minimap" width="200" height="200"></canvas>
   <div id="drift"><div class="lbl">ДРИФТ</div><div><span id="drift-pts">0</span><span id="drift-mul">x1</span></div><div id="drift-ang"></div></div>
   <div id="popups"></div>
-  <div class="speedo"><span id="speed">0</span> <span class="unit">км/ч</span><span id="gear">N</span><div class="rpm"><div id="rpm-bar"></div></div></div>
   <div id="toast"></div>
   <div id="flash"></div>
 </div>
@@ -162,6 +198,8 @@
   <div class="tbtn" id="t-hb">РУЧНИК</div>
   <div class="tbtn" id="t-cam">CAM</div>
   <div class="tbtn" id="t-menu">МЕНЮ</div>
+  <div class="tbtn" id="t-up">+</div>
+  <div class="tbtn" id="t-down">−</div>
 </div>
 
 <script>

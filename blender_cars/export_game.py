@@ -231,8 +231,43 @@ def export_car(name, title, out_dir):
         tri_total += len(me.loop_triangles)
         bpy.data.meshes.remove(me)
 
+    # low-detail whole car (all four wheels in place) for parked / background cars
+    lod = PartBuilder()
+    import bmesh
+    bm = bmesh.new()
+    lod_mats = []
+    for o in list(bpy.data.objects):
+        if o.type not in ("MESH", "FONT") or o.hide_render:
+            continue
+        ev = o.evaluated_get(dg)
+        me = bpy.data.meshes.new_from_object(ev, depsgraph=dg)
+        me.transform(o.matrix_world)
+        slots = [sl.material for sl in o.material_slots] or [None]
+        idx = np.zeros(len(me.polygons), np.int32)
+        me.polygons.foreach_get("material_index", idx)
+        gid = np.array([mat_id(slots[min(i, len(slots) - 1)]) for i in range(len(slots))], np.int32)
+        me.polygons.foreach_set("material_index", gid[np.clip(idx, 0, len(gid) - 1)])
+        bm.from_mesh(me)
+        bpy.data.meshes.remove(me)
+    lme = bpy.data.meshes.new("lod")
+    bm.to_mesh(lme)
+    bm.free()
+    for d in materials:
+        lme.materials.append(bpy.data.materials.get(d["name"]))
+    lobj = bpy.data.objects.new("lod", lme)
+    bpy.context.scene.collection.objects.link(lobj)
+    lme.calc_loop_triangles()
+    ratio = min(1.0, 4500 / max(1, len(lme.loop_triangles)))
+    dec = lobj.modifiers.new("dec", "DECIMATE")
+    dec.ratio = ratio
+    dg.update()
+    lme2 = bpy.data.meshes.new_from_object(lobj.evaluated_get(dg), depsgraph=dg)
+    lme2.shade_smooth()
+    lme2.set_sharp_from_angle(angle=math.radians(40))
+    lod.add(lme2, lambda i: i, to_three)
+
     blob = bytearray()
-    parts = {k: b.pack(blob) for k, b in (("body", body), ("wheel", wheel), ("caliper", caliper))}
+    parts = {k: b.pack(blob) for k, b in (("body", body), ("wheel", wheel), ("caliper", caliper), ("lod", lod))}
     bb = parts["body"]
     tyre_r = float(max(abs(parts["wheel"]["bmin"][1]), parts["wheel"]["bmax"][1]))
     head = dict(name=name, title=title, materials=materials, parts=parts,
