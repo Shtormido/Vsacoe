@@ -110,6 +110,7 @@ sudo ./deploy/install.sh [--port 80] [--signup invite] [--private]   # служ�
 | `GET auth/me` | текущий пользователь, режим регистрации, закрытый ли сервер |
 | `POST auth/register` / `auth/login` / `auth/logout` | вход и выход, cookie `jg_session` |
 | `POST auth/password` / `auth/name` | смена пароля (завершает остальные входы) и имени |
+| `POST auth/rename` | `{login, password}`: новый логин, подтверждённый паролем; попытки ограничены как вход |
 | `POST auth/hide` | `{hide}`: скрыть все свои партии (и живые комнаты сразу) |
 | `POST auth/server` | только админ: `{guests}` — разрешить или запретить гостей |
 | `GET me/games` · `GET leaderboard` | история своих онлайн-партий (с `id` для повтора), лучшие игроки |

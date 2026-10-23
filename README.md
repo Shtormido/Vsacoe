@@ -98,6 +98,7 @@ python3 server/serve.py
 python3 server/accounts.py list                 # все аккаунты, рейтинг, когда заходили
 python3 server/accounts.py add LOGIN [--admin]  # создать (пароль спросит)
 python3 server/accounts.py passwd LOGIN         # сменить пароль и завершить все входы
+python3 server/accounts.py rename LOGIN NEW     # сменить логин (рейтинг, партии и входы сохраняются)
 python3 server/accounts.py invite --uses 5      # код приглашения на 5 регистраций
 python3 server/accounts.py del LOGIN            # удалить
 python3 server/accounts.py guests off           # запретить гостей (on — разрешить, без параметра — показать)

@@ -364,6 +364,11 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
       <div id="aAdmin" hidden><h3>Сервер</h3>
         <div class="row"><label for="aGuests">Гости могут играть по сети<small id="aGuestsNote">Без аккаунта, под любым именем. Их партии не влияют на рейтинг.</small></label><input type="checkbox" class="sw-t" id="aGuests"></div></div>
       <h3>Лучшие игроки сервера</h3><div id="accTop"></div>
+      <h3>Сменить логин</h3>
+      <p class="note">Логином вы входите в аккаунт. Рейтинг, история партий и входы на других устройствах сохранятся.</p>
+      <div class="field"><input class="inp" id="aNewLogin" maxlength="20" placeholder="Новый логин: латиница, цифры, . - _" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+      <div class="field"><input class="inp" id="aLoginPw" type="password" maxlength="128" placeholder="Текущий пароль" autocomplete="current-password"></div>
+      <div class="btnrow"><button class="btn" id="aChLogin">Сменить логин</button></div>
       <h3>Сменить пароль</h3>
       <div class="field"><input class="inp" id="aOld" type="password" maxlength="128" placeholder="Текущий пароль" autocomplete="current-password"></div>
       <div class="field"><input class="inp" id="aNew" type="password" maxlength="128" placeholder="Новый пароль, от 6 символов" autocomplete="new-password"></div>
@@ -2776,8 +2781,9 @@ function attractStep(tok){if(tok!==ATT.tok||!demo()||G.phase!=='idle')return;
   if(is3D())V3D.placeBot(r.move,c,done);else setTimeout(done,250);}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.3';
+const APP_VER='2.4';
 const NEWS=[
+ ['2.4','Смена логина',['В окне «Аккаунт» можно сменить логин — подтверждается текущим паролем','Рейтинг, история партий и входы на других устройствах остаются: они привязаны к аккаунту, а не к логину','Администратор может сменить логин игроку: accounts.py rename СТАРЫЙ НОВЫЙ']],
  ['2.3','Новый курс, качество графики, «только фон»',['Обучение переписано целиком: 22 урока в пяти главах — правила, тактика (двойное атари, лестница, гонка за дыхания), жизнь и смерть, стратегия и экзамен','Упражнения проверяет сама игра: на верный ход белые отвечают, на неверный — позиция возвращается, после двух ошибок — подсказка. Есть вопросы на понимание и отметка мёртвых камней','Список уроков с главами и прогрессом — можно открыть любой урок','Качество графики: авто, низкое, среднее, высокое или ультра (Настройки → Стол)','Если минуту ничего не трогать на главном экране, меню плавно уходит и остаётся живая заставка без затемнения. То же — кнопкой-глазом в углу меню']],
  ['2.2','Заставка, гость и удобство на телефоне',['На главном экране — заставка: бот сам разыгрывает партию, камни прилетают из чаш, камера плавно облетает стол. На широком экране меню слева, партия справа','«Продолжить как гость» вместо «Позже»: сначала видно, что доступно без аккаунта и чего не будет','У каждого окна есть крестик в углу — он не уезжает при прокрутке. Окно закрывается и касанием по затемнённому фону','Кнопка «Назад» на телефоне закрывает окно, а в партии открывает меню — и не уводит с сайта','Окна на телефоне помещаются в видимую часть экрана, полосы прокрутки стали тонкими и аккуратными']],
  ['2.1','Регистрация с порога',['При первом заходе на сервер сразу открывается окно регистрации (или входа, если регистрация закрыта). Если вы уже вошли, окна не будет','Кнопка «Позже» ведёт в главное меню: с ботом, вдвоём и в задачах можно играть и без аккаунта']],
@@ -3320,6 +3326,11 @@ function boot(){
   $('aGuestBack').onclick=()=>{accTab=AUTH.signup==='closed'?'login':'register';renderAcc();$('aLogin').focus();};$('accForm').onsubmit=accSubmit;
   document.querySelectorAll('[data-atab]').forEach(b=>b.onclick=()=>{accTab=b.dataset.atab;renderAcc();});
   $('aSaveName').onclick=()=>netApi('auth/name',{name:$('aNewName').value}).then(r=>{AUTH.me=r.user;renderAcc();toast('Имя сохранено',1600);},e=>toast(e.message,2600));
+  $('aChLogin').onclick=()=>{const login=$('aNewLogin').value.trim();
+    if(!/^[A-Za-z0-9_.-]{3,20}$/.test(login)){toast('Логин: 3–20 латинских букв, цифр, точек, дефисов или подчёркиваний',3200);return;}
+    if(!$('aLoginPw').value){toast('Введите текущий пароль',2200);$('aLoginPw').focus();return;}
+    $('aChLogin').disabled=true;netApi('auth/rename',{login,password:$('aLoginPw').value}).then(r=>{AUTH.me=r.user;$('aNewLogin').value=$('aLoginPw').value='';renderAcc();mainLabels();
+      toast(`Готово: теперь вы входите как «${r.user.login}»`,3000);},e=>toast(e.message,3000)).finally(()=>{$('aChLogin').disabled=false;});};
   $('aChPw').onclick=()=>netApi('auth/password',{old:$('aOld').value,new:$('aNew').value}).then(()=>{$('aOld').value=$('aNew').value='';toast('Пароль изменён. На других устройствах нужно войти заново',3200);},e=>toast(e.message,2800));
   $('aLogout').onclick=()=>netApi('auth/logout',{}).then(()=>{AUTH.me=null;if(AUTH.private){location.href='login.html';return;}renderAcc();toast('Вы вышли из аккаунта',1800);},e=>toast(e.message,2600));$('netCreate').onclick=netCreate;$('netJoin').onclick=netJoin;
   $('netCode').addEventListener('keydown',e=>{if(e.key==='Enter')netJoin();});

@@ -134,6 +134,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 ACC.set_password(u['id'], body.get('old'), body.get('new'))
                 token = ACC.new_session(u['id'])
                 return self._json(200, {'ok': True}, headers={'Set-Cookie': self._cookie(token, accounts.SESSION_DAYS * 86400)})
+            if route == '/api/auth/rename':
+                return self._json(200, {'user': ACC.public(ACC.set_login(u['id'], body.get('password'), body.get('login')))})
             if route == '/api/auth/name':
                 ACC.set_name(u['id'], body.get('name'))
                 return self._json(200, {'user': ACC.public(ACC.user_by_session(self._token()))})

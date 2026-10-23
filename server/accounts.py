@@ -8,6 +8,7 @@ Admin commands (Kali/Linux service: run as the service user against its data fol
     python3 server/accounts.py list
     python3 server/accounts.py add LOGIN [--admin]          # asks for the password
     python3 server/accounts.py passwd LOGIN
+    python3 server/accounts.py rename LOGIN NEW_LOGIN       # rating, games and sessions stay with the account
     python3 server/accounts.py admin LOGIN | unadmin LOGIN
     python3 server/accounts.py del LOGIN
     python3 server/accounts.py invite [--uses N]            # code for --signup invite
@@ -32,6 +33,7 @@ DEFAULT_DATA = os.environ.get('JADEGO_DATA') or os.path.normpath(os.path.join(HE
 ITER = 240_000
 SESSION_DAYS = 30
 LOGIN_RE = re.compile(r'^[A-Za-z0-9_.-]{3,20}$')
+LOGIN_RULE = 'Логин: 3–20 латинских букв, цифр, точек, дефисов или подчёркиваний'
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users(
@@ -142,7 +144,7 @@ class Accounts:
     def create_user(self, login, password, name=None, role=None):
         login = str(login or '').strip()
         if not LOGIN_RE.match(login):
-            raise AuthError('Логин: 3–20 латинских букв, цифр, точек, дефисов или подчёркиваний')
+            raise AuthError(LOGIN_RULE)
         check_new_password(password)
         name = clean_name(name) or login
         with self.lock:
@@ -192,6 +194,33 @@ class Accounts:
         check_new_password(new)
         self.q('UPDATE users SET pw=? WHERE id=?', (hash_password(new), uid))
         self.q('DELETE FROM sessions WHERE uid=?', (uid,))     # sign out everywhere else
+
+    def set_login(self, uid, password, new):
+        """A new login, confirmed with the current password (tries are limited like sign-ins)."""
+        key = 'uid:%d' % uid
+        self._throttle(key)
+        u = self.q('SELECT * FROM users WHERE id=?', (uid,), one=True)
+        if not u or not check_password(str(password or ''), u['pw']):
+            self.attempts.setdefault(key, []).append(time.time())
+            raise AuthError('Текущий пароль указан неверно', 403)
+        return self.rename(u, new)
+
+    def rename(self, u, new):
+        """Changes the login only: sessions, rating and games are tied to the account id and stay.
+        A display name that was simply the old login follows it."""
+        new = str(new or '').strip()
+        if not LOGIN_RE.match(new):
+            raise AuthError(LOGIN_RULE)
+        if new == u['login']:
+            raise AuthError('Это и так ваш логин')
+        with self.lock:
+            other = self.db.execute('SELECT id FROM users WHERE login=?', (new,)).fetchone()
+            if other and other['id'] != u['id']:
+                raise AuthError('Такой логин уже занят', 409)
+            self.db.execute('UPDATE users SET login=? WHERE id=?', (new, u['id']))
+            if u['name'] == u['login']:
+                self.db.execute('UPDATE users SET name=? WHERE id=?', (new, u['id']))
+            return self.db.execute('SELECT * FROM users WHERE id=?', (u['id'],)).fetchone()
 
     def set_hide(self, uid, hide):
         self.q('UPDATE users SET hide_games=? WHERE id=?', (1 if hide else 0, uid))
@@ -313,6 +342,9 @@ def main():
     a.add_argument('--admin', action='store_true')
     for c in ('passwd', 'del', 'admin', 'unadmin'):
         sub.add_parser(c).add_argument('login')
+    rn = sub.add_parser('rename', help='сменить логин')
+    rn.add_argument('login')
+    rn.add_argument('new_login')
     i = sub.add_parser('invite', help='код приглашения')
     i.add_argument('--uses', type=int, default=1)
     sub.add_parser('invites')
@@ -342,6 +374,9 @@ def main():
             acc.q('UPDATE users SET pw=? WHERE id=?', (hash_password(_ask_password()), u['id']))
             acc.q('DELETE FROM sessions WHERE uid=?', (u['id'],))
             print('Пароль изменён, все входы %s завершены.' % u['login'])
+        elif args.cmd == 'rename':
+            u = acc.rename(find(args.login), args.new_login)
+            print('Логин %s изменён на %s. Рейтинг, партии и входы сохранены.' % (args.login, u['login']))
         elif args.cmd in ('admin', 'unadmin'):
             u = find(args.login)
             acc.q('UPDATE users SET role=? WHERE id=?', ('admin' if args.cmd == 'admin' else 'user', u['id']))
