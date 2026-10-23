@@ -61,11 +61,11 @@ body.tut #status{top:calc(12px + env(safe-area-inset-top,0px))}
 /* sheets */
 .sheet{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(6,9,18,.5);
   padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.card{width:100%;max-width:540px;max-height:calc(100vh - 48px);overflow:auto;border-radius:22px;background:var(--glass-hi);border:1px solid var(--hair);
+.card{width:100%;max-width:540px;max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);overflow:auto;border-radius:22px;background:var(--glass-hi);border:1px solid var(--hair);
   box-shadow:0 30px 80px rgba(0,0,0,.55);padding:22px 22px 20px;overscroll-behavior:contain}
 @media (max-width:620px){
   .sheet{align-items:flex-end;padding-block:0;padding-left:0;padding-right:0}
-  .card{max-width:none;border-radius:22px 22px 0 0;max-height:90vh;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));
+  .card{max-width:none;border-radius:22px 22px 0 0;max-height:90vh;max-height:92dvh;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));
     padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px))}
 }
 .kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--jade)}
@@ -150,9 +150,26 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
 .mi .mt{min-width:0}.mi b{display:block;font-family:var(--f-display);font-weight:400;font-size:19px}.mi span{display:block;font-size:12.5px;color:var(--kinari-dim);margin-top:2px;line-height:1.3}
 .mi.primary{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}.mi.primary span{color:rgba(13,54,40,.75)}.mi.primary svg{stroke:var(--jade-ink);fill:var(--jade-ink)}
 .mi .tag{position:absolute;top:10px;right:12px;font-style:normal;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:var(--shu);color:#fff;padding:3px 7px;border-radius:999px}
+/* a close button that stays in the card's corner while it scrolls */
+.sx{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;z-index:3;margin-right:-8px}
+.sx .xbtn{width:36px;height:36px;margin-top:-6px;background:rgba(40,48,72,.92);box-shadow:0 2px 10px rgba(0,0,0,.35)}.sx .xbtn svg{width:15px;height:15px}
 .back{appearance:none;border:0;background:none;color:var(--jade);font:500 13.5px var(--f-body);padding:0;margin:0 0 10px;cursor:pointer}
 .ver{margin-top:18px}.ver:first-child{margin-top:4px}.ver h3{margin:0}.ver .vk{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--jade);margin-top:2px}
 body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!important}
+/* scrollbars: thin, rounded, no arrow buttons — they belong to the lacquer cards, not to the operating system */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
+::-webkit-scrollbar-thumb{background:rgba(236,228,212,.28);border-radius:10px;border:3px solid transparent;background-clip:padding-box;min-height:40px}
+::-webkit-scrollbar-thumb:hover{background-color:rgba(134,207,174,.55)}
+::-webkit-scrollbar-thumb:active{background-color:rgba(134,207,174,.75)}
+@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:rgba(236,228,212,.25) transparent}}
+body.attract #top,body.attract #bottom,body.attract #status{display:none!important}
+/* wide screens: during the start-screen demo the windows move left and the game plays on the right */
+@media (min-width:980px){body.attract .sheet{justify-content:flex-start;padding-left:4vw}}
+/* phones: the start menu stops below the top third, where the demo board shows */
+@media (max-width:620px){body.attract #sMain .card{max-height:64vh;max-height:64dvh}}
+.limits{margin:8px 0 0;padding-left:20px;line-height:1.45}.limits li{margin:7px 0}.limits.yes li::marker{color:var(--jade)}.limits.no li::marker{color:var(--shu)}
 .inp{width:100%;box-sizing:border-box;border:1px solid var(--hair);background:rgba(236,228,212,.06);color:var(--kinari);border-radius:12px;padding:11px 12px;font:500 15px var(--f-body);user-select:text;-webkit-user-select:text}
 .inp:focus{outline:none;border-color:var(--jade)}.inp.code{text-transform:uppercase;letter-spacing:.18em;font-variant-numeric:tabular-nums}
 .joinrow{display:flex;gap:8px;margin-top:8px}.joinrow .btn{flex:none}
@@ -316,6 +333,15 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
         <div class="field" id="aPw2Row" hidden><div class="label">Пароль ещё раз</div><input class="inp" id="aPw2" type="password" maxlength="128" autocomplete="new-password"></div>
         <button class="btn primary" id="aGo" style="width:100%;margin-top:16px">Войти</button>
       </form>
+    </div>
+    <div id="accGuest" hidden>
+      <p>Можно играть и без аккаунта. Вот что при этом есть и чего нет.</p>
+      <h3>Гостю доступно</h3>
+      <ul class="limits yes"><li>Партии с ботом и вдвоём на одном устройстве — на всех досках</li><li>Обучение, задачи дня и тренировка задач</li><li>Просмотр чужих открытых партий и архива сервера, повторы партий</li><li id="gNet"></li></ul>
+      <h3>Без аккаунта не будет</h3>
+      <ul class="limits no"><li>Рейтинга и места в таблице лучших игроков: партии гостя на рейтинг не влияют</li><li>Истории партий по сети на сервере — её не открыть с другого устройства</li><li>Возврата в свою онлайн-партию с другого телефона или компьютера</li><li>Сохранности: статистика, прогресс задач и настройки хранятся только в этом браузере и пропадут при его очистке</li></ul>
+      <p class="note">Аккаунт можно создать в любой момент: главное меню → «Аккаунт».</p>
+      <div class="btnrow"><button class="btn" id="aGuestBack">Создать аккаунт</button></div>
     </div>
     <div id="accIn" hidden>
       <div class="stats" id="accStats"></div>
@@ -1425,6 +1451,7 @@ ENG.setSize(9);
 let V3D=null,V2D=null;
 function is3D(){return S.view==='3d'&&!!V3D;}
 function hot(){return G.level===-1;}
+function demo(){return G.level===-4;}
 function replay(){return G.level===-3;}
 function cname(c){return c===1?'чёрных':'белых';}
 function view(){return is3D()?V3D:V2D;}
@@ -2024,6 +2051,7 @@ function create3D(){
     const vf=camera.fov*Math.PI/180,vfa=2*Math.atan(Math.tan(vf/2)*Ha/H),hf=2*Math.atan(Math.tan(vf/2)*W/H),f=Math.min(vfa,hf);
     const hb=L.human,minX=-L.bw/2-2,maxX=L.bw/2+2,minZ=L.bowl[3-hb].z-8,maxZ=L.bowl[hb].z+8,minY=L.base,maxY=2;
     const ctr=new V((minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2),rad=.5*Math.hypot(maxX-minX,maxY-minY,maxZ-minZ);L.view={ctr:ctr.clone(),dist:rad/Math.sin(f/2)};
+    if(zen){applyShift();return;}           // the drifting camera keeps its own framing
     const p=PRESETS[idx];let dist=rad/Math.sin(f/2)*p.k;const env=ENVS[S.env];if(env.maxD)dist=Math.min(dist,env.maxD-10);
     controls.maxDistance=env.maxD||dist*2.2;
     const az=p.az+(G.flipView?Math.PI:0),pos=new V(ctr.x+dist*Math.cos(p.el)*Math.sin(az),ctr.y+dist*Math.sin(p.el),ctr.z+dist*Math.cos(p.el)*Math.cos(az));
@@ -2031,7 +2059,9 @@ function create3D(){
     const p0=camera.position.clone(),t0=controls.target.clone();
     tween(.9,k=>{const e=ease(k);camera.position.lerpVectors(p0,pos,e);controls.target.lerpVectors(t0,ctr,e);});
   }
-  function resize(){renderer.setSize(window.innerWidth,window.innerHeight,false);if(zen){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();}else frame(camPreset,false);}
+  function resize(){renderer.setSize(window.innerWidth,window.innerHeight,false);if(zen){camera.aspect=window.innerWidth/window.innerHeight;applyShift();}else frame(camPreset,false);}
+  /* the demo camera can be pushed sideways, so the table shows beside the menu rather than behind it */
+  function applyShift(){const W=window.innerWidth,H=window.innerHeight;if(zenShift.x||zenShift.y)camera.setViewOffset(W,H,-zenShift.x,zenShift.y,W,H);else camera.clearViewOffset();camera.updateProjectionMatrix();}
 
   /* tweens */
   function ease(k){return k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;}
@@ -2124,7 +2154,7 @@ function create3D(){
   }
   let pulse=0;
   /* loop */
-  const tgt=new V();let lastT=performance.now(),zen=false,zt=0,zen0=0;
+  const tgt=new V();let lastT=performance.now(),zen=false,zt=0,zen0=0,zenDemo=false,zenShift={x:0,y:0};
   function handTarget(out){const bp=L.bowl[hand.mesh.userData.stone];
     if(hand.preview>=0){pointWorld(hand.preview,out);out.y=1.9;return;}
     if(down&&down.fromBowl&&down.drag){out.copy(dragP);out.y=4;return;}
@@ -2138,7 +2168,7 @@ function create3D(){
     [1,2].forEach(c=>{const r=bowlRings[c];if(!r)return;r.visible=c===G.human&&inPlayPhase()&&canHumanAct()&&!hand.held&&(!S.quick||pulse>0);ringMat.opacity=(pulse>0?.55:.22)+.18*Math.sin(time*(pulse>0?9:3));});
     markGroup.children.forEach(m=>{if(m.userData.pulse){const s=1+.12*Math.sin(time*4);m.scale.set(s,s,s);}});
     for(const m of stoneGroup.children){const b=m.userData.blob;if(b)b.visible=Math.abs(m.position.y-STONE_HY)<.06;}
-    if(zen){zt+=dt;const v=L.view,env=ENVS[S.env],th=zen0+zt*.045,el=.2+.14*Math.sin(zt*.06),d=Math.min(v.dist*(1.45+.35*Math.sin(zt*.041)),env.maxD?env.maxD-10:1e9);
+    if(zen){zt+=dt;const v=L.view,env=ENVS[S.env],th=zen0+zt*(zenDemo?.05:.045),el=zenDemo?.72+.08*Math.sin(zt*.06):.2+.14*Math.sin(zt*.06),d=Math.min(v.dist*(zenDemo?1.12+.08*Math.sin(zt*.041):1.45+.35*Math.sin(zt*.041)),env.maxD?env.maxD-10:1e9);
       camera.position.set(v.ctr.x+d*Math.cos(el)*Math.sin(th),v.ctr.y+d*Math.sin(el),v.ctr.z+d*Math.cos(el)*Math.cos(th));tgt.copy(v.ctr);tgt.y+=5*Math.sin(zt*.05);camera.lookAt(tgt);}
     else{controls.autoRotate=G.phase==='idle';controls.autoRotateSpeed=.35;controls.update();}renderer.render(scene,camera);}
   requestAnimationFrame(loop);
@@ -2159,7 +2189,8 @@ function create3D(){
     zoom(f){const off=camera.position.clone().sub(controls.target);off.setLength(clamp(off.length()*f,controls.minDistance,controls.maxDistance));camera.position.copy(controls.target).add(off);controls.update();},
     camName(){return PRESETS[camPreset].n;},
     showcase(){const k=camPreset;frame(3,true);camPreset=k;},
-    setZen(on){zen=on;if(on){finishTweens();zt=0;const off=camera.position.clone().sub(L.view.ctr);zen0=Math.atan2(off.x,off.z);camera.clearViewOffset();camera.updateProjectionMatrix();}else frame(camPreset,true);},
+    setZen(on,demo){zen=on;zenDemo=!!demo;if(!demo)zenShift={x:0,y:0};if(on){finishTweens();zt=0;const off=camera.position.clone().sub(L.view.ctr);zen0=Math.atan2(off.x,off.z);applyShift();}else frame(camPreset,true);},
+    setShift(sh){if(sh.x===zenShift.x&&sh.y===zenShift.y)return;zenShift=sh;if(zen)applyShift();},
     refit(){if(!zen)frame(camPreset,false);}
   };
 }
@@ -2169,8 +2200,9 @@ function create2D(){
   const cv=$('c2d'),ctx=cv.getContext('2d');let W=0,H=0,dpr=1,active=false,dirty=true,lay=null,boardImg=null,bgPat=null,woodSrc=null;
   let sprites={1:null,2:null},hover=-1,preview=-1,down=null;const fades=new Map();let gone=[];
   function relayout(){W=window.innerWidth;H=window.innerHeight;dpr=Math.min(2,window.devicePixelRatio||1);cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
-    const ins=uiInsets(),N=G.N,m=S.coords?1.15:.75,avW=W-24,avH=Math.max(180,H-ins.top-ins.bottom),size=Math.min(avW,avH,980),cell=size/(N-1+2*m);
-    lay={N,size,cell,m,bx:(W-size)/2,by:ins.top+(avH-size)/2};lay.gx=lay.bx+m*cell;lay.gy=lay.by+m*cell;
+    /* the start-screen demo on a wide screen sits beside the menu, not under it */
+    const ins=uiInsets(),N=G.N,m=S.coords?1.15:.75,side=demo()&&W>=980?W*.04+560:0,avW=W-24-side,avH=Math.max(180,H-ins.top-ins.bottom),size=Math.min(avW,avH,980),cell=size/(N-1+2*m);
+    lay={N,size,cell,m,bx:side?side+(avW-size)/2:(W-size)/2,by:ins.top+(avH-size)/2};lay.gx=lay.bx+m*cell;lay.gy=lay.by+m*cell;
     const st=BOARDS[S.board];if(!woodSrc||woodSrc.key!==S.board){woodSrc=boardWood(st,1024,1024);woodSrc.key=S.board;}
     const bi=mk(Math.round(size*dpr),Math.round(size*dpr)),x=bi.getContext('2d');x.scale(dpr,dpr);x.drawImage(woodSrc,0,0,size,size);
     const o=m*cell,span=(N-1)*cell,ink=st.ink||'rgba(24,15,6,.85)';
@@ -2258,13 +2290,14 @@ function swatch(key){if(swatchCache[key])return swatchCache[key];const set=SETS[
 /* ---------- UI helpers ---------- */
 let toastT=0;
 function toast(msg,ms){const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),ms||2800);}
-function uiInsets(){const H=window.innerHeight;let top=0,bottom=0;
+function uiInsets(){if(document.body.classList.contains('attract'))return {top:16,bottom:window.innerWidth<=620?window.innerHeight*.64+10:16};const H=window.innerHeight;let top=0,bottom=0;
   const st=$('status').getBoundingClientRect();top=Math.max(top,st.bottom);
   if(!document.body.classList.contains('tut')){const tp=$('top').getBoundingClientRect();top=Math.max(top,tp.bottom);}
   let minTop=$('bottom').querySelector('.tools').getBoundingClientRect().top;
   for(const id of ['tutPanel','scorePanel','chatPanel','replayPanel']){const el=$(id);if(!el.hidden){minTop=Math.min(minTop,el.getBoundingClientRect().top);}}
   bottom=H-minTop;return {top:top+6,bottom:bottom+6};}
-function openSheet(id){document.querySelectorAll('.sheet').forEach(s=>{if(s.id!==id)s.hidden=true;});$(id).hidden=false;const f=$(id).querySelector('button');f&&f.focus({preventScroll:true});}
+function openSheet(id){document.querySelectorAll('.sheet').forEach(s=>{if(s.id!==id)s.hidden=true;});$(id).hidden=false;
+  if(id==='sMain')$(id).querySelector('.sx').hidden=G.phase==='idle';const f=$(id).querySelector('.card button:not(.xbtn)')||$(id).querySelector('button');f&&f.focus({preventScroll:true});backGuard();}
 function closeSheet(id){$(id).hidden=true;}
 function anySheet(){return [...document.querySelectorAll('.sheet')].some(s=>!s.hidden);}
 const LEVELS=['Новичок','Любитель','Сильный','Мастер'];
@@ -2285,6 +2318,10 @@ function statusText(){
 }
 function hud(){
   const tut=G.phase==='lesson'||G.phase==='puzzle';document.body.classList.toggle('tut',tut);
+  /* the start screen: no players, no toolbar, the camera drifts round the table while the demo game plays */
+  const dm=demo();if(document.body.classList.contains('attract')!==dm){document.body.classList.toggle('attract',dm);onUIChange();}
+  if(V3D&&!zenOn&&ATT.cam!==dm){ATT.cam=dm;V3D.setZen(dm,true);}
+  if(V3D)V3D.setShift(dm&&!zenOn?demoShift():{x:0,y:0});
   const hn=n=>hot()?'Игрок '+n:replay()?RP.g.names[n]:watching()?pName(NET.st,n):n===G.human?'Вы':net()?pName(NET.st,n):'Бот · '+LEVELS[G.level];
   $('nB').textContent=hn(1);$('nW').textContent=hn(2);
   $('mB').textContent='Чёрные · пленные '+G.caps[1];$('mW').textContent='Белые · пленные '+G.caps[2]+' · коми '+String(G.komi).replace('.',',');
@@ -2308,8 +2345,8 @@ function moveReason(p){if(G.board[p])return 'Пункт уже занят';if(p=
 function commitMove(p,c,chk){
   if(G.phase==='over')return;clockTick();
   G.hist.push(snap());(G.moves=G.moves||[]).push(p);G.board=chk.board;G.ko=chk.ko;G.caps[c]+=chk.cap;G.last=p;G.passes=0;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();
-  AU.place(c===G.human&&!hot()?1:.88+Math.random()*.14,panOf(p));if(chk.removed.length)AU.capture(chk.removed.length,panOf(chk.removed[0]),animF());
-  try{navigator.vibrate&&navigator.vibrate(chk.removed.length?[8,40,8]:8);}catch(e){}
+  AU.place(demo()?.3+Math.random()*.1:c===G.human&&!hot()?1:.88+Math.random()*.14,panOf(p));if(chk.removed.length)AU.capture(chk.removed.length,panOf(chk.removed[0]),animF());
+  try{if(!demo())navigator.vibrate&&navigator.vibrate(chk.removed.length?[8,40,8]:8);}catch(e){}
   view().onCommit(p,c,chk.removed);handover();if(G.phase==='play')saveGame();hud();if(net())netFlush();
 }
 function handover(){if(G.phase!=='play'||!hot())return;G.human=G.toPlay;const f=S.flip&&G.toPlay===2;if(f!==G.flipView){G.flipView=f;if(is3D())setTimeout(()=>{if(G.flipView===f&&is3D()&&G.phase==='play')V3D.turnCam();},380);}}
@@ -2411,16 +2448,20 @@ function guestName(v){try{if(v!==undefined)localStorage.setItem('jadego.guest',v
 function authLabel(){return AUTH.me?`${AUTH.me.name} · рейтинг ${AUTH.me.rating}`:AUTH.signup==='closed'?'войти':'войти или зарегистрироваться';}
 /* first visit without an account: the page opens on sign-up (sign-in when the server takes no new accounts) */
 let accWelcome=false;
-function openWelcome(){accWelcome=true;backTo=null;accTab=AUTH.signup==='closed'?'login':'register';renderAcc();openSheet('sAcc');}
+function openWelcome(){accWelcome=true;backTo=null;accTab=AUTH.signup==='closed'?'login':'register';renderAcc();openSheet('sAcc');attractStart();}
+/* "continue as guest": first show what a guest gives up, then let them go */
+function showGuestInfo(){$('accOut').hidden=true;$('accGuest').hidden=false;$('hAcc').textContent='Игра гостем';
+  $('gNet').textContent=AUTH.guests?'Игра по сети под именем гостя — соперник увидит пометку «гость»':'Игра по сети — на этом сервере только с аккаунтом';
+  $('aClose').textContent='Продолжить как гость';$('aClose').classList.add('primary');$('sAcc').querySelector('.card').scrollTop=0;}
 function openAcc(t){accWelcome=false;backTo=fromSheet();if(t)accTab=t;renderAcc();openSheet('sAcc');if(AUTH.me)authLoad().then(()=>{if(!$('sAcc').hidden&&AUTH.me)renderAcc();mainLabels();});}
-function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=!me;$('aBack').hidden=accWelcome&&!me;$('aClose').textContent=accWelcome&&!me?'Позже':'Готово';$('aClose').classList.toggle('primary',!(accWelcome&&!me));
+function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=!me;$('accGuest').hidden=true;$('aBack').hidden=accWelcome&&!me;$('aClose').textContent=accWelcome&&!me?'Продолжить как гость':'Готово';$('aClose').classList.toggle('primary',!(accWelcome&&!me));
   if(!me){if(AUTH.signup==='closed')accTab='login';const reg=accTab==='register';$('hAcc').textContent=reg?'Регистрация':'Вход';$('aRegTab').hidden=AUTH.signup==='closed';
     document.querySelectorAll('[data-atab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.atab===accTab)));
     $('aReg').hidden=$('aPw2Row').hidden=!reg;$('aInvRow').hidden=!(reg&&AUTH.signup==='invite');$('aGo').textContent=reg?'Создать аккаунт':'Войти';$('aPw').autocomplete=reg?'new-password':'current-password';
     $('accLead').textContent=(AUTH.guests?'С аккаунтом сервер ведёт ваш рейтинг и историю партий по сети. Без него можно играть гостем — партии гостей не влияют на рейтинг.':'Аккаунт нужен для игры по сети: соперники видят ваше имя, а сервер ведёт рейтинг и историю партий.')+
       (AUTH.signup==='closed'?' Регистрация на этом сервере закрыта — аккаунт выдаёт администратор.':AUTH.signup==='invite'?' Зарегистрироваться можно по коду приглашения от администратора.':'');
     if(accWelcome)$('accLead').textContent='Добро пожаловать в «Нефритовое Го»! '+(AUTH.signup==='closed'?'Войдите в аккаунт, который выдал администратор.':'Создайте аккаунт — сервер будет вести ваш рейтинг и историю партий. Уже есть аккаунт? Откройте вкладку «Вход».')+
-      ' С ботом, вдвоём и в задачах можно играть и без аккаунта — нажмите «Позже».';
+      ' Без аккаунта тоже можно играть — нажмите «Продолжить как гость» и посмотрите, что при этом доступно.';
     return;}
   $('hAcc').textContent=me.name;$('aNewName').value=me.name;$('aHide').checked=!!me.hide;
   $('aAdmin').hidden=me.role!=='admin';$('aGuests').checked=AUTH.guests;$('aGuests').disabled=AUTH.private;
@@ -2673,9 +2714,32 @@ function endViewing(){
   if(G.phase==='replay'){clearTimeout(RP.timer);RP.playing=false;$('replayPanel').hidden=true;G.level=0;G.phase='idle';onUIChange();hud();}
   if(watching()){netEnd();G.token++;G.busy=false;G.level=0;G.phase='idle';G.result=null;showScore(false);closeSheet('sResult');view().resync();hud();}}
 
+/* ---------- start-screen demo: the bot plays itself while the menu is open ----------
+   It only borrows the board when nothing is in progress; anything that starts a game takes the board back
+   (a new G.token stops a stone still in flight, a new G.level stops the loop). */
+const ATT={tok:0,timer:0,k:0,cam:false,sizes:[19,13,19,9]};
+function attractStart(again){if(demo()&&!again)return;if(!(G.phase==='idle'||(G.phase==='over'&&!net())))return;
+  clearTimeout(ATT.timer);const tok=++ATT.tok,N=ATT.sizes[ATT.k++%ATT.sizes.length];G.token++;
+  closeSheet('sResult');showScore(false);G.N=N;ENG.setSize(N);G.board=new Int8Array(N*N);G.ko=-1;G.toPlay=1;G.caps={1:0,2:0};G.hist=[];G.last=-1;G.passes=0;G.moveNum=0;
+  G.phase='idle';G.level=-4;G.komi=6.5;G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.result=null;G.marks=[];G.moves=[];G.human=0;G.near=1;G.flipView=false;G.clock=null;G.hc=0;G.hcPts=[];
+  rebuildViews();hud();if(again)AU.rummage(2);ATT.timer=setTimeout(()=>attractStep(tok),1400);}
+/* how far right the demo board moves on wide screens: the middle of the space beside the menu */
+function demoShift(){const W=window.innerWidth,H=window.innerHeight;return {x:W>=980?Math.round((W*.04+540)/2):0,y:W<=620?Math.round(H*.31):0};}
+function attractStop(){if(!demo())return;ATT.tok++;G.token++;G.level=0;hud();}
+function attractStep(tok){if(tok!==ATT.tok||!demo()||G.phase!=='idle')return;
+  const next=ms=>{ATT.timer=setTimeout(()=>attractStep(tok),ms);};
+  if(document.hidden||zenOn&&!is3D()){next(1500);return;}
+  if(G.passes>=2||G.moveNum>G.N*G.N*.62){ATT.timer=setTimeout(()=>{if(tok===ATT.tok&&demo())attractStart(true);},6000);return;}
+  if(ENG.size()!==G.N)ENG.setSize(G.N);
+  const c=G.toPlay,r=ENG.genMove(G.board.slice(),c,G.ko,G.last,{level:1,moveNum:G.moveNum,komi:G.komi,oppPassed:G.passes>0}),chk=r.move>=0?check(r.move,c):null;
+  if(!chk){G.passes++;G.moveNum++;G.toPlay=3-c;G.ko=-1;G.last=-1;view().resync();next(1200);return;}
+  const gt=G.token,done=()=>{if(gt!==G.token||!demo())return;commitMove(r.move,c,chk);next(G.N>13?900:1300);};
+  if(is3D())V3D.placeBot(r.move,c,done);else setTimeout(done,250);}
+
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.1';
+const APP_VER='2.2';
 const NEWS=[
+ ['2.2','Заставка, гость и удобство на телефоне',['На главном экране — заставка: бот сам разыгрывает партию, камни прилетают из чаш, камера плавно облетает стол. На широком экране меню слева, партия справа','«Продолжить как гость» вместо «Позже»: сначала видно, что доступно без аккаунта и чего не будет','У каждого окна есть крестик в углу — он не уезжает при прокрутке. Окно закрывается и касанием по затемнённому фону','Кнопка «Назад» на телефоне закрывает окно, а в партии открывает меню — и не уводит с сайта','Окна на телефоне помещаются в видимую часть экрана, полосы прокрутки стали тонкими и аккуратными']],
  ['2.1','Регистрация с порога',['При первом заходе на сервер сразу открывается окно регистрации (или входа, если регистрация закрыта). Если вы уже вошли, окна не будет','Кнопка «Позже» ведёт в главное меню: с ботом, вдвоём и в задачах можно играть и без аккаунта']],
  ['2.0','Доска 21×21, свои камни и бесконечные задачи',['Новая доска 21 × 21 — для партий с ботом, вдвоём и по сети','Свои камни: загрузите любые картинки (PNG, JPG, WebP) для чёрных и белых — они лягут на камни в 3D и в 2D (Настройки → Стол → Камни)','Тренировка: задачи без конца — захват (сети и лестницы), спасение камней, убить группу, жить. Три уровня сложности, у каждой задачи свой номер','Каждую задачу игра составляет и проверяет сама: верное начало одно, а без него соперник спасся бы. На неверный ход белые отвечают, после двух ошибок — подсказка','Задачи дня теперь тоже составляются заново каждый день']],
  ['1.9','Гости, повторы и зрители',['Гостевой режим: по сети можно играть без регистрации — достаточно ввести имя. Партии гостей не влияют на рейтинг, администратор может отключить гостей','Повтор любой сыгранной партии ход за ходом или автопросмотром: свои партии из статистики и из аккаунта, чужие открытые — из архива сервера','Список «Идут сейчас»: зайдите зрителем и смотрите чужую партию вживую. Рядом — архив недавних партий сервера','Переключатель «Разрешить другим смотреть»: если хоть один игрок против, партию не увидит никто. В аккаунте можно скрыть все свои партии, а прямо во время игры — закрыть партию от зрителей (в чате)']],
@@ -2692,7 +2756,7 @@ let backTo=null;
 function seenVer(){try{return localStorage.getItem('jadego.seen');}catch(e){return null;}}
 function mainLabels(){$('mmAcc').hidden=!AUTH.ok;$('mmAccSub').textContent=authLabel();$('mmNet').classList.toggle('off',NET.ok===false);
   $('mmNetSub').textContent=NET.ok===false?'нужен сервер: python3 server/serve.py':'партия с другом по коду или ссылке, чужие партии вживую и в архиве';}
-function openMain(){endViewing();accWelcome=false;const playing=G.phase==='play'||(net()&&G.phase==='scoring'),ns=!playing&&netSaved(),saved=playing||ns?null:loadGame(),g=playing?G:saved;
+function openMain(){endViewing();accWelcome=false;attractStart();const playing=G.phase==='play'||(net()&&G.phase==='scoring'),ns=!playing&&netSaved(),saved=playing||ns?null:loadGame(),g=playing?G:saved;
   $('mmContinue').hidden=!g&&!ns;
   if(g){const who=g.level===-1?'вдвоём':g.level===-2?'по сети с «'+(G.oppName||'соперником')+'»':'бот «'+LEVELS[g.level]+'»';$('mmContSub').textContent=`${g.N}×${g.N} · ${who} · ход ${g.moveNum+1}`;}
   else if(ns)$('mmContSub').textContent='по сети · комната '+ns.code;
@@ -2804,7 +2868,7 @@ function dailyList(){const h=dailyHash();return [0,1,2].map(i=>{const kind=PZK[(
 const PZCACHE=new Map();
 function genPuzzle(kind,tier,seed){const k=kind+tier+':'+seed;if(!PZCACHE.has(k))PZCACHE.set(k,PZW.ask({type:'puzzle',N:9,board:[],kind,tier,seed}).then(r=>r.pz));return PZCACHE.get(k);}
 function pzTitle(g){if(g.kind==='cap')return g.d<=2?'Захват в два хода':`Захват в ${g.d} ${plural(g.d,'ход','хода','ходов')}`;return {save:'Спасите камни',kill:'Убейте группу',live:'Сделайте два глаза'}[g.kind];}
-function pzFromGen(g,no){const tgt=new Set(g.t!==undefined?ENG.pz.chain(Int8Array.from(g.board),g.t).stones:[]),rows=[];
+function pzFromGen(g,no){ENG.setSize(9);const tgt=new Set(g.t!==undefined?ENG.pz.chain(Int8Array.from(g.board),g.t).stones:[]),rows=[];
   for(let y=0;y<9;y++){let r='';for(let x=0;x<9;x++){const p=y*9+x,v=g.board[p];r+=v===1?(tgt.has(p)?'x':'X'):v===2?(tgt.has(p)?'o':'O'):'.';}rows.push(r);}
   return {id:`g-${g.kind}-${g.tier}-${g.seed}`,tier:g.tier,type:g.kind,t:pzTitle(g),pos:rows,gen:g,no};}
 function pzState(){let s=null;try{s=JSON.parse(localStorage.getItem('jadego.pz')||'null');}catch(e){}s=s||{};s.cur=s.cur||{};s.solved=s.solved||{};s.ids=s.ids||[];s.seen=s.seen||[];return s;}
@@ -2815,7 +2879,7 @@ function pzSave(s){try{localStorage.setItem('jadego.pz',JSON.stringify(s));}catc
 function pzKindFor(n){return S.pzKind==='mix'?PZK[n%4]:S.pzKind;}
 function openPuz(){const st=pzState(),tot=PZK.reduce((a,k)=>a+(st.solved[k]||0),0),tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
   $('pzStats').innerHTML=tile(tot,'решено всего')+PZK.map(k=>tile(st.solved[k]||0,PZNAME[k])).join('');syncSegs();openSheet('sPuz');}
-function startTraining(){closeSheet('sPuz');T.kind='puzzle';T.daily=false;const st=pzState();loadTraining(st.cur[S.pzKind+S.pzTier]||1,0);}
+function startTraining(){closeSheet('sPuz');attractStop();T.kind='puzzle';T.daily=false;const st=pzState();loadTraining(st.cur[S.pzKind+S.pzTier]||1,0);}
 /* puzzle n of the chosen theme and difficulty; one the composer could not finish is skipped */
 function loadTraining(n,skips,dups){const kind=pzKindFor(n),tier=S.pzTier,key=S.pzKind+tier;dups=dups||0;$('status').hidden=false;$('status').textContent='Составляю задачу…';
   genPuzzle(kind,tier,n).then(g=>{if(T.kind!=='puzzle'||T.daily)return;
@@ -2920,7 +2984,7 @@ function wrong(msg){T.tries++;T.locked=true;fb(msg,'bad');AU.deny();
     else{loadPuzzleBoard();}
     T.locked=false;view().resync();if(T.tries>=2)showHint();hud();},1100);}
 /* puzzles */
-function startDaily(){closeSheet('sHome');closeSheet('sSet');T.kind='puzzle';T.daily=true;$('status').hidden=false;$('status').textContent='Составляю задачи дня…';
+function startDaily(){closeSheet('sHome');closeSheet('sSet');attractStop();T.kind='puzzle';T.daily=true;$('status').hidden=false;$('status').textContent='Составляю задачи дня…';
   const dl=dailyList();Promise.all(dl.map(d=>genPuzzle(d.kind,d.tier,d.seed))).then(gs=>{if(T.kind!=='puzzle'||!T.daily)return;
     /* if the composer gave up on one, a hand-made puzzle of the same difficulty takes its place */
     T.list=gs.map((g,i)=>g?Object.assign(pzFromGen(g,0),{id:dl[i].id}):Object.assign({},PUZZLES.filter(p=>p.tier===i)[dailyHash()%PUZZLES.filter(p=>p.tier===i).length],{id:dl[i].id}));
@@ -2963,7 +3027,7 @@ function openHome(){
   const ds=dailyState(),dl=dailyList(),n=dl.filter(p=>ds.solved.includes(p.id)).length;$('dailyBar').style.width=Math.round(n/3*100)+'%';
   $('dailySub').textContent=(n===3?'Все 3 решены сегодня':`Решено ${n} из 3 сегодня`)+(ds.streak?` · серия ${ds.streak} ${plural(ds.streak,'день','дня','дней')}`:'');
   const ps=pzState(),pt=PZK.reduce((a,k)=>a+(ps.solved[k]||0),0);$('trainSub').textContent=(pt?`Решено ${pt} · `:'')+'бесконечные задачи: захват, спасение, жизнь и смерть — три уровня сложности';
-  syncSegs();openSheet('sHome');
+  syncSegs();openSheet('sHome');attractStart();
 }
 function buildMenus(){
   $('envList').innerHTML=Object.entries(ENVS).map(([k,e])=>`<button class="env" data-env="${k}"><div class="th th-${k}"></div><div class="t"><b>${e.name}</b><span>${e.desc}</span></div></button>`).join('');
@@ -2996,7 +3060,7 @@ function bindKey(a,code){if(code){const other=ACTIONS.map(x=>x[0]).find(k=>k!==a
 let zenOn=false,zenView=null;
 function setZen(on){if(on===zenOn)return;if(on){if(!V3D){toast('Созерцание доступно только в 3D');return;}AU.init();zenView=S.view;if(S.view!=='3d')setView('3d');
     document.querySelectorAll('.sheet').forEach(x=>x.hidden=true);zenOn=true;document.body.classList.add('zen');V3D.setZen(true);toast('Созерцание. Любая клавиша или касание — вернуться',3500);}
-  else{zenOn=false;document.body.classList.remove('zen');V3D.setZen(false);if(zenView&&zenView!==S.view)setView(zenView);if(G.phase==='idle')openMain();hud();}}
+  else{zenOn=false;document.body.classList.remove('zen');V3D.setZen(false);ATT.cam=false;if(zenView&&zenView!==S.view)setView(zenView);if(G.phase==='idle')openMain();hud();}}
 function toggleFull(){try{if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen();}catch(e){}}
 function doAction(a){
   if(a==='pass')$('bPass').click();else if(a==='undo')undo();else if(a==='view'){if(V3D)$('bView').click();}else if(a==='cam')$('bCam').click();
@@ -3009,11 +3073,7 @@ function doAction(a){
 function onKey(e){AU.init();if(zenOn){e.preventDefault();setZen(false);return;}
   if(capKey&&!$('sSet').hidden){e.preventDefault();if(e.code==='Escape'){capKey=null;renderKeys();return;}if(e.code==='Backspace'||e.code==='Delete'){bindKey(capKey,'');return;}
     if(!e.code||/^(Shift|Control|Alt|Meta|Tab|CapsLock|OS|Fn)/.test(e.code))return;bindKey(capKey,e.code);return;}
-  if(e.key==='Escape'){if(!$('sMain').hidden){if(G.phase!=='idle')closeSheet('sMain');return;}
-    for(const id of ['sSet','sInfo','sNews'])if(!$(id).hidden){closeBack(id);return;}
-    if(!$('sHome').hidden){if(G.phase==='idle')openMain();else closeSheet('sHome');return;}
-    if(!$('sPuz').hidden){closeSheet('sPuz');openHome();return;}
-    ['sConfirm','sResult'].forEach(closeSheet);if(G.phase==='replay'){rpClose();return;}if(G.phase==='idle')openMain();return;}
+  if(e.key==='Escape'){closeTop();return;}
   if(anySheet()||e.target.tagName==='INPUT'||e.altKey||e.metaKey)return;
   if(G.phase==='replay'&&!e.ctrlKey){const d={ArrowLeft:-1,ArrowRight:1,Home:-1e4,End:1e4}[e.code];
     if(d){e.preventDefault();rpStep(d);return;}if(e.code==='Space'){e.preventDefault();rpPlay(!RP.playing);return;}}
@@ -3021,6 +3081,30 @@ function onKey(e){AU.init();if(zenOn){e.preventDefault();setZen(false);return;}
   if((e.code==='Enter'||e.code==='Space')&&e.target.tagName==='BUTTON')return;
   const a=ACTIONS.map(x=>x[0]).find(k=>S.keys[k]&&S.keys[k]===e.code);if(!a)return;
   if(e.repeat&&!/^(rot|zoom)/.test(a))return;e.preventDefault();doAction(a);}
+/* Esc, the ✕ in a window's corner, a tap on the dimmed backdrop and the phone's Back button all come here.
+   Returns false when there is nothing to close (the start menu itself). */
+function closeTop(){
+  if(!$('sConfirm').hidden){$('cNo').click();return true;}
+  if(!$('sResult').hidden){closeSheet('sResult');if(G.phase==='idle')openMain();return true;}
+  if(!$('sAcc').hidden){if(accWelcome&&!AUTH.me&&$('accGuest').hidden){showGuestInfo();return true;}closeBack('sAcc');return true;}
+  for(const id of ['sSet','sInfo','sNews','sNet'])if(!$(id).hidden){closeBack(id);return true;}
+  if(!$('sPuz').hidden){closeSheet('sPuz');openHome();return true;}
+  if(!$('sHome').hidden){if(G.phase==='idle')openMain();else closeSheet('sHome');return true;}
+  if(!$('sMain').hidden){if(G.phase==='idle')return false;closeSheet('sMain');return true;}
+  if(!$('chatPanel').hidden){closeChat();return true;}
+  if(G.phase==='replay'){rpClose();return true;}
+  if(G.phase==='idle'){openMain();return true;}
+  return false;}
+/* every window gets a ✕; the start menu shows it only while a game waits behind it */
+function sheetChrome(){document.querySelectorAll('.sheet').forEach(sh=>{if(sh.id==='sConfirm')return;const card=sh.querySelector('.card'),sx=document.createElement('div');sx.className='sx';
+    sx.innerHTML='<button class="xbtn" aria-label="Закрыть"><svg viewBox="0 0 14 14"><path d="M2 2l10 10M12 2L2 12"/></svg></button>';card.prepend(sx);sx.firstChild.onclick=()=>closeTop();
+    /* a tap on the dimmed backdrop closes too, except where a choice has to be made */
+    sh.addEventListener('click',e=>{if(e.target===sh&&!(sh.id==='sAcc'&&accWelcome&&!AUTH.me))closeTop();});});}
+/* the phone's Back button: one history entry stands for "a window is open" */
+function backGuard(){if(anySheet()&&!(history.state&&history.state.jg))try{history.pushState({jg:1},'');}catch(e){}}
+function onBack(){if(zenOn){setZen(false);backGuard();return;}
+  if(!closeTop()&&!anySheet()&&G.phase!=='idle'){if(T.kind){closeAllTut();G.phase='idle';}openMain();}     // in a game: Back opens the menu instead of leaving the site
+  backGuard();}
 function openSettings(){backTo=fromSheet();markEnv();markSet();markBoard();syncSegs();
   $('tMute').checked=S.mute;$('tAtari').checked=S.atari;$('tUndo').checked=S.allowUndo;$('tBotResign').checked=S.botResign;$('tClockPause').checked=S.clockPause;showTab(setTab);
   refreshSwatches();renderCustom();
@@ -3033,7 +3117,7 @@ let uiT=0;function onUIChange(){clearTimeout(uiT);uiT=setTimeout(()=>{if(V3D&&is
 
 /* ---------- boot ---------- */
 function boot(){
-  buildMenus();syncSegs();
+  buildMenus();syncSegs();sheetChrome();window.addEventListener('popstate',onBack);
   V2D=create2D();
   if(HAS3D){try{V3D=create3D();if(V3D)V3D.init();}catch(e){console.error(e);V3D=null;}}
   makeSprites();loadCustom();
@@ -3060,7 +3144,9 @@ function boot(){
   $('mmContinue').onclick=()=>{if(G.phase==='play'||(net()&&G.phase==='scoring')){closeSheet('sMain');return;}const ns=netSaved();closeSheet('sMain');
     if(ns){netApi('rooms/'+ns.code).then(()=>netConnect(ns.code,ns.token),()=>{netSave(null);toast('Эта комната уже закрыта',2600);openMain();});return;}const sv=loadGame();if(sv)resumeSaved(sv);};
   $('mmNet').onclick=()=>openNet();$('nBack').onclick=()=>closeBack('sNet');$('mmAcc').onclick=()=>openAcc();
-  $('aBack').onclick=$('aClose').onclick=()=>closeBack('sAcc');$('accForm').onsubmit=accSubmit;
+  $('aBack').onclick=()=>closeBack('sAcc');
+  $('aClose').onclick=()=>{if(accWelcome&&!AUTH.me&&$('accGuest').hidden){showGuestInfo();return;}closeBack('sAcc');};
+  $('aGuestBack').onclick=()=>{accTab=AUTH.signup==='closed'?'login':'register';renderAcc();$('aLogin').focus();};$('accForm').onsubmit=accSubmit;
   document.querySelectorAll('[data-atab]').forEach(b=>b.onclick=()=>{accTab=b.dataset.atab;renderAcc();});
   $('aSaveName').onclick=()=>netApi('auth/name',{name:$('aNewName').value}).then(r=>{AUTH.me=r.user;renderAcc();toast('Имя сохранено',1600);},e=>toast(e.message,2600));
   $('aChPw').onclick=()=>netApi('auth/password',{old:$('aOld').value,new:$('aNew').value}).then(()=>{$('aOld').value=$('aNew').value='';toast('Пароль изменён. На других устройствах нужно войти заново',3200);},e=>toast(e.message,2800));
@@ -3114,8 +3200,11 @@ function boot(){
   if(wq.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>startWatch(wq),isCoarse?250:120);}
   else if(inv.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>{openMain();const sv=netSaved();if(sv&&sv.code===inv){netConnect(sv.code,sv.token);return;}openNet(inv);setTimeout(()=>(AUTH.me?$('netJoin'):$('netLogin')||$('netJoin')).focus(),400);},isCoarse?250:120);}
   else{/* signed in (or no server): the main menu; otherwise sign-up first. A slow server never keeps the page blank */
-    const wait=new Promise(r=>setTimeout(r,isCoarse?250:120)),late=new Promise(r=>setTimeout(()=>r('late'),2500));
-    Promise.race([Promise.all([ready,wait]),late]).then(v=>{if(anySheet()||G.phase!=='idle')return;if(v!=='late'&&AUTH.ok&&!AUTH.me)openWelcome();else openMain();});}
+    let shown=false;const decide=()=>{if(AUTH.ok&&!AUTH.me)openWelcome();else if(!shown)openMain();shown=true;};
+    const lateT=setTimeout(()=>{if(!shown&&!anySheet()&&G.phase==='idle'){shown=true;openMain();}},2500);
+    Promise.all([ready,new Promise(r=>setTimeout(r,isCoarse?250:120))]).then(()=>{clearTimeout(lateT);
+      /* the answer came late: the menu is already up, so sign-up only replaces it while nobody has touched anything */
+      if(shown&&!(!$('sMain').hidden&&[...document.querySelectorAll('.sheet')].filter(x=>!x.hidden).length===1&&G.phase==='idle'))return;decide();});}
 }
 boot();
 })();
