@@ -12,6 +12,7 @@ Admin commands (Kali/Linux service: run as the service user against its data fol
     python3 server/accounts.py del LOGIN
     python3 server/accounts.py invite [--uses N]            # code for --signup invite
     python3 server/accounts.py invites
+    python3 server/accounts.py guests on|off                # may people play online without an account
     sudo -u jadego python3 /opt/jade-go/server/accounts.py --data /var/lib/jade-go list
 """
 import argparse
@@ -43,9 +44,15 @@ CREATE TABLE IF NOT EXISTS games(
   id INTEGER PRIMARY KEY, room TEXT, n INTEGER, komi REAL, black INTEGER, white INTEGER, black_name TEXT, white_name TEXT,
   winner INTEGER, by TEXT, margin REAL, moves TEXT, black_delta REAL, white_delta REAL, ended INTEGER);
 CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY, uses INTEGER NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS games_black ON games(black);
 CREATE INDEX IF NOT EXISTS games_white ON games(white);
 '''
+# columns added after the first release: (table, column, definition)
+MIGRATIONS = (('users', 'hide_games', 'INTEGER NOT NULL DEFAULT 0'),     # keep all my games from spectators and the archive
+              ('games', 'public', 'INTEGER NOT NULL DEFAULT 0'),         # both players allowed others to watch
+              ('games', 'started', 'INTEGER'),
+              ('games', 'clock', 'INTEGER'))
 
 
 class AuthError(Exception):
@@ -100,6 +107,10 @@ class Accounts:
             self.db.execute('PRAGMA journal_mode=WAL')
             self.db.execute('PRAGMA foreign_keys=ON')
             self.db.executescript(SCHEMA)
+            for table, col, sql in MIGRATIONS:
+                if col not in [r['name'] for r in self.db.execute('PRAGMA table_info(%s)' % table)]:
+                    self.db.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table, col, sql))
+            self.db.execute('CREATE INDEX IF NOT EXISTS games_public ON games(public, ended)')
         self.attempts = {}       # key -> [times] for login throttling
 
     def q(self, sql, args=(), one=False):
@@ -112,7 +123,20 @@ class Accounts:
         if not u:
             return None
         return {'id': u['id'], 'login': u['login'], 'name': u['name'], 'role': u['role'],
-                'rating': round(u['rating']), 'games': u['games'], 'wins': u['wins']}
+                'rating': round(u['rating']), 'games': u['games'], 'wins': u['wins'], 'hide': bool(u['hide_games'])}
+
+    # ---------- server settings (changed by the admin) ----------
+    def setting(self, key, default=None):
+        row = self.q('SELECT value FROM settings WHERE key=?', (key,), one=True)
+        return row['value'] if row else default
+
+    def set_setting(self, key, value):
+        self.q('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', (key, str(value)))
+
+    @property
+    def guests(self):
+        """Guests play online under a name of their choice, without an account and outside the ratings."""
+        return self.setting('guests', 'on') == 'on'
 
     # ---------- users ----------
     def create_user(self, login, password, name=None, role=None):
@@ -169,6 +193,9 @@ class Accounts:
         self.q('UPDATE users SET pw=? WHERE id=?', (hash_password(new), uid))
         self.q('DELETE FROM sessions WHERE uid=?', (uid,))     # sign out everywhere else
 
+    def set_hide(self, uid, hide):
+        self.q('UPDATE users SET hide_games=? WHERE id=?', (1 if hide else 0, uid))
+
     def set_name(self, uid, name):
         name = clean_name(name)
         if not name:
@@ -198,8 +225,9 @@ class Accounts:
             self.q('DELETE FROM sessions WHERE hash=?', (hashlib.sha256(token.encode()).hexdigest(),))
 
     # ---------- games and ratings ----------
-    def record_game(self, room, black, white, result, moves):
-        """black/white: {'uid','name'}; result: {'winner','by','margin'}. Updates both ratings."""
+    def record_game(self, room, black, white, result, moves, public=False):
+        """black/white: {'uid','name'}; result: {'winner','by','margin'}. Updates both ratings when both are accounts:
+        a game with a guest is kept in the history and the archive, but never touches a rating."""
         with self.lock:
             b = self.db.execute('SELECT * FROM users WHERE id=?', (black.get('uid'),)).fetchone() if black.get('uid') else None
             w = self.db.execute('SELECT * FROM users WHERE id=?', (white.get('uid'),)).fetchone() if white.get('uid') else None
@@ -208,20 +236,45 @@ class Accounts:
                 db_, dw = elo(b['rating'], w['rating'], 1.0 if result['winner'] == 1 else 0.0, b['games'], w['games'])
                 for u, d, won in ((b, db_, result['winner'] == 1), (w, dw, result['winner'] == 2)):
                     self.db.execute('UPDATE users SET rating=rating+?, games=games+1, wins=wins+? WHERE id=?', (d, 1 if won else 0, u['id']))
-            self.db.execute('INSERT INTO games(room,n,komi,black,white,black_name,white_name,winner,by,margin,moves,black_delta,white_delta,ended) '
-                            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            self.db.execute('INSERT INTO games(room,n,komi,black,white,black_name,white_name,winner,by,margin,moves,black_delta,white_delta,ended,public,started,clock) '
+                            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                             (room.code, room.n, room.komi, b['id'] if b else None, w['id'] if w else None, black.get('name'), white.get('name'),
-                             result['winner'], result['by'], result.get('margin') or 0, ','.join(str(m[1]) for m in moves), db_, dw, int(time.time())))
+                             result['winner'], result['by'], result.get('margin') or 0, ','.join(str(m[1]) for m in moves), db_, dw, int(time.time()),
+                             1 if public else 0, int(getattr(room, 'started', 0) or 0) or None, getattr(room, 'clock_min', None)))
 
     def games_of(self, uid, limit=30):
         rows = self.q('SELECT * FROM games WHERE black=? OR white=? ORDER BY ended DESC LIMIT ?', (uid, uid, limit))
         out = []
         for g in rows:
             me = 1 if g['black'] == uid else 2
-            out.append({'d': g['ended'] * 1000, 'n': g['n'], 'komi': g['komi'], 'you': me, 'opp': g['white_name'] if me == 1 else g['black_name'],
-                        'w': g['winner'], 'by': g['by'], 'm': g['margin'], 'moves': g['moves'],
+            out.append({'id': g['id'], 'd': g['ended'] * 1000, 'n': g['n'], 'komi': g['komi'], 'you': me, 'opp': g['white_name'] if me == 1 else g['black_name'],
+                        'oppGuest': (g['white'] if me == 1 else g['black']) is None,
+                        'w': g['winner'], 'by': g['by'], 'm': g['margin'], 'moves': g['moves'], 'public': bool(g['public']),
                         'delta': round(g['black_delta'] if me == 1 else g['white_delta'])})
         return out
+
+    # ---------- the server's archive of open games ----------
+    VISIBLE = ('g.public=1 AND NOT EXISTS (SELECT 1 FROM users u WHERE u.hide_games=1 AND u.id IN (g.black, g.white))')
+
+    @staticmethod
+    def _card(g, moves=False):
+        out = {'id': g['id'], 'd': g['ended'] * 1000, 'n': g['n'], 'komi': g['komi'], 'clock': g['clock'],
+               'names': {1: g['black_name'], 2: g['white_name']}, 'guest': {1: g['black'] is None, 2: g['white'] is None},
+               'w': g['winner'], 'by': g['by'], 'm': g['margin'], 'count': len(g['moves'].split(',')) if g['moves'] else 0}
+        if moves:
+            out['moves'] = g['moves']
+        return out
+
+    def archive(self, limit=30):
+        """Recent finished games that both players left open (and neither account hides)."""
+        return [self._card(g) for g in self.q('SELECT g.* FROM games g WHERE %s ORDER BY g.ended DESC LIMIT ?' % self.VISIBLE, (limit,))]
+
+    def game(self, gid, uid=None):
+        """One game with its moves, for a replay: an open game, or one of the viewer's own."""
+        g = self.q('SELECT g.* FROM games g WHERE g.id=? AND (%s OR ? IN (g.black, g.white))' % self.VISIBLE, (gid, uid or -1), one=True)
+        if not g:
+            raise AuthError('Партия не найдена или скрыта игроками', 404)
+        return self._card(g, moves=True)
 
     def leaderboard(self, limit=20):
         rows = self.q('SELECT * FROM users WHERE games>0 ORDER BY rating DESC LIMIT ?', (limit,))
@@ -263,6 +316,7 @@ def main():
     i = sub.add_parser('invite', help='код приглашения')
     i.add_argument('--uses', type=int, default=1)
     sub.add_parser('invites')
+    sub.add_parser('guests', help='игра по сети без аккаунта').add_argument('state', nargs='?', choices=('on', 'off'))
     args = ap.parse_args()
     acc = Accounts(args.data)
 
@@ -301,6 +355,10 @@ def main():
         elif args.cmd == 'invites':
             for r in acc.q('SELECT * FROM invites WHERE uses>0 ORDER BY created DESC'):
                 print('%s  осталось %d' % (r['code'], r['uses']))
+        elif args.cmd == 'guests':
+            if args.state:
+                acc.set_setting('guests', args.state)
+            print('Гости %s.' % ('могут играть по сети без аккаунта' if acc.guests else 'не допускаются: по сети играют только с аккаунтом'))
     except AuthError as e:
         sys.exit(str(e))
 

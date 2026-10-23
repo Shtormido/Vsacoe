@@ -6,10 +6,12 @@
 безопасности, не показывает содержимое папок, отвечает на /healthz для проверки.
 Онлайн-партии: /api/… (комнаты на двоих, ходы проверяются на сервере, события — SSE).
 Аккаунты: регистрация и вход, рейтинг и история партий (SQLite в папке data/).
+Гости играют по сети без аккаунта (вне рейтинга); открытые партии можно смотреть вживую и в архиве.
 
     python3 server/serve.py --signup invite     # регистрация только по приглашениям
     python3 server/serve.py --signup closed     # аккаунты создаёт только админ (server/accounts.py)
     python3 server/serve.py --private           # без входа игра не откроется вовсе
+    python3 server/serve.py --guests off        # по сети играют только с аккаунтом
 
     python3 server/serve.py                    # http://0.0.0.0:8080
     python3 server/serve.py --port 8000 --host 127.0.0.1
@@ -99,10 +101,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
         return False
 
+    def _guests(self):
+        return ACC.guests and not PRIVATE
+
+    def _player(self):
+        """The account that sits down at a room, or None for a guest; refused when guests are off."""
+        u = self._user()
+        if not u and not self._guests():
+            raise netgo.ApiError('Чтобы играть по сети, войдите в аккаунт', 401)
+        return ACC.public(u) if u else None
+
     def _auth(self, method, route, body):
         u = self._user()
         if route == '/api/auth/me':
-            return self._json(200, {'user': ACC.public(u), 'signup': ACC.signup, 'private': PRIVATE})
+            return self._json(200, {'user': ACC.public(u), 'signup': ACC.signup, 'private': PRIVATE, 'guests': self._guests()})
         if method != 'POST':
             raise netgo.ApiError('Не найдено', 404)
         if route in ('/api/auth/login', '/api/auth/register'):
@@ -125,6 +137,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if route == '/api/auth/name':
                 ACC.set_name(u['id'], body.get('name'))
                 return self._json(200, {'user': ACC.public(ACC.user_by_session(self._token()))})
+            if route == '/api/auth/hide':
+                ACC.set_hide(u['id'], body.get('hide') is True)
+                netgo.set_hidden(u['id'], body.get('hide') is True)
+                return self._json(200, {'user': ACC.public(ACC.user_by_session(self._token()))})
+            if route == '/api/auth/server':
+                if u['role'] != 'admin':
+                    raise netgo.ApiError('Это может только администратор сервера', 403)
+                if isinstance(body.get('guests'), bool):
+                    ACC.set_setting('guests', 'on' if body['guests'] else 'off')
+                return self._json(200, {'guests': self._guests()})
         except accounts.AuthError as e:
             raise netgo.ApiError(str(e), e.code)
         raise netgo.ApiError('Не найдено', 404)
@@ -165,7 +187,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 body = json.loads(self.rfile.read(n) or b'{}') if n else {}
                 if not isinstance(body, dict):
                     raise netgo.ApiError('Ожидался JSON-объект')
-            m = re.fullmatch(r'/api/rooms/([A-Za-z0-9]{6})(?:/(join|act|events))?', route)
+            m = re.fullmatch(r'/api/rooms/([A-Za-z0-9]{6})(?:/(join|act|events|watch))?', route)
+            g = re.fullmatch(r'/api/games/([0-9]{1,12})', route)
             if route == '/api/ping' and method == 'GET':
                 return self._json(200, {'ok': True, 'online': True, 'accounts': True})
             if route.startswith('/api/auth/'):
@@ -177,23 +200,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not u:
                     raise netgo.ApiError('Нужно войти в аккаунт', 401)
                 return self._json(200, {'games': ACC.games_of(u['id'])})
-            if route == '/api/rooms' and method == 'POST':
+            if route == '/api/live' and method == 'GET':
+                return self._json(200, {'rooms': netgo.live()})
+            if route == '/api/games' and method == 'GET':
+                return self._json(200, {'games': ACC.archive()})
+            if g and method == 'GET':
                 u = self._user()
-                if not u:
-                    raise netgo.ApiError('Чтобы играть по сети, войдите в аккаунт', 401)
-                return self._json(200, netgo.create(body, self._ip(), ACC.public(u)))
+                try:
+                    return self._json(200, {'game': ACC.game(int(g.group(1)), u['id'] if u else None)})
+                except accounts.AuthError as e:
+                    raise netgo.ApiError(str(e), e.code)
+            if route == '/api/rooms' and method == 'POST':
+                return self._json(200, netgo.create(body, self._ip(), self._player()))
             if m and method == 'GET' and m.group(2) is None:
                 return self._json(200, netgo.info(m.group(1)))
             if m and method == 'POST' and m.group(2) == 'join':
-                u = self._user()
-                if not u:
-                    raise netgo.ApiError('Чтобы играть по сети, войдите в аккаунт', 401)
-                return self._json(200, netgo.join(m.group(1), body, ACC.public(u)))
+                return self._json(200, netgo.join(m.group(1), body, self._player()))
             if m and method == 'POST' and m.group(2) == 'act':
                 return self._json(200, netgo.act(m.group(1), body))
             if m and method == 'GET' and m.group(2) == 'events':
                 q = re.search(r'[?&]token=([A-Za-z0-9_-]+)', self.path)
                 return self._events(m.group(1), q.group(1) if q else '')
+            if m and method == 'GET' and m.group(2) == 'watch':
+                return self._watch(m.group(1))
             raise netgo.ApiError('Не найдено', 404)
         except netgo.ApiError as e:
             self._json(e.code, {'error': str(e)})
@@ -202,6 +231,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _events(self, code, token):
         room, q, _ = netgo.subscribe(code, token)
+        self._stream(room, q, lambda: room.phase != 'closed')
+
+    def _watch(self, code):
+        room, q = netgo.watch(code)
+        self._stream(room, q, lambda: netgo.watching(room, q))
+
+    def _stream(self, room, q, alive):
+        """Server-Sent Events: one full room state per message until the room closes or lets this viewer go."""
         try:
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
@@ -212,11 +249,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             while True:
                 try:
                     msg = q.get(timeout=15)
+                    if msg is None:      # a spectator of a game that has just been hidden
+                        self.wfile.write(b'event: hidden\ndata: {}\n\n')
+                        self.wfile.flush()
+                        break
                     self.wfile.write(b'data: ' + msg.encode('utf-8') + b'\n\n')
                 except queue.Empty:
                     self.wfile.write(b': ping\n\n')      # keeps proxies and NAT from closing an idle stream
                 self.wfile.flush()
-                if room.phase == 'closed':
+                if not alive():
                     break
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
@@ -328,6 +369,8 @@ def main():
     ap.add_argument('--data', default=accounts.DEFAULT_DATA, help='папка для базы аккаунтов (по умолчанию ../data или $JADEGO_DATA)')
     ap.add_argument('--signup', choices=('open', 'invite', 'closed'), default=os.environ.get('JADEGO_SIGNUP', 'open'),
                     help='регистрация: open — для всех, invite — по приглашениям, closed — только админ')
+    ap.add_argument('--guests', choices=('on', 'off'), default=os.environ.get('JADEGO_GUESTS') or None,
+                    help='игра по сети без аккаунта: on — можно, off — только с аккаунтом (запоминается в базе)')
     ap.add_argument('--private', action='store_true', default=os.environ.get('JADEGO_PRIVATE', '') in ('1', 'yes', 'true'),
                     help='закрытый сервер: без входа в аккаунт игра не откроется')
     a = ap.parse_args()
@@ -341,7 +384,9 @@ def main():
     except (OSError, sqlite3.Error) as e:
         sys.exit('Не удалось открыть базу аккаунтов в %s: %s' % (a.data, e))
     PRIVATE = a.private
-    netgo.ON_FINISH = lambda room, result: ACC.record_game(room, room.seats[1], room.seats[2], result, room.moves)
+    if a.guests:
+        ACC.set_setting('guests', a.guests)
+    netgo.ON_FINISH = lambda room, result, public: ACC.record_game(room, room.seats[1], room.seats[2], result, room.moves, public)
     handler = lambda *x, **k: Handler(*x, directory=site, **k)
     # on Windows SO_REUSEADDR would let a second copy silently share the port, so only reuse it elsewhere
     http.server.ThreadingHTTPServer.allow_reuse_address = os.name != 'nt'
@@ -356,7 +401,8 @@ def main():
     print('Нефритовое Го: раздаю %s' % site)
     users = ACC.q('SELECT COUNT(*) AS n FROM users', one=True)['n']
     print('Аккаунты: %s, регистрация %s%s. Аккаунтов: %d%s' % (ACC.path, {'open': 'открыта', 'invite': 'по приглашениям', 'closed': 'закрыта'}[ACC.signup],
-          ', сервер закрытый' if PRIVATE else '', users, ' — первый зарегистрированный станет администратором' if not users else ''))
+          ', сервер закрытый' if PRIVATE else ', гости %s' % ('могут играть' if ACC.guests else 'не допускаются'), users,
+          ' — первый зарегистрированный станет администратором' if not users else ''))
     hosts = ['localhost'] + (lan_addresses() if a.host in ('0.0.0.0', '') else [a.host])
     for h in hosts:
         print('  http://%s:%d/' % (h, a.port))

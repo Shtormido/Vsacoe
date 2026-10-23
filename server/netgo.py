@@ -4,6 +4,9 @@ The server keeps every room's move list and replays it with the same rules as th
 (captures, suicide, simple ko, area scoring), so a client can never put an illegal or
 out-of-turn move on the board. Changes are pushed to both players as Server-Sent Events:
 the whole room state as one JSON message, which clients diff against what they show.
+
+Spectators get the same stream without the chat, and only while both players allow it: one
+"no" from either seat (or an account set to hide its games) closes the game to everyone else.
 """
 import json
 import queue
@@ -16,6 +19,8 @@ ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 SIZES = (9, 13, 19)
 BYO, PERIODS = 30.0, 3
 MAX_ROOMS = 500
+MAX_WATCH_ROOM = 40          # spectators in one room
+MAX_WATCH = 300              # spectators on the whole server (each holds a connection)
 WAIT_TTL = 6 * 3600          # an unanswered invitation
 IDLE_TTL = 24 * 3600         # a game nobody has touched
 OVER_TTL = 2 * 3600          # a finished game nobody is watching
@@ -117,11 +122,19 @@ def clean_name(s):
     return s[:20] or 'Игрок'
 
 
+def seat_for(d, user):
+    """A new seat: an account plays under its name; a guest needs a name of their own."""
+    if not user and not re.sub(r'[\x00-\x1f\x7f<>\s]', '', str(d.get('name') or '')):
+        raise ApiError('Введите имя, под которым вас увидит соперник')
+    return {'name': user['name'] if user else clean_name(d.get('name')), 'token': secrets.token_urlsafe(18),
+            'uid': user['id'] if user else None, 'want': d.get('watch') is True, 'hide': bool(user and user.get('hide'))}
+
+
 class Room:
     def __init__(self, code, n, komi, clock_min):
         self.code, self.n, self.komi, self.clock_min = code, n, komi, clock_min
-        self.seats = {1: None, 2: None}          # colour -> {'name','token'}
-        self.subs = []                            # (queue, colour)
+        self.seats = {1: None, 2: None}          # colour -> {'name','token','uid','want','hide'}
+        self.subs = []                            # (queue, colour); colour 0 is a spectator
         self.chat = []
         self.seq = 0
         self.gid = 0
@@ -139,6 +152,7 @@ class Room:
         self.result, self.undo_req, self.rematch = None, None, set()
         self.clock = {c: {'main': self.clock_min * 60.0, 'byo': BYO, 'per': PERIODS} for c in (1, 2)} if self.clock_min else None
         self.turn_t = time.monotonic()
+        self.started = time.time()
 
     # who is who
     def colour_of(self, token):
@@ -149,6 +163,22 @@ class Room:
 
     def online(self, c):
         return any(col == c for _, col in self.subs)
+
+    def public(self):
+        """Open to spectators and the archive only when both players are seated and both allow it."""
+        return all(s and s['want'] and not s['hide'] for s in self.seats.values())
+
+    def watchers(self):
+        return sum(1 for _, c in self.subs if c == 0)
+
+    def kick_watchers(self):
+        for q, c in self.subs:
+            if c == 0:
+                try:
+                    q.put_nowait(None)
+                except queue.Full:
+                    pass
+        self.subs = [s for s in self.subs if s[1] != 0]
 
     # clocks
     def _spend(self, k, dt):
@@ -194,7 +224,7 @@ class Room:
         self.phase, self.result, self.undo_req = 'over', result, None
         if ON_FINISH and self.seats[1] and self.seats[2]:
             try:
-                ON_FINISH(self, result)
+                ON_FINISH(self, result, self.public())
             except Exception as e:  # a storage problem must not break the game itself
                 print('jadego: could not record game:', e)
 
@@ -209,13 +239,18 @@ class Room:
                 self.chat.append({'c': c, 'name': self.seats[c]['name'], 'text': text, 't': int(time.time() * 1000)})
                 self.chat = self.chat[-40:]
             return
+        if t == 'watch':
+            if d.get('on') is True and self.seats[c]['hide']:
+                raise ApiError('В аккаунте включено «Скрывать мои партии» — сначала выключите его там')
+            self.seats[c]['want'] = d.get('on') is True
+            return
         if t == 'rematch':
             if self.phase != 'over':
                 raise ApiError('Партия ещё идёт')
             self.rematch.add(c)
             if self.rematch == {1, 2}:
                 self.seats[1], self.seats[2] = self.seats[2], self.seats[1]
-                self.subs = [(q, 3 - c) for q, c in self.subs]   # open streams follow their player to the new colour
+                self.subs = [(q, 3 - c if c else 0) for q, c in self.subs]   # open streams follow their player to the new colour
                 self.new_game()
                 self.phase = 'play'
             return
@@ -300,18 +335,25 @@ class Room:
         raise ApiError('Неизвестное действие')
 
     def state(self, you):
+        """you: the colour this state is for, 0 for a spectator (who never sees the chat)."""
         return {'code': self.code, 'seq': self.seq, 'gid': self.gid, 'you': you, 'n': self.n, 'komi': self.komi,
                 'clockMin': self.clock_min, 'phase': self.phase,
                 'names': {c: (s['name'] if s else None) for c, s in self.seats.items()},
+                'guest': {c: bool(s and not s['uid']) for c, s in self.seats.items()},
                 'online': {c: self.online(c) for c in (1, 2)},
                 'moves': self.moves, 'toPlay': self.to_play, 'passes': self.passes,
                 'dead': sorted(self.dead), 'deadVer': self.dead_ver, 'agree': sorted(self.agree),
                 'result': self.result, 'undoReq': self.undo_req, 'rematch': sorted(self.rematch),
-                'chat': self.chat, 'clock': self.live_clock()}
+                'chat': self.chat if you else [], 'clock': self.live_clock(),
+                'public': self.public(), 'watchers': self.watchers(),
+                'allow': {c: bool(s and s['want'] and not s['hide']) for c, s in self.seats.items()},
+                'hidden': {c: bool(s and s['hide']) for c, s in self.seats.items()}}
 
     def broadcast(self):
         self.seq += 1
         self.touched = time.time()
+        if not self.public():
+            self.kick_watchers()
         cache = {}
         for q, c in list(self.subs):
             if c not in cache:
@@ -338,20 +380,20 @@ def create(d, ip, user=None):
             raise ApiError('Слишком много комнат за час — попробуйте позже', 429)
         if len(ROOMS) >= MAX_ROOMS:
             raise ApiError('Сервер переполнен — попробуйте позже', 503)
-        _created[ip] = recent + [now]
         n = d.get('n') if d.get('n') in SIZES else 9
         komi = d.get('komi') if d.get('komi') in (0.5, 6.5, 7.5) else 6.5
         clock = d.get('clock') if d.get('clock') in (5, 10, 20) else None
         code = ''.join(secrets.choice(ALPHA) for _ in range(6))
         while code in ROOMS:
             code = ''.join(secrets.choice(ALPHA) for _ in range(6))
+        seat = seat_for(d, user)
+        _created[ip] = recent + [now]
         room = Room(code, n, komi, clock)
         colour = d.get('color')
         colour = 1 if colour == 'black' else 2 if colour == 'white' else secrets.choice((1, 2))
-        token = secrets.token_urlsafe(18)
-        room.seats[colour] = {'name': user['name'] if user else clean_name(d.get('name')), 'token': token, 'uid': user['id'] if user else None}
+        room.seats[colour] = seat
         ROOMS[code] = room
-        return {'code': code, 'token': token, 'color': colour}
+        return {'code': code, 'token': seat['token'], 'color': colour}
 
 
 def info(code):
@@ -359,7 +401,7 @@ def info(code):
         r = _room(code)
         return {'code': r.code, 'n': r.n, 'komi': r.komi, 'clockMin': r.clock_min, 'phase': r.phase,
                 'names': {c: (s['name'] if s else None) for c, s in r.seats.items()},
-                'free': [c for c in (1, 2) if not r.seats[c]]}
+                'free': [c for c in (1, 2) if not r.seats[c]], 'public': r.public(), 'watchers': r.watchers()}
 
 
 def join(code, d, user=None):
@@ -372,12 +414,12 @@ def join(code, d, user=None):
         free = [c for c in (1, 2) if not r.seats[c]]
         if not free:
             raise ApiError('В комнате уже два игрока', 409)
-        token = secrets.token_urlsafe(18)
-        r.seats[free[0]] = {'name': user['name'] if user else clean_name(d.get('name')), 'token': token, 'uid': user['id'] if user else None}
+        seat = r.seats[free[0]] = seat_for(d, user)
         r.phase = 'play'
         r.turn_t = time.monotonic()
+        r.started = time.time()
         r.broadcast()
-        return {'code': r.code, 'token': token, 'color': free[0]}
+        return {'code': r.code, 'token': seat['token'], 'color': free[0]}
 
 
 def act(code, d):
@@ -412,6 +454,49 @@ def subscribe(code, token):
         return r, q, c
 
 
+def watch(code):
+    """A spectator's event stream; returns (room, queue). Only open games can be watched."""
+    with LOCK:
+        r = _room(code)
+        if not r.public() or r.phase not in ('play', 'scoring', 'over'):
+            raise ApiError('Эту партию смотреть нельзя: игроки её скрыли', 403)
+        if r.watchers() >= MAX_WATCH_ROOM:
+            raise ApiError('У этой партии уже много зрителей — попробуйте позже', 429)
+        if sum(x.watchers() for x in ROOMS.values()) >= MAX_WATCH:
+            raise ApiError('Сервер переполнен зрителями — попробуйте позже', 503)
+        q = queue.Queue(maxsize=64)
+        r.subs.append((q, 0))
+        r.broadcast()           # the newcomer gets the state, the players see one more spectator
+        return r, q
+
+
+def watching(room, q):
+    return any(s[0] is q for s in room.subs)
+
+
+def live(limit=50):
+    """Open games in progress, for the "now playing" list."""
+    with LOCK:
+        out = [{'code': r.code, 'n': r.n, 'komi': r.komi, 'clockMin': r.clock_min, 'phase': r.phase,
+                'names': {c: s['name'] for c, s in r.seats.items()},
+                'guest': {c: not s['uid'] for c, s in r.seats.items()},
+                'moves': len(r.moves), 'watchers': r.watchers(), 'started': int(r.started * 1000)}
+               for r in ROOMS.values() if r.phase in ('play', 'scoring') and r.public()]
+    out.sort(key=lambda x: (-x['watchers'], -x['started']))
+    return out[:limit]
+
+
+def set_hidden(uid, hide):
+    """An account switched "hide my games": its seats follow at once, spectators leave hidden games."""
+    with LOCK:
+        for r in ROOMS.values():
+            if any(s and s['uid'] == uid for s in r.seats.values()):
+                for s in r.seats.values():
+                    if s and s['uid'] == uid:
+                        s['hide'] = bool(hide)
+                r.broadcast()
+
+
 def unsubscribe(room, q):
     with LOCK:
         room.subs = [s for s in room.subs if s[0] is not q]
@@ -432,7 +517,8 @@ def _ticker():
                         r.charge_turn()
                         r.broadcast()
                 ttl = WAIT_TTL if r.phase == 'waiting' else OVER_TTL if r.phase == 'over' else IDLE_TTL
-                if not r.subs and now - r.touched > ttl:
+                if not any(c for _, c in r.subs) and now - r.touched > ttl:   # spectators alone do not keep a room alive
+                    r.kick_watchers()
                     del ROOMS[code]
 
 

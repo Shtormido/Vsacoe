@@ -5,6 +5,7 @@
 #   sudo ./deploy/install.sh --port 80     # обычный веб-порт
 #   sudo ./deploy/install.sh --signup invite   # регистрация только по приглашениям (open | invite | closed)
 #   sudo ./deploy/install.sh --private         # без входа в аккаунт игра не откроется
+#   sudo ./deploy/install.sh --guests off      # по сети играют только с аккаунтом (по умолчанию гости могут)
 #   sudo ./deploy/install.sh --uninstall   # удалить сервис и файлы (база аккаунтов остаётся в /var/lib/jade-go)
 #
 # Ставит игру в /opt/jade-go, запускает её от отдельного пользователя без прав (jadego)
@@ -19,6 +20,7 @@ PORT=8080
 HOST=0.0.0.0
 SIGNUP=open
 PRIVATE=0
+GUESTS=
 DATA=/var/lib/$APP
 MODE=install
 
@@ -28,8 +30,9 @@ while [ $# -gt 0 ]; do
     --host) HOST="$2"; shift 2 ;;
     --signup) SIGNUP="$2"; shift 2 ;;
     --private) PRIVATE=1; shift ;;
+    --guests) GUESTS="$2"; shift 2 ;;
     --uninstall) MODE=uninstall; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "Неизвестный параметр: $1" >&2; exit 1 ;;
   esac
 done
@@ -37,6 +40,7 @@ done
 if [ "$(id -u)" -ne 0 ]; then echo "Запустите через sudo: sudo $0 $*" >&2; exit 1; fi
 case "$PORT" in ''|*[!0-9]*) echo "Порт должен быть числом" >&2; exit 1 ;; esac
 case "$SIGNUP" in open|invite|closed) ;; *) echo "--signup: open, invite или closed" >&2; exit 1 ;; esac
+case "$GUESTS" in ''|on|off) ;; *) echo "--guests: on или off" >&2; exit 1 ;; esac
 
 if [ "$MODE" = uninstall ]; then
   systemctl disable --now "$APP" 2>/dev/null || true
@@ -109,6 +113,10 @@ EOF
 systemctl daemon-reload
 systemctl enable --now "$APP"
 sleep 1
+# guests are a setting kept in the database, so the admin can change it later without reinstalling
+if [ -n "$GUESTS" ]; then
+  runuser -u "$USER_NAME" -- python3 "$DEST/server/accounts.py" --data "$DATA" guests "$GUESTS" || true
+fi
 
 # open the port if a firewall is active
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
@@ -123,7 +131,7 @@ if systemctl is-active --quiet "$APP"; then
   echo
   echo "Управление:  systemctl status|restart|stop $APP     Логи:  journalctl -u $APP -f"
   echo "Аккаунты:    регистрация $SIGNUP$( [ "$PRIVATE" = 1 ] && echo ', сервер закрытый'). Первый зарегистрированный станет администратором."
-  echo "             sudo -u $USER_NAME python3 $DEST/server/accounts.py --data $DATA list   (add, passwd, del, invite, admin)"
+  echo "             sudo -u $USER_NAME python3 $DEST/server/accounts.py --data $DATA list   (add, passwd, del, invite, admin, guests)"
 else
   echo "Сервис не запустился. Смотрите:  journalctl -u $APP -n 50" >&2
   exit 1
