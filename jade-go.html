@@ -137,6 +137,15 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
 .game b{display:block;font-weight:600;font-size:14px}.game b.win{color:var(--jade)}.game b.loss{color:#f2a28e}.game span{display:block;font-size:12px;color:var(--kinari-dim);margin-top:2px}
 .game .btn{padding:7px 10px;font-size:12.5px;flex:none}
 @media (max-width:420px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.card.main{max-width:460px}.card .title{font-size:36px;margin-top:8px}
+.menu{display:grid;gap:8px;margin-top:18px}
+.mi{position:relative;display:flex;align-items:center;gap:14px;text-align:left;border:1px solid var(--hair);border-radius:16px;padding:14px 16px;background:rgba(236,228,212,.04);cursor:pointer;min-width:0}
+.mi:hover{background:rgba(236,228,212,.09)}.mi svg{width:26px;height:26px;flex:none;stroke:var(--jade);fill:none;stroke-width:1.6;stroke-linejoin:round}
+.mi .mt{min-width:0}.mi b{display:block;font-family:var(--f-display);font-weight:400;font-size:19px}.mi span{display:block;font-size:12.5px;color:var(--kinari-dim);margin-top:2px;line-height:1.3}
+.mi.primary{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}.mi.primary span{color:rgba(13,54,40,.75)}.mi.primary svg{stroke:var(--jade-ink);fill:var(--jade-ink)}
+.mi .tag{position:absolute;top:10px;right:12px;font-style:normal;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:var(--shu);color:#fff;padding:3px 7px;border-radius:999px}
+.back{appearance:none;border:0;background:none;color:var(--jade);font:500 13.5px var(--f-body);padding:0;margin:0 0 10px;cursor:pointer}
+.ver{margin-top:18px}.ver:first-child{margin-top:4px}.ver h3{margin:0}.ver .vk{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--jade);margin-top:2px}
 .tabs{display:flex;gap:4px;margin:14px 0 4px;padding:4px;border-radius:14px;background:rgba(236,228,212,.06)}
 .tabs button{flex:1;border:0;background:none;padding:9px 6px;border-radius:10px;font:500 14px var(--f-body);cursor:pointer;color:var(--kinari-dim)}
 .tabs button[aria-selected="true"]{background:var(--jade);color:var(--jade-ink)}
@@ -210,10 +219,38 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
   </div>
 </nav>
 
+<!-- Main menu -->
+<div class="sheet" id="sMain" hidden>
+  <div class="card main" role="dialog" aria-modal="true" aria-labelledby="hMain">
+    <div class="kicker">碁 · древняя игра окружения</div>
+    <h2 id="hMain" class="title">Нефритовое Го</h2>
+    <p>Настоящий стол, живой стук камней и соперник, который подстроится под вас.</p>
+    <div class="menu">
+      <button class="mi primary" id="mmContinue" hidden><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg><div class="mt"><b>Продолжить партию</b><span id="mmContSub"></span></div></button>
+      <button class="mi" id="mmPlay"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="4"/><circle cx="16" cy="15" r="4"/></svg><div class="mt"><b>Игра</b><span>партия с ботом или другом, обучение, задачи дня</span></div></button>
+      <button class="mi" id="mmSet"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><div class="mt"><b>Настройки</b><span>место, доска, камни, правила партии, клавиши</span></div></button>
+      <button class="mi" id="mmInfo"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><div class="mt"><b>Сведения</b><span>правила, история го, статистика и история партий</span></div></button>
+      <button class="mi" id="mmNews"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.4 5.6.6-4.2 3.9 1.2 5.6L12 15.7 7 18.5l1.2-5.6L4 9l5.6-.6z"/></svg><div class="mt"><b>Что нового</b><span id="mmNewsSub"></span></div><i class="tag" id="mmNewsTag" hidden>Новое</i></button>
+    </div>
+    <p class="note" id="mmVer"></p>
+  </div>
+</div>
+
+<!-- What's new -->
+<div class="sheet" id="sNews" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="hNews">
+    <div class="kicker">Что нового</div>
+    <h2 id="hNews">Обновления</h2>
+    <div class="doc" id="newsList"></div>
+    <div class="btnrow"><button class="btn primary" id="bNewsClose">Готово</button></div>
+  </div>
+</div>
+
 <!-- Home -->
 <div class="sheet" id="sHome" hidden>
   <div class="card" role="dialog" aria-modal="true" aria-labelledby="hHome">
-    <div class="kicker">Нефритовое Го · 碁</div>
+    <button class="back" id="hBack">← Главное меню</button>
+    <div class="kicker">Игра</div>
     <h2 id="hHome">Сыграем партию?</h2>
     <p>Двое по очереди ставят камни на пересечения. Кто окружит больше пространства, тот и выиграл.</p>
     <div class="modes">
@@ -1556,7 +1593,7 @@ function create3D(){
     [1,2].forEach(c=>{const r=bowlRings[c];if(!r)return;r.visible=c===G.human&&inPlayPhase()&&canHumanAct()&&!hand.held&&(!S.quick||pulse>0);ringMat.opacity=(pulse>0?.55:.22)+.18*Math.sin(time*(pulse>0?9:3));});
     markGroup.children.forEach(m=>{if(m.userData.pulse){const s=1+.12*Math.sin(time*4);m.scale.set(s,s,s);}});
     for(const m of stoneGroup.children){const b=m.userData.blob;if(b)b.visible=Math.abs(m.position.y-STONE_HY)<.06;}
-    controls.update();renderer.render(scene,camera);}
+    controls.autoRotate=G.phase==='idle';controls.autoRotateSpeed=.35;controls.update();renderer.render(scene,camera);}
   requestAnimationFrame(loop);
   return {
     init(){makeStoneMats();buildBoard();buildEnv();resize();},
@@ -1574,6 +1611,7 @@ function create3D(){
     orbit(da){const off=camera.position.clone().sub(controls.target),sp=new THREE.Spherical().setFromVector3(off);sp.theta+=da;off.setFromSpherical(sp);camera.position.copy(controls.target).add(off);controls.update();},
     zoom(f){const off=camera.position.clone().sub(controls.target);off.setLength(clamp(off.length()*f,controls.minDistance,controls.maxDistance));camera.position.copy(controls.target).add(off);controls.update();},
     camName(){return PRESETS[camPreset].n;},
+    showcase(){const k=camPreset;frame(3,true);camPreset=k;},
     refit(){frame(camPreset,false);}
   };
 }
@@ -1683,7 +1721,7 @@ function hud(){
   $('nB').textContent=hn(1);$('nW').textContent=hn(2);
   $('mB').textContent='Чёрные · пленные '+G.caps[1];$('mW').textContent='Белые · пленные '+G.caps[2]+' · коми '+String(G.komi).replace('.',',');
   $('pB').classList.toggle('turn',G.phase==='play'&&G.toPlay===1);$('pW').classList.toggle('turn',G.phase==='play'&&G.toPlay===2);
-  $('status').textContent=statusText();
+  $('status').textContent=statusText();$('status').hidden=G.phase==='idle';
   $('bPass').disabled=!(G.phase==='play'&&canHumanAct());
   $('bUndo').disabled=!(G.phase==='play'&&G.hist.length&&!G.busy&&(hot()||S.allowUndo));clockHud();
   $('lView').textContent=S.view==='3d'?'2D':'3D';
@@ -1827,12 +1865,30 @@ function renderStats(){const l=loadStats(),bot=l.filter(g=>g.lv>=0),won=bot.filt
   $('statBody').innerHTML=h;
   $('statBody').querySelectorAll('[data-sgf]').forEach(b=>b.onclick=()=>{const g=l[+b.dataset.sgf],dt=new Date(g.d);download(`jade-go-${dt.toISOString().slice(0,10)}-${g.N}x${g.N}.sgf`,sgf(g));});
   const rb=$('bStatReset');if(rb)rb.onclick=()=>{if(!resetArm){resetArm=true;renderStats();return;}resetArm=false;try{localStorage.removeItem('jadego.stats');}catch(e){}renderStats();toast('Статистика стёрта',1600);};}
+/* ---------- main menu and changelog ---------- */
+const APP_VER='1.4';
+const NEWS=[
+ ['1.4','Главное меню и сведения',['Новое главное меню: Игра, Настройки, Сведения, Что нового','Раздел «Сведения»: полные правила, история го, статистика','История партий и скачивание записи партии в формате SGF','Кнопки «Настройки» и «Сведения» на нижней панели']],
+ ['1.3','Настройки игры и горячие клавиши',['Настройки разделены на вкладки: Стол, Игра, Клавиши','Подтверждение хода, скорость анимации, подсветка камней в атари','Можно запретить ход назад и сдачу бота','Фора от 2 до 9 камней и игровые часы с бёёми','Горячие клавиши можно переназначить; стрелки поворачивают и приближают стол']],
+ ['1.2','Новые доски',['Китайский поднос с бортиком и ножками','Ореховая плита, красная МДФ и магнитная складная доска','Цилиндрические чаши с плоскими крышками','Сетка на выбор: канавки или полоски']],
+ ['1.1','Звук, графика и новые места',['Реалистичный стук камней, чаш и крышек — у каждой доски свой звук','Живые звуки вокруг: птицы и бамбуковый шиси-одоси, дождь, камин и часы, сверчки, волны','Три новых места: зимний онсэн, осенний храм, павильон у моря','Доска с мягкими гранями, мягкие тени под камнями, камера «Панорама»']],
+ ['1.0','Первая версия',['3D-стол и 2D-доска, бот четырёх уровней','12 уроков и ежедневные задачи']]];
+let backTo=null;
+function seenVer(){try{return localStorage.getItem('jadego.seen');}catch(e){return null;}}
+function openMain(){const playing=G.phase==='play',saved=playing?null:loadGame(),g=playing?G:saved;
+  $('mmContinue').hidden=!g;if(g){const who=g.level<0?'вдвоём':'бот «'+LEVELS[g.level]+'»';$('mmContSub').textContent=`${g.N}×${g.N} · ${who} · ход ${g.moveNum+1}`;}
+  $('mmNewsSub').textContent=`Версия ${NEWS[0][0]}: ${NEWS[0][1].toLowerCase()}`;$('mmNewsTag').hidden=seenVer()===APP_VER;$('mmVer').textContent=`Нефритовое Го · версия ${APP_VER}`;
+  backTo=null;openSheet('sMain');if(G.phase==='idle'&&is3D())V3D.showcase();}
+function openNews(){backTo=!$('sMain').hidden?'main':null;
+  $('newsList').innerHTML=NEWS.map(([v,t,items])=>`<div class="ver"><div class="vk">Версия ${v}</div><h3>${t}</h3><ul>${items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
+  try{localStorage.setItem('jadego.seen',APP_VER);}catch(e){}openSheet('sNews');$('sNews').querySelector('.card').scrollTop=0;}
+function fromSheet(){return !$('sMain').hidden?'main':!$('sHome').hidden?'home':null;}
 let infoTab='rules';
 function showITab(t){infoTab=t;resetArm=false;document.querySelectorAll('#sInfo [data-itab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.itab===t)));
   document.querySelectorAll('#sInfo [data-ipane]').forEach(p=>p.hidden=p.dataset.ipane!==t);if(t==='stats')renderStats();$('sInfo').querySelector('.card').scrollTop=0;}
-function openInfo(t){openSheet('sInfo');showITab(t||infoTab);}
+function openInfo(t){backTo=fromSheet();openSheet('sInfo');showITab(t||infoTab);}
 /* closing a sheet from the start screen brings the start screen back */
-function closeBack(id){closeSheet(id);if(G.phase==='idle'&&!anySheet())openHome();}
+function closeBack(id){closeSheet(id);const b=backTo;backTo=null;if(b==='home')openHome();else if(b==='main'||(G.phase==='idle'&&!anySheet()))openMain();}
 
 /* handicap stones on the star points, in the traditional order */
 function handicapPts(N,h){const e=N<13?2:3,m=(N-1)/2,a=e,b=N-1-e,P=(i,j)=>j*N+i,ur=P(b,a),ll=P(a,b),lr=P(b,b),ul=P(a,a),c=P(m,m),l=P(a,m),r=P(b,m),t=P(m,a),bo=P(m,b);
@@ -2056,19 +2112,22 @@ function doAction(a){
   if(a==='pass')$('bPass').click();else if(a==='undo')undo();else if(a==='view'){if(V3D)$('bView').click();}else if(a==='cam')$('bCam').click();
   else if(a==='rotL'||a==='rotR'){if(is3D())V3D.orbit(a==='rotL'?-.09:.09);}else if(a==='zoomIn'||a==='zoomOut'){if(is3D())V3D.zoom(a==='zoomIn'?.93:1.075);}
   else if(a==='hint'){if(T.kind&&!T.solved)showHint();}else if(a==='next'){if(T.kind&&!$('tNext').disabled)$('tNext').click();}
-  else if(a==='menu')openSettings();else if(a==='info')openInfo();else if(a==='home'){if(T.kind)closeAllTut();openHome();}
+  else if(a==='menu')openSettings();else if(a==='info')openInfo();else if(a==='home'){if(T.kind){closeAllTut();G.phase='idle';}openMain();}
   else if(a==='mute'){S.mute=!S.mute;saveSettings();AU.setVol();toast(S.mute?'Звук выключен':'Звук включён',1400);}
   else if(a==='full')toggleFull();else if(a==='resign'){if(G.phase==='play')$('bResign').click();}}
 function onKey(e){AU.init();
   if(capKey&&!$('sSet').hidden){e.preventDefault();if(e.code==='Escape'){capKey=null;renderKeys();return;}if(e.code==='Backspace'||e.code==='Delete'){bindKey(capKey,'');return;}
     if(!e.code||/^(Shift|Control|Alt|Meta|Tab|CapsLock|OS|Fn)/.test(e.code))return;bindKey(capKey,e.code);return;}
-  if(e.key==='Escape'){if(!$('sHome').hidden)return;['sSet','sInfo','sConfirm','sResult'].forEach(closeSheet);if(G.phase==='idle')openHome();return;}
+  if(e.key==='Escape'){if(!$('sMain').hidden){if(G.phase!=='idle')closeSheet('sMain');return;}
+    for(const id of ['sSet','sInfo','sNews'])if(!$(id).hidden){closeBack(id);return;}
+    if(!$('sHome').hidden){if(G.phase==='idle')openMain();else closeSheet('sHome');return;}
+    ['sConfirm','sResult'].forEach(closeSheet);if(G.phase==='idle')openMain();return;}
   if(anySheet()||e.target.tagName==='INPUT'||e.altKey||e.metaKey)return;
   if(e.ctrlKey){if(e.code==='KeyZ'){e.preventDefault();undo();}return;}
   if((e.code==='Enter'||e.code==='Space')&&e.target.tagName==='BUTTON')return;
   const a=ACTIONS.map(x=>x[0]).find(k=>S.keys[k]&&S.keys[k]===e.code);if(!a)return;
   if(e.repeat&&!/^(rot|zoom)/.test(a))return;e.preventDefault();doAction(a);}
-function openSettings(){markEnv();markSet();markBoard();syncSegs();
+function openSettings(){backTo=fromSheet();markEnv();markSet();markBoard();syncSegs();
   $('tMute').checked=S.mute;$('tAtari').checked=S.atari;$('tUndo').checked=S.allowUndo;$('tBotResign').checked=S.botResign;$('tClockPause').checked=S.clockPause;showTab(setTab);
   document.querySelectorAll('[data-set]').forEach(b=>{const [a,c]=swatch(b.dataset.set);const is=b.querySelectorAll('.pair i');is[0].style.backgroundImage=`url(${a})`;is[1].style.backgroundImage=`url(${c})`;});
   $('vSfx').value=S.sfx;$('vAmb').value=S.amb;$('tQuick').checked=S.quick;$('tLast').checked=S.lastMark;$('tFlip').checked=S.flip;$('tCoords').checked=S.coords;hud();openSheet('sSet');}
@@ -2102,7 +2161,10 @@ function boot(){
   $('bSetClose').onclick=()=>closeBack('sSet');$('bInfoClose').onclick=()=>closeBack('sInfo');
   $('hmSet').onclick=openSettings;$('hmInfo').onclick=()=>openInfo();
   document.querySelectorAll('#sInfo [data-itab]').forEach(b=>b.onclick=()=>showITab(b.dataset.itab));
-  $('bHome').onclick=()=>{closeSheet('sSet');if(T.kind)closeAllTut();openHome();};
+  $('bHome').onclick=()=>{closeSheet('sSet');if(T.kind){closeAllTut();G.phase='idle';}openMain();};
+  $('mmPlay').onclick=openHome;$('mmSet').onclick=openSettings;$('mmInfo').onclick=()=>openInfo();$('mmNews').onclick=openNews;$('bNewsClose').onclick=()=>closeBack('sNews');
+  $('mmContinue').onclick=()=>{if(G.phase==='play'){closeSheet('sMain');return;}const sv=loadGame();closeSheet('sMain');if(sv)resumeSaved(sv);};
+  $('hBack').onclick=()=>{if(G.phase==='idle')openMain();else closeSheet('sHome');};
   $('bResign').onclick=()=>{closeSheet('sSet');$('pConf').textContent=hot()?(G.toPlay===1?'Чёрные':'Белые')+' сдаются — партия закончится победой соперника.':'Партия закончится победой соперника.';openSheet('sConfirm');};
   $('cNo').onclick=()=>closeSheet('sConfirm');
   $('cYes').onclick=()=>{closeSheet('sConfirm');if(G.phase==='play'){G.token++;AI.reset();G.thinking=false;endGame({winner:3-G.human,by:'resign'});}};
@@ -2128,7 +2190,7 @@ function boot(){
   $('tNext').onclick=()=>{if(T.kind==='lesson')lessonNext();else if(T.kind==='puzzle')puzzleNext();};
   $('tHint').onclick=()=>{if(!T.solved)showHint();};
   G.phase='idle';hud();
-  setTimeout(openHome,isCoarse?250:120);
+  setTimeout(openMain,isCoarse?250:120);
 }
 boot();
 })();
