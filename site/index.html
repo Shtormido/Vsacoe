@@ -90,6 +90,12 @@ body.tut #status{top:calc(12px + env(safe-area-inset-top,0px))}
 .mode span{display:block;font-size:12.5px;color:var(--kinari-dim);margin-top:4px;line-height:1.35}
 .mode .tag{position:absolute;top:10px;right:10px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:var(--shu);color:#fff;padding:3px 7px;border-radius:999px}
 .mode.wide{grid-column:1/-1}
+.quiz{display:flex;flex-direction:column;gap:6px;margin-top:10px}.quiz .btn{text-align:left;padding:10px 12px;font-size:13.5px;font-weight:500}
+.quiz .btn.ok{background:var(--jade);color:var(--jade-ink);border-color:var(--jade)}.quiz .btn.bad{border-color:var(--shu);color:#f2a28e}.quiz .btn:disabled{cursor:default}.quiz .btn.ok:disabled{opacity:1}
+.lsns{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin-top:8px}
+.lsn{display:flex;align-items:center;gap:10px;border:1px solid var(--hair);border-radius:12px;padding:9px 10px;background:none;cursor:pointer;text-align:left;font:500 14px var(--f-body);min-width:0}
+.lsn i{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:12.5px;background:rgba(236,228,212,.08);color:var(--kinari-dim)}
+.lsn.done i{background:var(--jade);color:var(--jade-ink)}.lsn.next{border-color:rgba(134,207,174,.7)}.lsn span{min-width:0}
 .mode.rec{border-color:rgba(134,207,174,.7);box-shadow:inset 0 0 0 1px rgba(134,207,174,.4)}
 .prog{height:4px;border-radius:2px;background:rgba(236,228,212,.12);margin-top:10px;overflow:hidden}.prog i{display:block;height:100%;background:var(--jade)}
 .envs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -165,6 +171,10 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
 ::-webkit-scrollbar-thumb:active{background-color:rgba(134,207,174,.75)}
 @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:rgba(236,228,212,.25) transparent}}
 body.attract #top,body.attract #bottom,body.attract #status{display:none!important}
+/* "only the scenery": the menu fades out (after a minute alone, or by the eye button) and nothing is dimmed */
+.sheet{transition:opacity .35s}
+body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:opacity 1.6s}
+.sx .xbtn.eye svg{width:19px;height:19px;stroke-width:1.6}
 /* wide screens: during the start-screen demo the windows move left and the game plays on the right */
 @media (min-width:980px){body.attract .sheet{justify-content:flex-start;padding-left:4vw}}
 /* phones: the start menu stops below the top third, where the demo board shows */
@@ -244,6 +254,7 @@ body.attract #top,body.attract #bottom,body.attract #status{display:none!importa
   <h4 id="tTitle">Доска и камни</h4>
   <p class="txt" id="tText"></p>
   <p class="task" id="tTask"></p>
+  <div class="quiz" id="tQuiz" hidden></div>
   <p class="fb" id="tFb" hidden></p>
   <div class="dots" id="tDots"></div>
   <div class="btnrow">
@@ -418,7 +429,7 @@ body.attract #top,body.attract #bottom,body.attract #status{display:none!importa
     <h2 id="hHome">Сыграем партию?</h2>
     <p>Двое по очереди ставят камни на пересечения. Кто окружит больше пространства, тот и выиграл.</p>
     <div class="modes">
-      <button class="mode" id="mLearn"><span class="tag" id="learnTag" hidden>Начните здесь</span><b>Обучение</b><span id="learnSub">12 коротких уроков на доске — с нуля до первой партии</span><div class="prog"><i id="learnBar" style="width:0%"></i></div></button>
+      <button class="mode" id="mLearn"><span class="tag" id="learnTag" hidden>Начните здесь</span><b>Обучение</b><span id="learnSub">курс с нуля до первой партии</span><div class="prog"><i id="learnBar" style="width:0%"></i></div></button>
       <button class="mode" id="mDaily"><b>Задачи дня</b><span id="dailySub">3 новые задачи каждый день</span><div class="prog"><i id="dailyBar" style="width:0%"></i></div></button>
       <button class="mode wide" id="mTrain"><b>Тренировка</b><span id="trainSub">бесконечные задачи: захват, спасение, жизнь и смерть — три уровня сложности</span></button>
     </div>
@@ -440,6 +451,18 @@ body.attract #top,body.attract #bottom,body.attract #status{display:none!importa
       <div class="seg" data-key="clock"><button data-v="off">Без часов</button><button data-v="5">5 мин<small>+ 3 × 30 с</small></button><button data-v="10">10 мин<small>+ 3 × 30 с</small></button><button data-v="20">20 мин<small>+ 3 × 30 с</small></button></div></div>
     <button class="btn primary" id="bStart" style="width:100%;margin-top:18px">Начать партию</button>
     <div class="btnrow"><button class="btn" id="hmSet">Настройки</button><button class="btn" id="hmInfo">Правила, история, статистика</button></div>
+  </div>
+</div>
+
+<!-- Course -->
+<div class="sheet" id="sLearn" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="hLearn">
+    <button class="back" id="lnBack">← Назад</button>
+    <div class="kicker">Обучение</div>
+    <h2 id="hLearn">Курс игры в го</h2>
+    <p>Правила, тактика, жизнь и смерть, стратегия — и экзамен в конце. Упражнения проверяет сама игра: ошиблись — позиция вернётся, после двух ошибок появится подсказка. <span id="lnSub"></span></p>
+    <button class="btn primary" id="lnGo" style="width:100%;margin-top:6px">Начать</button>
+    <div id="lnList"></div>
   </div>
 </div>
 
@@ -481,6 +504,9 @@ body.attract #top,body.attract #bottom,body.attract #status{display:none!importa
         <div class="seg" data-key="musicStyle"><button data-v="koto">Кото<small>и сякухати</small></button><button data-v="guqin">Гуцинь<small>китайская цитра</small></button><button data-v="ambient">Эмбиент<small>мягкие пэды, колокольчики</small></button><button data-v="off">Выкл</button></div></div>
       <div class="field"><div class="label">Вид</div>
         <div class="seg" data-key="view"><button data-v="3d">3D-стол</button><button data-v="2d">2D-доска</button></div></div>
+      <div class="field"><div class="label">Качество графики</div>
+        <div class="seg" data-key="gfx"><button data-v="auto">Авто<small>по устройству</small></button><button data-v="low">Низкое<small>слабые телефоны</small></button><button data-v="mid">Среднее<small>без лишнего</small></button><button data-v="high">Высокое<small>тени, листва</small></button><button data-v="ultra">Ультра<small>мощные ПК</small></button></div>
+        <p class="note" id="gfxNote">Сейчас: <b id="gfxNow"></b>. Новое качество применяется после перезагрузки страницы.</p></div>
       <div class="field">
         <div class="row"><label for="vSfx">Звук камней</label><input type="range" id="vSfx" min="0" max="1" step="0.05"></div>
         <div class="row"><label for="vAmb">Звуки вокруг</label><input type="range" id="vAmb" min="0" max="1" step="0.05"></div>
@@ -870,11 +896,15 @@ const ACTIONS=[['pass','Пас','KeyP'],['undo','Ход назад','KeyU'],['vi
   ['mute','Звук вкл / выкл','KeyS'],['music','Музыка вкл / выкл','KeyK'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
 const DEFKEYS=Object.fromEntries(ACTIONS.map(a=>[a[0],a[2]]));
 const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,handicap:0,clock:'off',env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,mute:false,
-  lastMark:true,quick:false,coords:true,music:.35,musicStyle:'koto',confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true,netWatch:true,rpSpeed:'1',pzKind:'mix',pzTier:0};
+  lastMark:true,quick:false,coords:true,music:.35,musicStyle:'koto',confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true,netWatch:true,rpSpeed:'1',pzKind:'mix',pzTier:0,gfx:'auto'};
 let S=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem('jadego.settings')||'null');if(s)S=Object.assign(S,s);}catch(e){}
 S.keys=Object.assign({},DEFKEYS,S.keys||{});
 if(!ENVS[S.env])S.env='garden';if(!BOARDS[S.board])S.board='goban';if(!['auto','grooves','lines'].includes(S.grid))S.grid='auto';if(!SETS[S.stones])S.stones='jade';
+/* graphics quality. Auto: medium on phones and tablets, high elsewhere. d scales how much scenery is drawn */
+const GFX=(()=>{const q=['low','mid','high','ultra'].includes(S.gfx)?S.gfx:(isCoarse?'mid':'high');
+  return Object.assign({q},{low:{pr:1,aa:false,sh:0,d:.35},mid:{pr:1.5,aa:true,sh:1024,d:.6},high:{pr:2,aa:true,sh:2048,d:1},ultra:{pr:3,aa:true,sh:4096,d:1.5}}[q]);})();
+const Q=(a,b)=>Math.max(1,Math.round(b*GFX.d));
 function saveSettings(){try{localStorage.setItem('jadego.settings',JSON.stringify(S));}catch(e){}}
 
 /* ---------- engine ---------- */
@@ -1470,11 +1500,11 @@ function bowlPan(c){return (c===G.near?.35:-.35)*(is3D()&&G.flipView?-1:1);}
 /* ---------- 3D view ---------- */
 function create3D(){
   const canvas=$('gl');let renderer;
-  try{renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});}catch(e){return null;}
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,isCoarse?1.75:2));
+  try{renderer=new THREE.WebGLRenderer({canvas,antialias:GFX.aa,powerPreference:'high-performance'});}catch(e){return null;}
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,GFX.pr));
   renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  const SH=isCoarse?1024:2048,maxAniso=renderer.capabilities.getMaxAnisotropy();
+  renderer.shadowMap.enabled=GFX.sh>0;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  const SH=GFX.sh||512,maxAniso=renderer.capabilities.getMaxAnisotropy();
   const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,1,1,5000),pmrem=new THREE.PMREMGenerator(renderer);
   const V=THREE.Vector3;
   canvas.addEventListener('pointerdown',onDown);
@@ -1486,7 +1516,7 @@ function create3D(){
 
   const envGroup=new THREE.Group(),boardGroup=new THREE.Group(),stoneGroup=new THREE.Group(),lidGroup=new THREE.Group(),fxGroup=new THREE.Group();
   scene.add(envGroup,boardGroup,stoneGroup,lidGroup,fxGroup);
-  const stoneGeo=new THREE.SphereGeometry(1,isCoarse?32:44,isCoarse?16:22);stoneGeo.__shared=true;
+  const stoneGeo=new THREE.SphereGeometry(1,Math.max(24,Q(32,44)),Math.max(12,Q(16,22)));stoneGeo.__shared=true;
   const lathe=(pts,seg)=>{const g=new THREE.LatheGeometry(pts.map(a=>new THREE.Vector2(a[0],a[1])),seg);g.__shared=true;return g;};
   const bowlGeo=lathe([[0,0],[3.9,0],[4.15,.25],[4.05,.65],[5.3,1.5],[6.35,2.9],[6.7,4.4],[6.45,5.75],[5.8,6.65],[5.3,7.05],[5.0,7.05],[4.85,6.9],[5.55,5.7],[5.85,4.3],[5.45,2.7],[4.2,1.45],[2.0,1.0],[0,.95]],56);
   const lidGeo=lathe([[0,0],[3.5,0],[3.75,.15],[5.6,.7],[6.5,1.5],[6.75,1.95],[6.5,2.1],[6.2,1.9],[5.4,1.25],[3.6,.78],[0,.62]],56);
@@ -1522,7 +1552,7 @@ function create3D(){
 
   /* stone materials */
   function makeStoneMats(){
-    const set=SETS[S.stones],res=isCoarse?[384,192]:[512,256];
+    const set=SETS[S.stones],res=GFX.d<.5?[256,128]:GFX.d<1?[384,192]:GFX.d>1?[1024,512]:[512,256];
     [1,2].forEach(c=>{const sp=c===1?set.dark:set.light,tx=stoneTex(sp,c===1?11:23,res[0],res[1]);
       const tex=new THREE.CanvasTexture(tx.canvas);tex.encoding=THREE.sRGBEncoding;tex.anisotropy=Math.min(8,maxAniso);
       const m=new THREE.MeshPhysicalMaterial({map:tex,roughness:sp.rough,metalness:0,clearcoat:sp.cc,clearcoatRoughness:sp.ccr});
@@ -1543,7 +1573,7 @@ function create3D(){
     L={N,bw,bd,base,T,LG,human:hb,bowl:{},lid:{},lidY:cyl?.9:.62,lidCurve:cyl?0:1};
     L.bowl[hb]=new V(bw/2-2,base,bd/2+13);L.bowl[ob]=new V(-(bw/2-2),base,-(bd/2+13));
     L.lid[hb]=new V(bw/2-2-15.5,base,bd/2+13);L.lid[ob]=new V(-(bw/2-2-15.5),base,-(bd/2+13));
-    const bev=Math.min(.45,T*.06),px=isCoarse?1280:2048;
+    const bev=Math.min(.45,T*.06),px=Q(1280,2048);
     const topTex=new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px,'color',st)),roughTex=new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px>>1,'rough',st)),bumpTex=carved(st)||st.fold?new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px>>1,'bump',st)):topTex;topTex.encoding=THREE.sRGBEncoding;
     [topTex,roughTex,bumpTex].forEach(t=>{t.anisotropy=maxAniso;t.repeat.set((bw-2*bev)/bw,(bd-2*bev)/bd);t.offset.set(bev/bw,bev/bd);});
     const sideTex=ctex(boardWood(st,512,256,{vertical:false,seed:9,freq:.01}),1/bw,1/Math.max(T,4));
@@ -1649,24 +1679,24 @@ function create3D(){
     const top=new THREE.Group();top.position.y=100;g.add(top);swayGroup(top,.018);
     for(let k=0;k<4;k++){const a=k*1.6+Math.random(),br=part(top,Cyl(1.4,3,64,6),bark,Math.cos(a)*16,14,Math.sin(a)*16);br.rotation.z=-Math.cos(a)*.8;br.rotation.x=Math.sin(a)*.8;}
     const pinks=[0xf7cdd8,0xfbe3ea,0xf2b6c6,0xfff2f5,0xe9a3b8];
-    for(let k=0;k<8;k++){const a=k/8*6.28+Math.random()*.5,r=k<2?8:30+Math.random()*26;crown(top,Math.cos(a)*r,30+Math.random()*34+(k<2?30:0),Math.sin(a)*r*.85,26+Math.random()*12,17+Math.random()*7,24+Math.random()*10,isCoarse?160:260,pinks,'blossom',24*s);}return g;}
+    for(let k=0;k<8;k++){const a=k/8*6.28+Math.random()*.5,r=k<2?8:30+Math.random()*26;crown(top,Math.cos(a)*r,30+Math.random()*34+(k<2?30:0),Math.sin(a)*r*.85,26+Math.random()*12,17+Math.random()*7,24+Math.random()*10,Q(160,260),pinks,'blossom',24*s);}return g;}
   function maple(x,y,z,s,cols){const g=grp(x,y,z,s),bark=lam({color:0x3b2a20});part(g,Cyl(2.6,5,84,7),bark,0,42,0).rotation.z=(Math.random()-.5)*.15;
     const top=new THREE.Group();top.position.y=78;g.add(top);swayGroup(top,.022);
     for(let k=0;k<3;k++){const b=part(top,Cyl(1.2,2.4,52,6),bark,(k-1)*15,10,(Math.random()-.5)*14);b.rotation.z=(1-k)*.85;b.rotation.x=(Math.random()-.5)*.4;}
-    for(let k=0;k<9;k++){const a=k/9*6.28+Math.random()*.6,r=k<2?6:26+Math.random()*26;crown(top,Math.cos(a)*r,24+Math.random()*30+(k<2?24:0),Math.sin(a)*r*.8,22+Math.random()*10,13+Math.random()*6,20+Math.random()*8,isCoarse?150:240,cols,'maple',21*s);}return g;}
+    for(let k=0;k<9;k++){const a=k/9*6.28+Math.random()*.6,r=k<2?6:26+Math.random()*26;crown(top,Math.cos(a)*r,24+Math.random()*30+(k<2?24:0),Math.sin(a)*r*.8,22+Math.random()*10,13+Math.random()*6,20+Math.random()*8,Q(150,240),cols,'maple',21*s);}return g;}
   /* pine: tiers of needle cards over dark cones; snow settles on every tier */
   function pine(x,y,z,s,leaf,snow,light){light=light||1;const g=grp(x,y,z,s);part(g,Cyl(3,5,70,7),lam({color:0x3a2a1e}),0,35,0);const top=new THREE.Group();top.position.y=40;g.add(top);swayGroup(top,.012);
     const base=leaf.color.clone().convertLinearToSRGB(),c1='#'+base.getHexString(),c2='#'+base.clone().offsetHSL(.02,.05,.08).getHexString();
     for(let k=0;k<4;k++){const R=44-k*9;part(top,new THREE.ConeGeometry(R*.82,34,9),leaf,0,6+k*22,0).rotation.y=Math.random()*3;
-      crown(top,0,4+k*22,0,R,11,R,isCoarse?90:150,[c1,c2,c1],'needle',20*s,1.1*light);
-      if(snow)crown(top,0,14+k*22,0,R*.8,5,R*.8,isCoarse?60:110,['#f4f7fb','#ffffff','#e4ebf2'],'leaf',17*s,1.25*light);}return g;}
+      crown(top,0,4+k*22,0,R,11,R,Q(90,150),[c1,c2,c1],'needle',20*s,1.1*light);
+      if(snow)crown(top,0,14+k*22,0,R*.8,5,R*.8,Q(60,110),['#f4f7fb','#ffffff','#e4ebf2'],'leaf',17*s,1.25*light);}return g;}
   function tufts(n,where,cols,size){const pos=[],col=[],cs=cols.map(lin);for(let i=0;i<n*4&&pos.length<n*3;i++){const p=where();if(!p)continue;pos.push(p[0],p[1]+size*.42,p[2]);const c=cs[(Math.random()*cs.length)|0],k=.75+Math.random()*.4;col.push(c.r*k,c.g*k,c.b*k);}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     const p=new THREE.Points(g,new THREE.PointsMaterial({size,map:ltex('tuft'),vertexColors:true,alphaTest:.45}));envGroup.add(p);return p;}
   /* sky dome with a slowly turning layer of clouds */
   function skyDome(stops,o){o=o||{};const t=new THREE.CanvasTexture(gradCanvas(stops));t.encoding=THREE.sRGBEncoding;
     const m=new THREE.Mesh(new THREE.SphereGeometry(2400,32,16),new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,fog:false,depthWrite:false}));m.renderOrder=-10;envGroup.add(m);
-    if(o.clouds!=null){const ct=new THREE.CanvasTexture(cloudCanvas(o.cover||.5,isCoarse?512:1024,isCoarse?128:256,o.seed));ct.encoding=THREE.sRGBEncoding;
+    if(o.clouds!=null){const ct=new THREE.CanvasTexture(cloudCanvas(o.cover||.5,Q(512,1024),Q(128,256),o.seed));ct.encoding=THREE.sRGBEncoding;
       const R=o.r||2300,cm=new THREE.Mesh(new THREE.SphereGeometry(R,40,12,0,Math.PI*2,0,Math.PI*.54),new THREE.MeshBasicMaterial({map:ct,color:o.clouds,transparent:true,opacity:o.op||1,side:THREE.BackSide,fog:false,depthWrite:false}));
       cm.renderOrder=-9;envGroup.add(cm);envUpd.push(dt=>{cm.rotation.y+=dt*(o.speed||.004);});}return m;}
   /* water: shimmering ripples by scrolling a tileable normal map over a glossy surface that mirrors the sky */
@@ -1735,7 +1765,7 @@ function create3D(){
     const ver=std({color:0xb8402a,roughness:.55}),dkw=std({color:0x5e4230,roughness:.8}),BL=KR*2+30,BH=16,arc=u=>gy+1.5+BH*Math.sin(Math.PI*u);
     for(let i=0;i<18;i++){const u=(i+.5)/18,X=kx-BL/2+u*BL,d=M(Box(BL/18+.5,1.6,20),dkw,X,arc(u),kz,true,true);d.rotation.z=Math.atan(Math.cos(Math.PI*u)*Math.PI*BH/BL);
       for(const sz of [-1,1]){if(i%3===0)M(Cyl(.8,.8,9,8),ver,X,arc(u)+4.5,kz+sz*9.4,true);const r=M(Box(BL/18+.5,.9,.9),ver,X,arc(u)+9,kz+sz*9.4,true);r.rotation.z=d.rotation.z;}}
-    tufts(isCoarse?260:520,()=>{const a=Math.random()*6.28,r=KR+6+Math.random()*34;return [kx+Math.cos(a)*r,gy,kz+Math.sin(a)*r];},['#5f7d38','#7a9a48','#4f6b2e','#8aa65a'],8);
+    tufts(Q(260,520),()=>{const a=Math.random()*6.28,r=KR+6+Math.random()*34;return [kx+Math.cos(a)*r,gy,kz+Math.sin(a)*r];},['#5f7d38','#7a9a48','#4f6b2e','#8aa65a'],8);
     flutter(4,0,base+12,-70,95,{wings:[['#f6f1e4','#e8c35a'],['#f2d65a','#3a2a18'],['#ffffff','#9ab0d8']],size:3.2,flap:14,speed:.8});
     flock(7,0x2a2a2a,gy+260,5);
     /* tsukubai basin fed by a bamboo spout, and the shishi-odoshi that tips and knocks in time with its sound */
@@ -1753,11 +1783,11 @@ function create3D(){
     AU.hooks.shishi=d=>{if(!active)return;tween(.45,k=>{tube.rotation.z=-.32+.74*k*k;},null,Math.max(0,d-.45));tween(.2,k=>{tube.rotation.z=.42-.74*k*k;},null,d+.55);};
     [[-40,40],[-62,62],[-86,80],[-112,94]].forEach(([x,z])=>M(Cyl(9,10,2,14),stn,x-ew/2+30,gy+1,ez+ed/2+z-40,true,true));
     [[150,-160,22],[-170,120,16],[230,90,12]].forEach(([x,z,r])=>{const k=M(new THREE.DodecahedronGeometry(r,0),rockM,x,gy+r*.35,z,true,true);k.scale.y=.6;const m2=M(new THREE.CircleGeometry(r*1.5,20),moss,x,gy+.3,z,false,true);m2.rotation.x=-Math.PI/2;});
-    for(let k=0;k<6;k++){const g=grp(-410+(Math.random()-.5)*200,gy+250+Math.random()*60,-350+(Math.random()-.5)*120);swayGroup(g,.035);crown(g,0,0,0,46,34,40,isCoarse?160:280,['#7a9a48','#93b35a','#6d8c3c','#a4c46a'],'leaf',26);}
+    for(let k=0;k<6;k++){const g=grp(-410+(Math.random()-.5)*200,gy+250+Math.random()*60,-350+(Math.random()-.5)*120);swayGroup(g,.035);crown(g,0,0,0,46,34,40,Q(160,280),['#7a9a48','#93b35a','#6d8c3c','#a4c46a'],'leaf',26);}
     const bam=lam({color:0x6f8f3e});for(let i=0;i<34;i++){const b=M(Cyl(2.2,2.6,280+Math.random()*80,8),bam,-520+Math.random()*220,gy+150,-420+Math.random()*140,true);b.rotation.z=(Math.random()-.5)*.08;}
     M(Box(1800,110,22),std({color:0xe8dcc4,roughness:1}),0,gy+55,-640,false,true);M(Box(1840,12,52),std({color:0x3d4148,roughness:.8}),0,gy+116,-640,true);
     const hl=lam({color:0x9db39a});[[-600,-1300,500],[300,-1500,700],[900,-1200,450]].forEach(([x,z,r])=>{const h=M(Sph(r,24,12),hl,x,gy-r*.55,z);h.scale.y=.55;});
-    const PN=isCoarse?150:260,ph=new Float32Array(PN);
+    const PN=Q(150,260),ph=new Float32Array(PN);
     const pts=points(PN,2.4,new THREE.CanvasTexture(petalCanvas()),(a,i)=>{a[i*3]=(Math.random()-.5)*260;a[i*3+1]=base+Math.random()*170;a[i*3+2]=(Math.random()-.5)*260;ph[i]=Math.random()*6.28;});
     const pa=pts.geometry.attributes.position;
     envUpd.push((dt,t)=>{const a=pa.array;for(let i=0;i<PN;i++){let x=a[i*3],y=a[i*3+1],z=a[i*3+2];y-=dt*(5+(i%5)*1.3);x+=(Math.sin(t*.9+ph[i])*5+3)*dt;z+=Math.cos(t*.7+ph[i])*3*dt;
@@ -1781,9 +1811,9 @@ function create3D(){
     const wet=std({color:0x34402c,roughness:.45});M(new THREE.PlaneGeometry(1400,900),wet,-60,fy-34,-RZ-520,false,true).rotation.x=-Math.PI/2;
     const wst=std({color:0x4a4a46,roughness:.2,metalness:.1});for(let i=0;i<6;i++)M(Cyl(9,10,3,14),wst,-80+Math.sin(i)*30,fy-32,-RZ-100-i*28,true,true);
     toro(40,fy-34,-RZ-170,.8,std({color:0x6f6d66,roughness:.5}));maple(-220,fy-34,-RZ-230,1.3,[0x5f8a3a,0x7aa24a,0x4f7a30]);
-    [[-150,-RZ-110],[-110,-RZ-140],[60,-RZ-115],[100,-RZ-140],[-30,-RZ-200]].forEach(([x,z],i)=>{crown(envGroup,x,fy-22,z,16,12,16,isCoarse?90:150,i%2?['#6f86d8','#8a9ce6','#a6b2ee']:['#b08ad8','#c7a2e6','#9a74c4'],'blossom',13);crown(envGroup,x,fy-28,z,18,8,18,60,['#4f7a34','#5f8a3e'],'leaf',14);});
+    [[-150,-RZ-110],[-110,-RZ-140],[60,-RZ-115],[100,-RZ-140],[-30,-RZ-200]].forEach(([x,z],i)=>{crown(envGroup,x,fy-22,z,16,12,16,Q(90,150),i%2?['#6f86d8','#8a9ce6','#a6b2ee']:['#b08ad8','#c7a2e6','#9a74c4'],'blossom',13);crown(envGroup,x,fy-28,z,18,8,18,60,['#4f7a34','#5f8a3e'],'leaf',14);});
     M(Box(520,70,4),std({map:ctex(bambooFenceCanvas(),5,1),roughness:.8}),-60,fy+1,-RZ-300,true,true);
-    const RN=isCoarse?500:900,rp=new Float32Array(RN*6);for(let i=0;i<RN;i++){const x=-300+Math.random()*480,y=fy-34+Math.random()*290,z=-RZ-20-Math.random()*320;rp.set([x,y,z,x-.6,y-7,z],i*6);}
+    const RN=Q(500,900),rp=new Float32Array(RN*6);for(let i=0;i<RN;i++){const x=-300+Math.random()*480,y=fy-34+Math.random()*290,z=-RZ-20-Math.random()*320;rp.set([x,y,z,x-.6,y-7,z],i*6);}
     const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(rp,3));const rain=new THREE.LineSegments(rg,new THREE.LineBasicMaterial({color:0xd6dee4,transparent:true,opacity:.42}));envGroup.add(rain);
     envUpd.push(dt=>{const a=rg.attributes.position.array;for(let i=0;i<RN;i++){let y=a[i*6+1]-dt*260;if(y<fy-34)y+=290;a[i*6+1]=y;a[i*6+4]=y-7;}rg.attributes.position.needsUpdate=true;});
     const cool=new THREE.PointLight(0xc9d6e6,.45,420,2);cool.position.set((opL+opR)/2,fy+110,-RZ+20);envGroup.add(cool);
@@ -1806,7 +1836,7 @@ function create3D(){
     const kx=-(L.bw/2+40),kz=-L.bd/2-6,iron=std({color:0x26231f,roughness:.55,metalness:.45});
     M(Cyl(13,11,16,24),std({color:0x5a4a3a,roughness:.85}),kx,fy+8,kz,true,true);const kama=M(Sph(12,24,16),iron,kx,fy+24,kz,true,true);kama.scale.y=.78;
     M(Cyl(6,6,1.6,20),iron,kx,fy+33,kz,true);M(Sph(1.4),iron,kx,fy+34.6,kz);for(const sx of [-1,1])M(new THREE.TorusGeometry(2.2,.5,6,12),iron,kx+sx*12,fy+27,kz,true).rotation.y=Math.PI/2;
-    steam(kx+3,fy+35,kz,isCoarse?8:12,{h:46,size:9,op:.22,spread:5});
+    steam(kx+3,fy+35,kz,Q(8,12),{h:46,size:9,op:.22,spread:5});
     const ax=-RX+55,az=RZ-70;M(Box(28,44,28),std({color:0xf4e3c0,emissive:0xffd59a,emissiveIntensity:1.1,roughness:.9}),ax,fy+30,az,false);
     for(const sx of [-1,1])for(const sz of [-1,1])M(Box(2,52,2),dw,ax+sx*14,fy+26,az+sz*14,true);
     const al=new THREE.PointLight(0xffc985,.9,420,2);al.position.set(ax,fy+32,az);envGroup.add(al);
@@ -1852,11 +1882,11 @@ function create3D(){
     const rod=new THREE.Mesh(Box(.8,70,.8),brass);rod.position.y=-35;pend.add(rod);const bob=new THREE.Mesh(Cyl(7,7,1.2,24),brass);bob.rotation.x=Math.PI/2;bob.position.y=-72;pend.add(bob);
     envUpd.push((dt,t)=>{pend.rotation.z=Math.sin(t*Math.PI)*.12;});
     /* dust drifting through the lamp's cone */
-    const DN=isCoarse?60:120,dm=points(DN,.45,new THREE.CanvasTexture(glowCanvas('rgba(255,236,200,.9)')),(a,i)=>{a[i*3]=sx2+(Math.random()-.5)*50;a[i*3+1]=base+4+Math.random()*55;a[i*3+2]=sz2+(Math.random()-.5)*50;},true);dm.material.opacity=.45;
+    const DN=Q(60,120),dm=points(DN,.45,new THREE.CanvasTexture(glowCanvas('rgba(255,236,200,.9)')),(a,i)=>{a[i*3]=sx2+(Math.random()-.5)*50;a[i*3+1]=base+4+Math.random()*55;a[i*3+2]=sz2+(Math.random()-.5)*50;},true);dm.material.opacity=.45;
     const dpa=dm.geometry.attributes.position;envUpd.push((dt,t)=>{const a=dpa.array;for(let i=0;i<DN;i++){a[i*3]+=Math.sin(t*.3+i)*dt*.6;a[i*3+1]+=Math.sin(t*.2+i*1.7)*dt*.5;a[i*3+2]+=Math.cos(t*.25+i)*dt*.6;}dpa.needsUpdate=true;});
     const leaC=std({color:0x5a1e16,roughness:.48}),ax=-200,az=-70;M(Box(60,18,56),leaC,ax,fy+20,az,true,true);M(Box(60,52,12),leaC,ax,fy+48,az-24,true,true);
     for(const sx of [-1,1])M(Box(10,30,56),leaC,ax+sx*30,fy+34,az,true,true);for(const sx of [-1,1])for(const sz of [-1,1])M(Cyl(2,1.5,11,8),std({color:0x2a1a10}),ax+sx*24,fy+5.5,az+sz*22,true);
-    M(Cyl(12,9,26,20),std({color:0x8a5a3a,roughness:.7}),fx+120,fy+13,fz+40,true,true);crown(envGroup,fx+120,fy+52,fz+40,26,24,26,isCoarse?160:280,['#3f6a32','#527c3c','#2f5528','#6a9248'],'leaf',16,.85);
+    M(Cyl(12,9,26,20),std({color:0x8a5a3a,roughness:.7}),fx+120,fy+13,fz+40,true,true);crown(envGroup,fx+120,fy+52,fz+40,26,24,26,Q(160,280),['#3f6a32','#527c3c','#2f5528','#6a9248'],'leaf',16,.85);
     M(new THREE.PlaneGeometry(80,112),std({map:ctex(inkLandscapeCanvas()),roughness:.8}),-40,fy+150,-375);
     const shelf=std({color:0x2e1d12,roughness:.7});M(Box(380,230,30),shelf,120,fy+115,-360,false,true);
     const bcols=[0x6b1f1f,0x1f2d4f,0x3d4a26,0x7a5a22,0x3a2618,0x161616,0x5a3046];
@@ -1882,7 +1912,7 @@ function create3D(){
     const padM=std({color:0x1f3a22,roughness:.6}),lotM=std({color:0xe8a6c0,emissive:0x3a1020,roughness:.6});
     for(let i=0;i<18;i++){const a=Math.random()*6.28,r=30+Math.random()*90,q=5+Math.random()*5,pd=M(new THREE.CircleGeometry(q,18,.3,5.7),padM,70+Math.cos(a)*r,fy-55.2,-280+Math.sin(a)*r,false,true);pd.rotation.x=-Math.PI/2;pd.rotation.z=Math.random()*6;
       if(i%4===0)for(let k=0;k<6;k++){const pt=M(Sph(1,8,6),lotM,pd.position.x+Math.cos(k)*1.6,fy-53.5,pd.position.z+Math.sin(k)*1.6);pt.scale.set(1.2,2.4,.8);pt.rotation.set(.5*Math.cos(k),k,.5*Math.sin(k));}}
-    tufts(isCoarse?300:600,()=>{const a=Math.random()*6.28,r=135+Math.random()*70;return [70+Math.cos(a)*r,fy-56,-280+Math.sin(a)*r];},['#0f1d14','#142619','#0c170f'],10);
+    tufts(Q(300,600),()=>{const a=Math.random()*6.28,r=135+Math.random()*70;return [70+Math.cos(a)*r,fy-56,-280+Math.sin(a)*r];},['#0f1d14','#142619','#0c170f'],10);
     for(const x of [-200,200])M(Box(12,262,12),dk,x,fy+131,-105,true,true);
     M(Box(470,14,14),dk,0,fy+256,-105,true);
     const lanTex=ctex(lanternCanvas());
@@ -1900,10 +1930,10 @@ function create3D(){
     envUpd.push((dt,t)=>{mrm.material.opacity=.7+.2*Math.sin(t*1.7)+.1*Math.sin(t*4.1);mrm.scale.x=1+.08*Math.sin(t*2.6);});
     M(Sph(28,32,16),new THREE.MeshBasicMaterial({color:0xf4f1e0,fog:false}),-380,fy+430,-1150);
     const mglow=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(glowCanvas("rgba(200,210,255,.55)")),blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));mglow.scale.set(320,320,1);mglow.position.set(-380,fy+430,-1149);envGroup.add(mglow);
-    const stars=points(isCoarse?500:900,1.6*Math.min(2,window.devicePixelRatio||1),new THREE.CanvasTexture(glowCanvas('rgba(255,255,255,1)')),(a,i)=>{const th=Math.random()*6.28,ph=Math.random()*1.2;a[i*3]=Math.cos(th)*Math.cos(ph)*1700;a[i*3+1]=fy+Math.sin(ph)*1700+80;a[i*3+2]=Math.sin(th)*Math.cos(ph)*1700;},true,false);stars.material.fog=false;envUpd.push((dt,t)=>{stars.material.opacity=.8+.2*Math.sin(t*1.3)*Math.sin(t*.37);});
+    const stars=points(Q(500,900),1.6*Math.min(2,window.devicePixelRatio||1),new THREE.CanvasTexture(glowCanvas('rgba(255,255,255,1)')),(a,i)=>{const th=Math.random()*6.28,ph=Math.random()*1.2;a[i*3]=Math.cos(th)*Math.cos(ph)*1700;a[i*3+1]=fy+Math.sin(ph)*1700+80;a[i*3+2]=Math.sin(th)*Math.cos(ph)*1700;},true,false);stars.material.fog=false;envUpd.push((dt,t)=>{stars.material.opacity=.8+.2*Math.sin(t*1.3)*Math.sin(t*.37);});
     const mt=lam({color:0x121a33});[[-900,-1400,520,300],[-300,-1600,700,420],[500,-1500,560,340],[1100,-1300,480,260]].forEach(([x,z,r,h])=>M(new THREE.ConeGeometry(r,h,6),mt,x,fy-56+h/2,z));
     const pineM=lam({color:0x0c1a14});[[-280,-280,1.3],[320,-340,1.5],[-420,-420,1.4],[480,-200,1.2]].forEach(([x,z,q])=>pine(x,fy-56,z,q,pineM,null,.38));
-    const FN=isCoarse?36:60,fph=new Float32Array(FN),fp=points(FN,2.6,new THREE.CanvasTexture(glowCanvas('rgba(210,255,140,1)')),(a,i)=>{a[i*3]=(Math.random()-.5)*600;a[i*3+1]=fy-40+Math.random()*90;a[i*3+2]=-120-Math.random()*320;fph[i]=Math.random()*20;},true);
+    const FN=Q(36,60),fph=new Float32Array(FN),fp=points(FN,2.6,new THREE.CanvasTexture(glowCanvas('rgba(210,255,140,1)')),(a,i)=>{a[i*3]=(Math.random()-.5)*600;a[i*3+1]=fy-40+Math.random()*90;a[i*3+2]=-120-Math.random()*320;fph[i]=Math.random()*20;},true);
     const fa=fp.geometry.attributes.position;
     envUpd.push((dt,t)=>{const a=fa.array;for(let i=0;i<FN;i++){a[i*3]+=Math.sin(t*.4+fph[i])*dt*6;a[i*3+1]+=Math.sin(t*.9+fph[i]*1.3)*dt*3;a[i*3+2]+=Math.cos(t*.35+fph[i])*dt*6;}fa.needsUpdate=true;fp.material.opacity=.65+.35*Math.sin(t*2.1);});
     envRT=buildEnvMap(['#0a1030','#1a2346','#06070c'],[{p:[20,60,-30],w:16,h:22,c:'#ffb070',i:5},{p:[-60,80,-90],w:20,h:20,c:'#e9ecff',i:2.5}]);
@@ -1928,7 +1958,7 @@ function create3D(){
     M(Cyl(.5,.8,29,8),std({color:0xdbe9ee,transparent:true,opacity:.55,roughness:.1}),px,gy+11,sz+29);
     const rips=[0,.33,.66].map(o=>{const r=M(new THREE.RingGeometry(1,1.5,32),new THREE.MeshBasicMaterial({color:0xeaf4f6,transparent:true,opacity:.5,depthWrite:false}),px,gy-2.8,sz+29);r.rotation.x=-Math.PI/2;return {r,o};});
     envUpd.push((dt,t)=>{rips.forEach(({r,o})=>{const k=(t*.7+o)%1;r.scale.setScalar(1+k*10);r.material.opacity=.45*(1-k);});});
-    steam(px,gy-3,pz,isCoarse?16:28,{area:PR*.8,h:90,size:44,op:.2,spread:14});
+    steam(px,gy-3,pz,Q(16,28),{area:PR*.8,h:90,size:44,op:.2,spread:14});
     /* bamboo fence, snow on its top rail */
     const fz=pz-PR-42;M(Box(460,64,3),std({map:ctex(bambooFenceCanvas(),5,1),roughness:.8}),px,gy+32,fz,true,true);M(Box(464,3,8),snowS,px,gy+65,fz,false,true);
     for(let x=-220;x<=220;x+=55)M(Cyl(2.5,2.5,70,8),std({color:0x3b2c20,roughness:.8}),px+x,gy+35,fz+3,true);
@@ -1948,7 +1978,7 @@ function create3D(){
     zabuton(0,fy,L.bd/2+48,0x6a2a2e,58,62);zabuton(0,fy,-(L.bd/2+48),0x6a2a2e,58,62);
     const ok=std({color:0xb08a5a,roughness:.6}),hoop=std({color:0x2a2a2a,metalness:.6,roughness:.4}),bx=L.bw/2+36,bz=-L.bd/2-4;
     M(Cyl(7,6,9,20),ok,bx,fy+4.5,bz,true,true);for(const y of [2,7])M(new THREE.TorusGeometry(6.75,.35,6,24),hoop,bx,fy+y,bz).rotation.x=Math.PI/2;
-    fallers(isCoarse?300:600,1.3,new THREE.CanvasTexture(glowCanvas('rgba(255,255,255,1)')),{r:220,top:fy+220,lo:gy,speed:[7,1.2],sway:2.5,floor:(x,z)=>Math.abs(x)<130&&z>-70&&z<160?fy+.3:gy});
+    fallers(Q(300,600),1.3,new THREE.CanvasTexture(glowCanvas('rgba(255,255,255,1)')),{r:220,top:fy+220,lo:gy,speed:[7,1.2],sway:2.5,floor:(x,z)=>Math.abs(x)<130&&z>-70&&z<160?fy+.3:gy});
     envRT=buildEnvMap(['#c3cfda','#eef2f5','#d0d4d8'],[{p:[60,60,-20],w:30,h:30,c:'#fff4e6',i:4}]);
   }
   function buildAutumn(){
@@ -1968,7 +1998,7 @@ function create3D(){
     const lfMat=new THREE.MeshLambertMaterial({map:new THREE.CanvasTexture(mapleLeafCanvas('#d0452a')),transparent:true,alphaTest:.4,side:THREE.DoubleSide}),lfg=new THREE.PlaneGeometry(4,4),fl=[];
     for(let i=0;i<14;i++){const a=Math.random()*6.28,r=Math.random()*60,m=M(lfg,lfMat,-130+Math.cos(a)*r,gy-1.4,-290+Math.sin(a)*r);m.rotation.set(-Math.PI/2,0,Math.random()*6);fl.push([m,Math.random()*6]);}
     envUpd.push((dt,t)=>{for(const [m,p] of fl){m.position.x+=Math.sin(t*.2+p)*dt*.8;m.rotation.z+=dt*.05;}});
-    tufts(isCoarse?260:520,()=>{const a=Math.random()*6.28,r=80+Math.random()*60;return [-130+Math.cos(a)*r,gy,-290+Math.sin(a)*r];},['#5a6a30','#6f7d3a','#8a7a3a'],9);
+    tufts(Q(260,520),()=>{const a=Math.random()*6.28,r=80+Math.random()*60;return [-130+Math.cos(a)*r,gy,-290+Math.sin(a)*r];},['#5a6a30','#6f7d3a','#8a7a3a'],9);
     rays(40,fy+110,-40,34,270,5,[0,0,-.55],0xffe0b0,.045);
     flutter(4,0,fy+20,-20,80,{wings:[['rgba(225,235,255,.6)','rgba(255,255,255,.25)','rgba(90,100,120,.5)']],size:3.6,four:true,body:0xb8321e,flap:28,speed:1.7,op:.9});
     flock(9,0x151515,gy+260,7);
@@ -1983,7 +2013,7 @@ function create3D(){
     /* leaves fall and some already lie on the boards */
     const lfMats=['#c8381f','#e07a2a','#d9a531'].map(c=>new THREE.MeshLambertMaterial({map:new THREE.CanvasTexture(mapleLeafCanvas(c)),transparent:true,alphaTest:.4,side:THREE.DoubleSide})),lg=new THREE.PlaneGeometry(3.4,3.4);
     for(let i=0;i<26;i++){let x,z;do{x=(Math.random()-.5)*(ew-20);z=ez+(Math.random()-.5)*(ed-20);}while(Math.abs(x)<L.bw/2+26&&Math.abs(z)<L.bd/2+26);M(lg,lfMats[i%3],x,fy+.08+i*.002,z,false,true).rotation.set(-Math.PI/2,0,Math.random()*6.28);}
-    fallers(isCoarse?90:160,3.2,new THREE.CanvasTexture(mapleLeafCanvas('#d4462a')),{r:170,cz:-40,top:fy+190,lo:fy,speed:[6,1.4],sway:7,drift:3,floor:(x,z)=>Math.abs(x)<ew/2&&Math.abs(z-ez)<ed/2?fy+.3:gy});
+    fallers(Q(90,160),3.2,new THREE.CanvasTexture(mapleLeafCanvas('#d4462a')),{r:170,cz:-40,top:fy+190,lo:fy,speed:[6,1.4],sway:7,drift:3,floor:(x,z)=>Math.abs(x)<ew/2&&Math.abs(z-ez)<ed/2?fy+.3:gy});
     zabuton(0,fy,L.bd/2+48,0x4a2a4a,58,62);zabuton(0,fy,-(L.bd/2+48),0x4a2a4a,58,62);
     const tray=std({color:0x2a0e0c,roughness:.3}),cup=std({color:0xe2dccb,roughness:.3}),trx=-(L.bw/2+36);M(Box(26,1.6,18),tray,trx,fy+.8,-4,true,true);for(const dx of [-6,6])M(Cyl(3.2,2.4,4.6,18),cup,trx+dx,fy+3.9,-4,true);
     envRT=buildEnvMap(['#9fbfe0','#ead9c0','#6b5038'],[{p:[50,60,30],w:30,h:30,c:'#ffe2b8',i:5}]);
@@ -2005,11 +2035,11 @@ function create3D(){
     /* beach, a strip of foam and the sea: a near patch of moving swell blending into a calm far plane */
     M(new THREE.PlaneGeometry(3000,1000),std({map:ctex(sandCanvas(),40,14),roughness:.95}),0,sy,240,false,true).rotation.x=-Math.PI/2;
     const seaM=waterMat('#2a5872',{rep:8,ns:.4,rough:.12,metal:.4,speed:.008});M(new THREE.PlaneGeometry(8000,4000),waterMat('#2a5872',{rep:40,ns:.3,rough:.12,metal:.4,speed:.004}),0,sy-2.5,-2700).rotation.x=-Math.PI/2;
-    tufts(isCoarse?280:560,()=>{const x=(Math.random()-.5)*800,z=-230+Math.random()*560;if(Math.abs(x)<130&&z>-95&&z<135)return null;return [x,sy,z];},['#9a9a5a','#b5ad6a','#7f8a4a','#c2b77a'],11);
-    const ng=new THREE.PlaneGeometry(1600,760,isCoarse?40:64,isCoarse?20:30);ng.rotateX(-Math.PI/2);M(ng,seaM,0,sy-1.5,-560,false,true);
+    tufts(Q(280,560),()=>{const x=(Math.random()-.5)*800,z=-230+Math.random()*560;if(Math.abs(x)<130&&z>-95&&z<135)return null;return [x,sy,z];},['#9a9a5a','#b5ad6a','#7f8a4a','#c2b77a'],11);
+    const ng=new THREE.PlaneGeometry(1600,760,Q(40,64),Q(20,30));ng.rotateX(-Math.PI/2);M(ng,seaM,0,sy-1.5,-560,false,true);
     const npos=ng.attributes.position,b0=Float32Array.from(npos.array),amp=new Float32Array(npos.count);
     for(let i=0;i<npos.count;i++){const z=b0[i*3+2]-560;amp[i]=smooth(-190,-330,z)*smooth(-940,-860,z)*smooth(800,700,Math.abs(b0[i*3]));}
-    let wf=0;envUpd.push((dt,t)=>{if(isCoarse&&(wf++&1))return;const a=npos.array;for(let i=0;i<npos.count;i++){const x=b0[i*3],z=b0[i*3+2];
+    let wf=0;envUpd.push((dt,t)=>{if(GFX.d<.8&&(wf++&1))return;const a=npos.array;for(let i=0;i<npos.count;i++){const x=b0[i*3],z=b0[i*3+2];
       a[i*3+1]=amp[i]*(1.6*Math.sin(x*.021+t*1.1)+1.1*Math.sin(z*.034-t*1.5)+.6*Math.sin((x+z)*.052+t*2.2));}npos.needsUpdate=true;ng.computeVertexNormals();});
     const foam=M(new THREE.PlaneGeometry(3000,16),new THREE.MeshBasicMaterial({map:ctex(glowCanvas('rgba(255,255,255,.9)'),120,1),transparent:true,depthWrite:false}),0,sy+.2,-262);foam.rotation.x=-Math.PI/2;
     envUpd.push((dt,t)=>{const k=Math.sin(t*.75);foam.position.z=-262+k*6;foam.material.opacity=.45+.3*k;});
@@ -2203,6 +2233,7 @@ function create2D(){
     /* the start-screen demo on a wide screen sits beside the menu, not under it */
     const ins=uiInsets(),N=G.N,m=S.coords?1.15:.75,side=demo()&&W>=980?W*.04+560:0,avW=W-24-side,avH=Math.max(180,H-ins.top-ins.bottom),size=Math.min(avW,avH,980),cell=size/(N-1+2*m);
     lay={N,size,cell,m,bx:side?side+(avW-size)/2:(W-size)/2,by:ins.top+(avH-size)/2};lay.gx=lay.bx+m*cell;lay.gy=lay.by+m*cell;
+    cv.dataset.grid=[N,lay.gx,lay.gy,cell].map(v=>Math.round(v*10)/10).join(',');      // where the points are, for tests and assistive tools
     const st=BOARDS[S.board];if(!woodSrc||woodSrc.key!==S.board){woodSrc=boardWood(st,1024,1024);woodSrc.key=S.board;}
     const bi=mk(Math.round(size*dpr),Math.round(size*dpr)),x=bi.getContext('2d');x.scale(dpr,dpr);x.drawImage(woodSrc,0,0,size,size);
     const o=m*cell,span=(N-1)*cell,ink=st.ink||'rgba(24,15,6,.85)';
@@ -2297,7 +2328,7 @@ function uiInsets(){if(document.body.classList.contains('attract'))return {top:1
   for(const id of ['tutPanel','scorePanel','chatPanel','replayPanel']){const el=$(id);if(!el.hidden){minTop=Math.min(minTop,el.getBoundingClientRect().top);}}
   bottom=H-minTop;return {top:top+6,bottom:bottom+6};}
 function openSheet(id){document.querySelectorAll('.sheet').forEach(s=>{if(s.id!==id)s.hidden=true;});$(id).hidden=false;
-  if(id==='sMain')$(id).querySelector('.sx').hidden=G.phase==='idle';const f=$(id).querySelector('.card button:not(.xbtn)')||$(id).querySelector('button');f&&f.focus({preventScroll:true});backGuard();}
+  if(id==='sMain'){const sx=$(id).querySelector('.sx');sx.hidden=false;sx.querySelector('.xbtn:not(.eye)').hidden=G.phase==='idle';$('mmEye').hidden=!demo();}const f=$(id).querySelector('.card button:not(.xbtn)')||$(id).querySelector('button');f&&f.focus({preventScroll:true});backGuard();}
 function closeSheet(id){$(id).hidden=true;}
 function anySheet(){return [...document.querySelectorAll('.sheet')].some(s=>!s.hidden);}
 const LEVELS=['Новичок','Любитель','Сильный','Мастер'];
@@ -2319,7 +2350,7 @@ function statusText(){
 function hud(){
   const tut=G.phase==='lesson'||G.phase==='puzzle';document.body.classList.toggle('tut',tut);
   /* the start screen: no players, no toolbar, the camera drifts round the table while the demo game plays */
-  const dm=demo();if(document.body.classList.contains('attract')!==dm){document.body.classList.toggle('attract',dm);onUIChange();}
+  const dm=demo();if(document.body.classList.contains('attract')!==dm){document.body.classList.toggle('attract',dm);onUIChange();}if(!dm&&calm)setCalm(false);
   if(V3D&&!zenOn&&ATT.cam!==dm){ATT.cam=dm;V3D.setZen(dm,true);}
   if(V3D)V3D.setShift(dm&&!zenOn?demoShift():{x:0,y:0});
   const hn=n=>hot()?'Игрок '+n:replay()?RP.g.names[n]:watching()?pName(NET.st,n):n===G.human?'Вы':net()?pName(NET.st,n):'Бот · '+LEVELS[G.level];
@@ -2413,7 +2444,7 @@ function startScoring(){
 function updScore(){G.score=ENG.score(G.board,G.dead,G.komi);view().resync();const f=v=>String(v).replace('.',',');$('scB').textContent=f(G.score.b.total);$('scW').textContent=f(G.score.w.total);}
 function toggleDead(p){if(G.phase!=='scoring'||!G.board[p]||watching())return;const c=G.board[p],val=G.dead[p]?0:1,N=G.N,st=[p],seen=new Set([p]);
   while(st.length){const q=st.pop();G.dead[q]=val;const x=q%N,y=(q/N)|0;[[x-1,y],[x+1,y],[x,y-1],[x,y+1]].forEach(([a,b])=>{if(a<0||b<0||a>=N||b>=N)return;const n=b*N+a;if(G.board[n]===c&&!seen.has(n)){seen.add(n);st.push(n);}});}
-  AU.soft(panOf(p));updScore();if(net())netAct('dead',{points:[...G.dead.keys()].filter(q=>G.dead[q])});}
+  AU.soft(panOf(p));updScore();if(T.kind==='lesson'&&T.tap)tapCheck();if(net())netAct('dead',{points:[...G.dead.keys()].filter(q=>G.dead[q])});}
 function showScore(v){$('scorePanel').hidden=!v;$('scoreBtns').hidden=watching();
   $('scoreTxt').textContent=watching()?'Игроки отмечают мёртвые группы и подтверждают итог.':'Коснитесь группы, чтобы отметить её мёртвой или снова живой. Мёртвые камни уходят в территорию соперника.';if(v)updScore();onUIChange();}
 function resumePlay(){G.token++;G.phase='play';G.passes=0;G.dead=null;G.score=null;if(G.clock)G.clock.t=performance.now();refreshAtari();showScore(false);view().resync();hud();if(G.toPlay!==G.human)requestBot();}
@@ -2714,6 +2745,14 @@ function endViewing(){
   if(G.phase==='replay'){clearTimeout(RP.timer);RP.playing=false;$('replayPanel').hidden=true;G.level=0;G.phase='idle';onUIChange();hud();}
   if(watching()){netEnd();G.token++;G.busy=false;G.level=0;G.phase='idle';G.result=null;showScore(false);closeSheet('sResult');view().resync();hud();}}
 
+/* ---------- only the scenery: the menu steps aside when nobody is around ---------- */
+let calm=false,calmBy='',idleT=0,lastMove=null;
+function setCalm(on,by){if(calm===on)return;calm=on;calmBy=by||'';document.body.classList.toggle('calm',on);if(!on)poke();}
+function poke(){clearTimeout(idleT);idleT=setTimeout(()=>{if(demo()&&anySheet()&&!zenOn&&!document.querySelector('input:focus,textarea:focus'))setCalm(true,'idle');},60000);}
+function calmGuard(e){if(!calm){poke();return;}e.preventDefault();e.stopImmediatePropagation();setCalm(false);}
+function calmMove(e){if(!calm){if(!lastMove||Math.abs(e.clientX-lastMove[0])+Math.abs(e.clientY-lastMove[1])>40){lastMove=[e.clientX,e.clientY];poke();}return;}
+  if(calmBy==='idle'&&lastMove&&Math.abs(e.clientX-lastMove[0])+Math.abs(e.clientY-lastMove[1])>40)setCalm(false);}
+
 /* ---------- start-screen demo: the bot plays itself while the menu is open ----------
    It only borrows the board when nothing is in progress; anything that starts a game takes the board back
    (a new G.token stops a stone still in flight, a new G.level stops the loop). */
@@ -2737,8 +2776,9 @@ function attractStep(tok){if(tok!==ATT.tok||!demo()||G.phase!=='idle')return;
   if(is3D())V3D.placeBot(r.move,c,done);else setTimeout(done,250);}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.2';
+const APP_VER='2.3';
 const NEWS=[
+ ['2.3','Новый курс, качество графики, «только фон»',['Обучение переписано целиком: 22 урока в пяти главах — правила, тактика (двойное атари, лестница, гонка за дыхания), жизнь и смерть, стратегия и экзамен','Упражнения проверяет сама игра: на верный ход белые отвечают, на неверный — позиция возвращается, после двух ошибок — подсказка. Есть вопросы на понимание и отметка мёртвых камней','Список уроков с главами и прогрессом — можно открыть любой урок','Качество графики: авто, низкое, среднее, высокое или ультра (Настройки → Стол)','Если минуту ничего не трогать на главном экране, меню плавно уходит и остаётся живая заставка без затемнения. То же — кнопкой-глазом в углу меню']],
  ['2.2','Заставка, гость и удобство на телефоне',['На главном экране — заставка: бот сам разыгрывает партию, камни прилетают из чаш, камера плавно облетает стол. На широком экране меню слева, партия справа','«Продолжить как гость» вместо «Позже»: сначала видно, что доступно без аккаунта и чего не будет','У каждого окна есть крестик в углу — он не уезжает при прокрутке. Окно закрывается и касанием по затемнённому фону','Кнопка «Назад» на телефоне закрывает окно, а в партии открывает меню — и не уводит с сайта','Окна на телефоне помещаются в видимую часть экрана, полосы прокрутки стали тонкими и аккуратными']],
  ['2.1','Регистрация с порога',['При первом заходе на сервер сразу открывается окно регистрации (или входа, если регистрация закрыта). Если вы уже вошли, окна не будет','Кнопка «Позже» ведёт в главное меню: с ботом, вдвоём и в задачах можно играть и без аккаунта']],
  ['2.0','Доска 21×21, свои камни и бесконечные задачи',['Новая доска 21 × 21 — для партий с ботом, вдвоём и по сети','Свои камни: загрузите любые картинки (PNG, JPG, WebP) для чёрных и белых — они лягут на камни в 3D и в 2D (Настройки → Стол → Камни)','Тренировка: задачи без конца — захват (сети и лестницы), спасение камней, убить группу, жить. Три уровня сложности, у каждой задачи свой номер','Каждую задачу игра составляет и проверяет сама: верное начало одно, а без него соперник спасся бы. На неверный ход белые отвечают, после двух ошибок — подсказка','Задачи дня теперь тоже составляются заново каждый день']],
@@ -2800,47 +2840,135 @@ function clockHud(){[[1,'kB'],[2,'kW']].forEach(([c,id])=>{const e=$(id),C=G.clo
 /* ---------- tutorial & daily puzzles ---------- */
 const T={kind:null,li:0,si:0,tries:0,solved:false,start:null,node:null,pz:null,locked:false,list:[],idx:0};
 const tapWord=()=>isCoarse?'Коснитесь':'Щёлкните';
+/* The course. Boards are 9×9, the top row is rank 9.
+   X/O stones, o/x stones to capture/save (marked), 1 2 3 right points for each stage, a b white's scripted replies,
+   + liberty marks, ! a forbidden point, - an empty point of an eye space, d/D dead stones to mark.
+   A step is one of: info, ok (one move), seq (moves with replies), goal (judged by the solver), gen (a composed puzzle),
+   tap (mark dead stones), quiz (a question with answers), okFn (a rule for good points). */
+const CHAPTERS=[['Правила',0],['Тактика',8],['Жизнь и смерть',12],['Стратегия',17],['Экзамен',20]];
+const E9='.........',B9=Array(9).fill(E9),R=(...rows)=>Array(9-rows.length).fill(E9).concat(rows);
 const LESSONS=[
- {t:'Доска и камни',s:[{pos:[],any:true,
+ /* ---------- rules ---------- */
+ {id:'board',t:'Доска и камни',s:[{pos:[],any:true,
    txt:'Го играют на пересечениях линий, а не в клетках. Чёрные ходят первыми, дальше по очереди. Поставленный камень больше не двигается.',
    task:()=>is3D()&&!S.quick?(tapWord()+' по своей чаше справа внизу — вы возьмёте чёрный камень. Затем поставьте его на любое пересечение.'):(tapWord()+' по любому пересечению'+(isCoarse?', затем ещё раз — чтобы поставить.':'.')),
-   done:'Отлично! Это ваш первый ход.'}]},
- {t:'Дыхания',s:[{pos:['.........','.........','.........','....+....','...+O+...','....+....','.........','.........','.........'],ok:'+',
+   done:'Отлично! Это ваш первый ход.'},
+  {pos:[],quiz:{q:'Сколько пунктов на доске 9 × 9?',a:['64','81','100'],ok:1,why:'9 линий по горизонтали и 9 по вертикали дают 81 пересечение. На большой доске 19 × 19 их 361.'},
+   txt:'Доска — это сетка линий. Играют на пересечениях, поэтому важно считать именно их.'}]},
+ {id:'libs',t:'Дыхания',s:[{pos:['.........','.........','.........','....+....','...+O+...','....+....','.........','.........','.........'],ok:'+',
    txt:'Пустые соседние пункты по линиям — это «дыхания» камня. У белого камня их четыре, они отмечены. Диагонали не считаются.',
-   task:'Займите одно из дыханий белого камня.',done:'Теперь у белого камня осталось три дыхания.'}]},
- {t:'Захват',s:[{pos:['.........','.........','.........','....X....','...XO1...','....X....','.........','.........','.........'],
-   txt:'Если у камня не осталось ни одного дыхания, его снимают с доски — это захват. Снятые камни кладут в крышку своей чаши.',
-   task:'У белого камня одно дыхание. Займите его и захватите камень.',done:'Захват! Камень ушёл к вам в плен.'}]},
- {t:'Край и угол',s:[{pos:['.........','.........','.........','.........','.........','.........','.........','X........','O1.......'],
-   txt:'У края и в углу дыханий меньше: в углу их всего два. Поэтому камни у края захватить легче.',
-   task:'Захватите белый камень в углу.',done:'Верно: угловому камню хватило двух чёрных.'}]},
- {t:'Группы',s:[{pos:['.........','.........','...XX....','..XOO1...','...XX....','.........','.........','.........','.........'],
-   txt:'Камни одного цвета, стоящие рядом по линиям, образуют группу. Дыхания у группы общие, и снимают её целиком.',
-   task:'Захватите оба белых камня одним ходом.',done:'Два камня за один ход!'}]},
- {t:'Атари',s:[{pos:['.........','.........','.........','....O....','...OX1...','....O....','.........','.........','.........'],
-   txt:'Когда у камней осталось одно дыхание, это «атари» — угроза захвата. Сейчас в атари ваш камень.',
-   task:'Спасите его: продлите камень туда, где у него станет больше дыханий.',done:'Спасены: у двух камней теперь три дыхания.'}]},
- {t:'Запрещённый ход',s:[
+   task:'Займите одно из дыханий белого камня.',done:'Теперь у белого камня осталось три дыхания.'},
+  {pos:['.........','.........','.........','.........','O........','.........','.........','.........','.........'],
+   quiz:{q:'Сколько дыханий у белого камня на краю?',a:['2','3','4'],ok:1,why:'Три: сверху, снизу и справа. За краем доски соседей нет, а в углу дыханий было бы всего два.'},
+   txt:'У края дыханий меньше — вот почему камни у края легче захватить.'},
+  {pos:['.........','.........','.........','.........','...XX....','.........','.........','.........','.........'],
+   quiz:{q:'Сколько дыханий у этой чёрной группы из двух камней?',a:['4','6','8'],ok:1,why:'Шесть: по два сверху и снизу, по одному слева и справа. У группы дыхания общие.'},
+   txt:'Камни одного цвета, стоящие рядом по линиям, образуют группу. Дыхания у группы общие, и живёт или погибает она целиком.'}]},
+ {id:'capture',t:'Захват',s:[{pos:['.........','.........','.........','....X....','...XO1...','....X....','.........','.........','.........'],
+   txt:'Если у камня не осталось ни одного дыхания, его снимают с доски — это захват. Снятые камни становятся пленными.',
+   task:'У белого камня одно дыхание. Займите его и захватите камень.',done:'Захват! Камень ушёл к вам в плен.'},
+  {pos:R('....X....','...XO1...'),txt:'У края захватить ещё проще: дыханий у камня меньше.',task:'Захватите белый камень у нижнего края.',done:'Ещё один пленный.'},
+  {pos:R('X........','O1.......'),txt:'В углу у камня всего два дыхания.',task:'Захватите белый камень в углу.',done:'Верно: угловому камню хватило двух чёрных.'}]},
+ {id:'atari',t:'Атари',s:[{pos:['.........','.........','.........','....X....','...XO1...','....1....','.........','.........','.........'],
+   txt:'Атари — угроза захвата: у камня осталось одно дыхание, и следующим ходом его можно снять.',
+   task:'Поставьте белому камню атари: оставьте ему одно дыхание.',done:'Атари! Если белые не убегут, камень ваш.'},
+  {pos:['.........','.........','.........','....O....','...OX1...','....O....','.........','.........','.........'],
+   txt:'Теперь в атари ваш камень. Убегайте туда, где у группы станет больше дыханий.',
+   task:'Спасите камень: продлите его.',done:'Спасены: у двух камней теперь три дыхания.'}]},
+ {id:'connect',t:'Группы, связь и разрез',s:[{pos:['.........','.........','...XX....','..XOO1...','...XX....','.........','.........','.........','.........'],
+   txt:'Группу захватывают целиком, когда у неё не остаётся общих дыханий.',
+   task:'Захватите оба белых камня одним ходом.',done:'Два камня за один ход!'},
+  {pos:['.........','.........','.........','....O....','...X1X...','....O....','.........','.........','.........'],
+   txt:'Камни связаны, только если стоят рядом по линии. По диагонали связи нет: между ними можно вклиниться.',
+   task:'Соедините два чёрных камня в одну группу.',done:'Теперь это одна группа, и разрезать её нельзя.'},
+  {pos:['.........','.........','.........','...O1....','...1O....','.........','.........','.........','.........'],
+   txt:'Белые камни стоят по диагонали — у них два слабых места.',
+   task:'Встаньте между белыми камнями и разрежьте их.',done:'Белые разрезаны: теперь это две отдельные слабые группы.'}]},
+ {id:'suicide',t:'Запрещённый ход',s:[
    {pos:['.........','.........','.........','....O....','...O!O...','....O....','.........','.........','.........'],info:true,
     txt:'Нельзя ставить камень туда, где у него сразу не будет дыханий. Это называется самоубийство.',task:'Сюда чёрным ходить нельзя. Нажмите «Дальше».'},
    {pos:['.........','.........','....X....','...XOX...','..XO1OX..','...XOX...','....X....','.........','.........'],
     txt:'Исключение: если ход захватывает чужие камни, он разрешён — у камня сразу появляются дыхания.',
     task:'Сыграйте в центр и захватите четыре белых камня.',done:'Ход «в окружение» сработал, потому что он забрал камни.'}]},
- {t:'Ко',s:[{pos:['.........','......a..','.........','...XO....','..XO1O...','...XO....','.........','.........','.........'],
+ {id:'ko',t:'Ко',s:[{pos:['.........','......a..','.........','...XO....','..XO1O...','...XO....','.........','.........','.........'],
    txt:'Иногда два камня могут забирать друг друга по кругу без конца. Это «ко». Правило: сразу забрать обратно нельзя — сначала сыграйте в другом месте.',
-   task:'Заберите белый камень.',done:'Белым нельзя сразу забрать ваш камень, поэтому они сыграли в другом месте.'}]},
- {t:'Два глаза',s:[{pos:['.........','.........','.........','.........','.........','.........','OOOOO....','XXXXO....','.1.XO....'],
-   txt:'Пустые пункты внутри группы — «глаза». Группу с двумя отдельными глазами захватить невозможно: сыграть в оба глаза сразу нельзя.',
-   task:'Сыграйте так, чтобы у чёрной группы внизу стало два глаза.',done:'Два глаза — группа жива навсегда.'}]},
- {t:'Подсчёт',s:[{pos:['.....XO..','.....XO..','.....XO..','....XXO..','....XOO..','....XO...','....XO...','....XO...','....XO...'],info:true,score:true,
+   task:'Заберите белый камень.',done:'Белым нельзя сразу забрать ваш камень, поэтому они сыграли в другом месте.'},
+  {pos:['.........','.........','.........','...XO....','..XO.O...','...XO....','.........','.........','.........'],
+   quiz:{q:'Белые только что забрали ваш камень в ко. Можно ли сразу забрать обратно?',a:['Да, сразу','Нет — сначала нужно сыграть в другом месте'],ok:1,
+    why:'Сначала сыграйте угрозу в другом месте. Если соперник ответит на неё, ко снова можно забирать — так идёт «борьба за ко».'},
+   txt:'Проверим, как работает правило ко.'}]},
+ {id:'score',t:'Территория и подсчёт',s:[{pos:['.....XO..','.....XO..','.....XO..','....XXO..','....XOO..','....XO...','....XO...','....XO...','....XO...'],info:true,score:true,
    txt:'Партия заканчивается, когда оба игрока подряд пасуют. Очко дают за каждый свой камень на доске и за каждый окружённый пустой пункт. Белые получают коми 6,5 за то, что ходят вторыми.',
-   task:'scoreText'}]},
- {t:'Первый ход',s:[{pos:[],okFn:p=>{const N=G.N,x=p%N,y=(p/N)|0;return Math.min(x,y,N-1-x,N-1-y)>=2;},
-   txt:'Начинайте с углов, затем стороны, потом центр: в углу территорию окружить проще всего. Первые ходы делают на 3-й или 4-й линии от края.',
+   task:'scoreText'},
+  {pos:['.....XO..','.....XO..','.d...XO..','....XXO..','....XOO..','....XO...','....XO...','....XO...','....XO...'],tap:true,
+   txt:'После двух пасов игроки отмечают мёртвые камни: те, что уже не спастись. Снимать их ходами не нужно — они просто уходят в плен.',
+   task:'Коснитесь белого камня на территории чёрных — отметьте его мёртвым.'},
+  {pos:B9,quiz:{q:'У чёрных 40 очков. У белых 34 и коми 6,5. Кто победил?',a:['Чёрные','Белые'],ok:1,why:'Белые: 34 + 6,5 = 40,5 — больше, чем 40. Половинка в коми исключает ничью.'},
+   txt:'Итог: камни + территория, белым прибавляют коми.'}]},
+ /* ---------- tactics ---------- */
+ {id:'double',t:'Двойное атари',s:[{pos:['.........','.........','.........','...X.X...','..XO1OX..','...a.2...','.........','.........','.........'],
+   seq:[{ok:'1',reply:'a',fb:'Двойное атари! Белые успевают спасти только один камень…'},{ok:'2'}],
+   txt:'Один ход может поставить атари сразу двум камням. Спасти оба соперник не успеет.',
+   task:'Найдите ход, который ставит атари обоим белым камням, а потом заберите тот, что остался.',done:'Белые спасли один камень, второй — ваш.'}]},
+ {id:'edge',t:'Гоните к краю',s:[{pos:R('..X......','.Xo......',E9),goal:'cap',d:3,
+   txt:'Ставя атари, думайте, куда побежит камень. Гоните его к краю или к своим камням — там у него мало дыханий.',
+   task:'Поймайте белый камень. Не выпускайте его к центру.',done:'Камень прижат к краю и захвачен.'}]},
+ {id:'ladder',t:'Лестница',s:[{pos:['.........','.........','.........','...XX....','....oX...','.........','.........','.........','.........'],goal:'cap',d:8,
+   txt:'Лестница: вы раз за разом ставите атари с одной стороны, а камень бежит зигзагом, пока не упрётся в край доски.',
+   task:'Поставьте атари так, чтобы белые побежали к краю, и доведите лестницу до конца.',done:'Лестница сработала! Белым некуда было деваться.'},
+  {pos:['.........','.........','.........','...XX....','....OX...','.........','.O.......','.........','.........'],
+   quiz:{q:'На пути лестницы стоит белый камень (B3). Сработает ли лестница теперь?',a:['Да','Нет'],ok:1,
+    why:'Убегающие камни дойдут до B3 и соединятся с ним — у группы станет много дыханий. Такой камень называют «ломателем лестницы». Прежде чем начинать лестницу, проверьте её путь.'},
+   txt:'Лестница работает не всегда.'}]},
+ {id:'race',t:'Гонка за дыхания',s:[{pos:R('OOXX.....','OOXX.....','.Xo......','.Xo......','.Xo......'),goal:'cap',d:3,
+   txt:'Когда две окружённые группы касаются друг друга, побеждает та, что первой отнимет все дыхания у соседа. Считайте дыхания: здесь у каждой группы их по три.',
+   task:'Начните гонку так, чтобы выиграть её. Закрывайте чужие дыхания, а не свои.',done:'Вы выиграли гонку на один ход. Начинать стоило с того места, где белые могли бы расшириться.'}]},
+ /* ---------- life and death ---------- */
+ {id:'eyes',t:'Два глаза',s:[{pos:['.........','.........','.........','.........','.........','.........','OOOOO....','XXXXO....','.1.XO....'],
+   txt:'Пустые пункты внутри группы — «глаза». Группу с двумя отдельными глазами захватить невозможно: сыграть в оба глаза сразу нельзя.',
+   task:'Сыграйте так, чтобы у чёрной группы внизу стало два глаза.',done:'Два глаза — группа жива навсегда.'},
+  {pos:R('XXXXX....','OOOOX....','O..OX....'),quiz:{q:'У белых один глаз из двух пунктов. Жива ли группа?',a:['Жива','Мертва'],ok:1,
+    why:'Чёрные сыграют в один пункт. Если белые заберут камень, у них останется глаз из одного пункта — туда чёрные сыграют снова и снимут всю группу.'},
+   txt:'Один большой глаз — ещё не жизнь.'}]},
+ {id:'false',t:'Ложный глаз',s:[{pos:R('XXXXXXX..','XOOOOXX..','XO.O.OX..'),
+   quiz:{q:'У белых как будто два глаза — C1 и E1. Жива ли группа?',a:['Жива: два глаза','Мертва: один глаз ложный'],ok:1,
+    why:'Глаз E1 ложный: чёрные играют в E1 и забирают камень F1. Настоящий глаз остаётся один, и группа погибает.'},
+   txt:'Глаз настоящий, только если соперник не может разрушить его снаружи. У края хватит одного чужого камня на диагонали, чтобы глаз стал ложным.'}]},
+ {id:'kill3',t:'Убить: прямая тройка',s:[{pos:R('XXXXXX...','OOOOOX...','O---OX...'),goal:'kill',w:'A2',
+   txt:'Пространство из трёх пунктов в ряд — «прямая тройка». Кто первым займёт середину, тот и решает судьбу группы.',
+   task:'Убейте белую группу одним ходом.',done:'Середина — жизненно важный пункт. Теперь у белых только один глаз.'}]},
+ {id:'live3',t:'Жить: изогнутая тройка',s:[{pos:R('OOO......','XXOO.....','-XXO.....','--XO.....'),goal:'live',w:'B2',
+   txt:'Теперь окружены вы. У чёрной группы в углу пространство из трёх пунктов — «изогнутая тройка».',
+   task:'Сделайте два глаза.',done:'Ход в изгиб делит пространство на два отдельных глаза — группа жива.'}]},
+ {id:'shapes',t:'Какие формы живы',s:[{pos:R('XXXXXXX..','OOOOOOX..','O----OX..'),
+   quiz:{q:'«Прямая четвёрка». Жива ли белая группа, если чёрные ходят первыми?',a:['Жива','Мертва'],ok:0,
+    why:'Жива: куда бы ни сыграли чёрные внутри, белые займут соседний пункт и получат два глаза.'},
+   txt:'Запомните несколько форм — они встречаются в каждой партии.'},
+  {pos:R('XXXXX....','OOOOX....','--OOX....','--OOX....'),
+   quiz:{q:'«Квадрат» из четырёх пунктов. Жива ли группа, даже если ходят белые?',a:['Жива','Мертва'],ok:1,
+    why:'Мертва: любой ход внутрь квадрата оставляет один глаз. Квадрат из четырёх — мёртвая форма.'},
+   txt:'А эта форма — коварная.'}]},
+ /* ---------- strategy ---------- */
+ {id:'corner',t:'Угол, сторона, центр',s:[{pos:['..O...O..','..O...O..','..O...O..','...OOO...','.........','XXX......','...X.....','...X.....','...X.....'],
+   quiz:{q:'Чёрные окружили 9 пунктов в углу шестью камнями, белые — 9 пунктов на стороне девятью. Где территория дешевле?',a:['В углу','На стороне','В центре'],ok:0,
+    why:'В углу: там помогают два края доски. Поэтому партию начинают с углов, потом занимают стороны и лишь затем центр.'},
+   txt:'Территорию окружают камнями. В углу помогают два края доски, на стороне — один, в центре — ни одного.'}]},
+ {id:'opening',t:'Первые ходы',s:[{pos:[],okFn:p=>{const N=G.N,x=p%N,y=(p/N)|0;return Math.min(x,y,N-1-x,N-1-y)>=2;},
+   txt:'Начинайте с углов, затем стороны, потом центр. Первые ходы делают на 3-й или 4-й линии от края: ниже мало территории, выше — её трудно удержать.',
    task:'Сделайте хороший первый ход.',bad:'Слишком близко к краю — там мало места. Отступите на 3-ю линию.',done:'Хорошее начало!'}]},
- {t:'Вы готовы',s:[{pos:[],info:true,last:true,
-   txt:'Вы знаете все правила! Три совета: следите за атари, не ставьте камни туда, где их сразу захватят, и окружайте территорию.',
-   task:'Начните с бота «Новичок» на доске 9×9 или решите задачи дня.'}]},
+ {id:'tips',t:'Пять советов',s:[{pos:[],info:true,
+   txt:'1. Перед каждым ходом проверьте: нет ли атари у ваших камней? 2. Не ставьте камень туда, где у него сразу одно дыхание. 3. Сначала углы, потом стороны, потом центр. 4. Держите группы связанными, а слабую группу вовремя спасайте или отдавайте. 5. Каждая партия учит — даже проигранная.',
+   task:'Запомните советы и нажмите «Дальше».'}]},
+ /* ---------- exam: composed puzzles, the same for everyone ---------- */
+ {id:'exam',t:'Экзамен',s:[{gen:['cap',0,1],txt:'Проверим, чему вы научились. Задачи проверяет сама игра.',task:'Захватите камни, отмеченные красным.',done:'Захват — зачтено.'},
+  {gen:['save',0,1],txt:'Теперь в опасности ваши камни.',task:'Спасите чёрные камни, отмеченные красным.',done:'Спасены — зачтено.'},
+  {gen:['kill',0,2],txt:'Жизнь и смерть: вспомните про жизненно важный пункт.',task:'Убейте белую группу.',done:'Белая группа мертва — зачтено.'},
+  {gen:['live',0,1],txt:'И последнее: выживите сами.',task:'Сделайте два глаза.',done:'Два глаза — зачтено.'},
+  {pos:B9,quiz:{q:'Оба игрока спасовали. Что дальше?',a:['Партия продолжается','Отмечают мёртвые камни и считают очки','Побеждает тот, кто спасовал вторым'],ok:1,
+    why:'Верно: два паса подряд заканчивают партию. Игроки договариваются о мёртвых камнях и считают камни и территорию.'},txt:'Последний вопрос.'}]},
+ {id:'final',t:'Первая партия',s:[{pos:[],info:true,last:true,
+   txt:'Курс пройден! Вы знаете правила, базовую тактику, жизнь и смерть и как начинать партию. Лучший учитель теперь — игра.',
+   task:'Сыграйте с ботом «Новичок» на доске 9×9. Потом переходите к «Любителю» и решайте задачи в тренировке.'}]},
 ];
 const PUZZLES=[
  {id:'e1',tier:0,t:'Захват в один ход',type:'cap',pos:['.........','.........','.........','.........','.........','.........','..X......','.XoX.....','.........'],sol:{C1:1}},
@@ -2889,7 +3017,7 @@ function loadTraining(n,skips,dups){const kind=pzKindFor(n),tier=S.pzTier,key=S.
     if(!st.seen.includes(cn)){st.seen.push(cn);st.seen=st.seen.slice(-400);}
     st.cur[key]=n;pzSave(st);T.list=[pzFromGen(g,n)];T.idx=0;loadPuzzle();
     genPuzzle(pzKindFor(n+1),tier,n+1);});}       // the next one is composed while this one is solved
-function pzHint(){const g=T.pz.gen,b=Int8Array.from(G.board),P=ENG.pz;
+function pzHint(){const g=T.g,b=Int8Array.from(G.board),P=ENG.pz;
   try{if(!T.gm)return [g.first];
     if(g.kind==='cap'){const m=P.reader(g.t,1,60000).attack(b,G.ko,Math.max(1,g.d-T.gm+1));return m>=0?[m]:[];}
     if(g.kind==='save')return [g.first];
@@ -2913,21 +3041,32 @@ function pzJudge(g,b,ko){const P=ENG.pz;
   let best=null,bn=1e9;for(const r of replies){const n=ld.good(r.tb,1,r.nk,want).length;if(n>=1&&n<bn){bn=n;best=r.m;}}
   return {ok:true,reply:best};}
 function pzGenMove(){const b=Int8Array.from(G.board);T.gm++;let r;
-  try{r=pzJudge(T.pz.gen,b,G.ko);}catch(e){r={ok:false};}
+  try{r=pzJudge(T.g,b,G.ko);}catch(e){r={ok:false};}
   if(!r.ok){wrong(r.msg||'Не то. Белые отобьются — попробуйте другой ход.');return;}
-  if(r.done){puzzleSolved();return;}
+  if(r.done){if(T.kind==='lesson')lessonWin();else puzzleSolved();return;}
   if(r.reply==null){G.toPlay=1;fb('Белые пасуют — продолжайте.','ok');hud();return;}
   T.locked=true;fb('Хорошо! Белые отвечают…','ok');scriptedReply(r.reply,()=>{T.locked=false;fb('Ваш ход — продолжайте.','ok');hud();});}
 function dailyState(){let s=null;try{s=JSON.parse(localStorage.getItem('jadego.daily')||'null');}catch(e){}s=s||{date:'',solved:[],streak:0,lastFull:''};if(s.date!==todayKey()){s.date=todayKey();s.solved=[];}return s;}
 function saveDaily(s){try{localStorage.setItem('jadego.daily',JSON.stringify(s));}catch(e){}}
-function lessonsDone(){try{return +(localStorage.getItem('jadego.lessons')||0);}catch(e){return 0;}}
-function setLessonsDone(n){try{if(n>lessonsDone())localStorage.setItem('jadego.lessons',String(n));}catch(e){}}
+function courseDone(){try{const d=JSON.parse(localStorage.getItem('jadego.course')||'[]');return Array.isArray(d)?d:[];}catch(e){return [];}}
+function lessonsDone(){const d=courseDone();return LESSONS.filter(l=>d.includes(l.id)).length;}
+function markLesson(id){const d=courseDone();if(!d.includes(id)){d.push(id);try{localStorage.setItem('jadego.course',JSON.stringify(d));}catch(e){}}}
+function nextLessonIdx(){const d=courseDone(),i=LESSONS.findIndex(l=>!d.includes(l.id));return i<0?0:i;}
+function chapterOf(i){let c=0;CHAPTERS.forEach((ch,k)=>{if(i>=ch[1])c=k;});return c;}
+/* the course list: chapters, lessons, what is done */
+function openLearn(){const d=courseDone(),n=lessonsDone(),nx=nextLessonIdx();
+  $('lnGo').textContent=n>=LESSONS.length?'Пройти курс заново':n?`Продолжить: урок ${nx+1} · ${LESSONS[nx].t}`:'Начать с первого урока';
+  $('lnSub').textContent=n?`Пройдено ${n} из ${LESSONS.length} уроков.`:`${LESSONS.length} уроков: от первого камня до своей первой партии.`;
+  $('lnList').innerHTML=CHAPTERS.map(([t,from],k)=>{const to=k<CHAPTERS.length-1?CHAPTERS[k+1][1]:LESSONS.length;
+    return `<h3>${k+1}. ${t}</h3><div class="lsns">`+LESSONS.slice(from,to).map((l,o)=>{const i=from+o,ok=d.includes(l.id);return `<button class="lsn${ok?' done':''}${i===nx&&n<LESSONS.length?' next':''}" data-l="${i}"><i>${ok?'✓':i+1}</i><span>${l.t}</span></button>`;}).join('')+'</div>';}).join('');
+  $('lnList').querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>{closeSheet('sLearn');startLesson(+b.dataset.l);});
+  syncSegs();openSheet('sLearn');}
 function setupPos(rows,targetsAsMarks){
   AI.reset();G.token++;const N=9;const changed=G.N!==N;G.N=N;ENG.setSize(N);G.board=new Int8Array(N*N);G.ko=-1;G.toPlay=1;G.human=1;G.caps={1:0,2:0};G.hist=[];G.last=-1;G.passes=0;G.moveNum=0;
   G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.marks=[];G.clock=null;G.moves=[];G.level=0;G.komi=6.5;G.near=1;G.flipView=false;
   const ok=[],chars={};
   rows.forEach((r,y)=>{for(let x=0;x<N;x++){const ch=r[x]||'.',p=y*N+x;
-    if(ch==='X'||ch==='x')G.board[p]=1;else if(ch==='O'||ch==='o')G.board[p]=2;
+    if('XxDk'.includes(ch))G.board[p]=1;else if('OodQq'.includes(ch))G.board[p]=2;
     if(ch==='o'||ch==='x')G.marks.push({p,k:'target'});if(ch==='+')G.marks.push({p,k:'lib'});if(ch==='!')G.marks.push({p,k:'x'});
     (chars[ch]=chars[ch]||[]).push(p);}});
   return {changed,chars};
@@ -2940,39 +3079,65 @@ function startLesson(i,si){
 }
 function curStep(){return LESSONS[T.li].s[T.si];}
 function loadStep(){
-  const st=curStep(),ls=LESSONS[T.li];T.tries=0;T.solved=!!st.info;T.locked=!!st.info;
-  const r=setupPos(st.pos.length?st.pos:Array(9).fill('.........'));T.chars=r.chars;
-  T.ok=st.any?null:st.okFn?null:(r.chars[st.ok||'1']||[]);T.reply=(r.chars.a||[])[0];
+  const st=curStep(),ls=LESSONS[T.li];T.tries=0;T.solved=!!st.info;T.locked=!!st.info||!!st.quiz;T.stage=0;T.g=null;T.gm=0;T.tap=null;
+  const g=st.gen?ENG.pz.make(st.gen[0],st.gen[1],st.gen[2]):null;
+  T.pos=g?pzFromGen(g,0).pos:st.pos&&st.pos.length?st.pos:B9;
+  const r=setupPos(T.pos);T.chars=r.chars;
+  T.ok=st.any||st.okFn||st.seq||st.goal||g?null:(r.chars[st.ok||'1']||[]);T.reply=(r.chars.a||[])[0];
   G.phase='lesson';
+  if(g)T.g=g;else if(st.goal)T.g=lessonGoal(st,r.chars);
   if(st.score)G.score=ENG.score(G.board,null,6.5);
+  if(st.tap){G.phase='scoring';G.dead=new Uint8Array(81);T.tap=[...(r.chars.d||[]),...(r.chars.D||[])];G.score=ENG.score(G.board,G.dead,6.5);}
   if(V3D)V3D.sync();if(V2D){V2D.relayout();V2D.resync();}
-  $('tKick').textContent=`Урок ${T.li+1} из ${LESSONS.length}`+(ls.s.length>1?` · шаг ${T.si+1} из ${ls.s.length}`:'');
+  $('tKick').textContent=`Урок ${T.li+1} из ${LESSONS.length} · ${CHAPTERS[chapterOf(T.li)][0]}`+(ls.s.length>1?` · шаг ${T.si+1} из ${ls.s.length}`:'');
   $('tTitle').textContent=ls.t;$('tText').textContent=st.txt;
   let task=typeof st.task==='function'?st.task():st.task;
   if(task==='scoreText'){const s=G.score;task=`Чёрные: ${s.b.stones} камней + ${s.b.terr} пунктов = ${s.b.total}. Белые: ${s.w.stones} + ${s.w.terr} + 6,5 = ${fmt(s.w.total)}. Чёрные выиграли на ${fmt(s.b.total-s.w.total)}.`;}
-  $('tTask').textContent=task;fb(null);
-  $('tDots').innerHTML=LESSONS.map((_,k)=>`<i class="${k<T.li?'on':k===T.li?'cur':''}"></i>`).join('');
+  $('tTask').textContent=st.quiz?st.quiz.q:task;fb(null);
+  const qz=$('tQuiz');qz.hidden=!st.quiz;qz.innerHTML='';
+  if(st.quiz){qz.innerHTML=st.quiz.a.map((a,i)=>`<button class="btn qbtn" data-q="${i}">${esc(a)}</button>`).join('');qz.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>quizAnswer(+b.dataset.q,b));}
+  const d=courseDone();$('tDots').innerHTML=LESSONS.map((l,k)=>`<i class="${k===T.li?'cur':d.includes(l.id)?'on':''}"></i>`).join('');
   $('tPrev').hidden=false;$('tPrev').disabled=T.li===0&&T.si===0;$('tPrev').textContent='Назад';
-  $('tHint').hidden=!!st.info||st.any;$('tHint').textContent='Подсказка';
+  $('tHint').hidden=!!st.info||!!st.any||!!st.quiz;$('tHint').textContent='Подсказка';
   $('tNext').textContent=st.last?'Играть с новичком':'Дальше';$('tNext').disabled=!st.info;
   showPanel();hud();
 }
+/* a lesson step judged by the solvers: the goal object pzJudge and pzHint understand */
+function lessonGoal(st,ch){const b=Array.from(G.board),B=Int8Array.from(b),P=ENG.pz;
+  if(st.goal==='cap'){const t=(ch.o||[])[0];return {kind:'cap',board:b,t,d:st.d||6,first:P.reader(t,1,300000).attack(B,-1,st.d||6)};}
+  if(st.goal==='save'){const t=(ch.x||[])[0],rd=P.reader(t,2,300000);let first=-1;for(let p=0;p<81&&first<0;p++){if(B[p])continue;const tb=B.slice(),x=ENG.play(tb,p,1,-1);if(x&&rd.attack(tb,x.ko,6)<0)first=p;}return {kind:'save',board:b,t,first};}
+  const eye=[...(ch['-']||[]),...(ch.k||[]),...(ch.q||[])],def=st.goal==='kill'?2:1,w=parseCoord(st.w);
+  return {kind:st.goal,board:b,eye,w,def,first:P.ld(eye,w,def,300000).good(B,1,-1,def===2?0:1)[0]};}
+function lessonWin(msg){const st=curStep();T.solved=true;T.locked=true;if(T.si===LESSONS[T.li].s.length-1)markLesson(LESSONS[T.li].id);fb(msg||st.done||'Верно!','ok');AU.chime();$('tNext').disabled=false;
+  $('tQuiz').querySelectorAll('button').forEach(b=>b.disabled=true);G.marks=G.marks.filter(m=>m.k!=='hint'&&m.k!=='lib');view().resync();hud();}
+function quizAnswer(i,b){const q=curStep().quiz;if(T.solved)return;
+  if(i===q.ok){b.classList.add('ok');lessonWin(q.why);return;}
+  b.classList.add('bad');b.disabled=true;T.tries++;fb('Не совсем — подумайте ещё.','bad');AU.deny();}
+/* marking dead stones: done when exactly the dead ones are marked */
+function tapCheck(){if(T.solved)return;const want=new Set(T.tap);for(let p=0;p<81;p++)if(!!G.dead[p]!==want.has(p))return;
+  const s=G.score;lessonWin(`Верно: камень мёртв и уходит в плен, а его пункт стал территорией чёрных. Итог: чёрные ${fmt(s.b.total)}, белые ${fmt(s.w.total)} с коми.`);}
 function lessonNext(){const ls=LESSONS[T.li],st=curStep();
-  if(st.last){setLessonsDone(LESSONS.length);S.size=9;S.level=0;S.color='black';saveSettings();syncSegs();newGame();return;}
+  if(st.last){markLesson(ls.id);S.size=9;S.level=0;S.color='black';S.opp='bot';S.handicap=0;saveSettings();syncSegs();newGame();return;}
   if(T.si<ls.s.length-1){T.si++;loadStep();return;}
-  setLessonsDone(T.li+1);if(T.li<LESSONS.length-1){T.li++;T.si=0;loadStep();}}
+  markLesson(ls.id);if(T.li<LESSONS.length-1){const ch=chapterOf(T.li);T.li++;T.si=0;loadStep();
+    if(chapterOf(T.li)!==ch)toast(`Глава «${CHAPTERS[ch][0]}» пройдена! Дальше — «${CHAPTERS[chapterOf(T.li)][0]}»`,3400);}}
 function lessonPrev(){if(T.si>0){T.si--;loadStep();return;}if(T.li>0){T.li--;T.si=LESSONS[T.li].s.length-1;loadStep();}}
-function showHint(){const pts=T.kind==='lesson'?(T.ok||[]):T.pz&&T.pz.gen?pzHint():Object.keys(T.node||{}).map(parseCoord);
+function showHint(){const st=T.kind==='lesson'?curStep():null;
+  const pts=T.g?pzHint():st?(st.seq?(T.chars[st.seq[T.stage].ok]||[]):st.tap?T.tap:(T.ok||[]).slice()):Object.keys(T.node||{}).map(parseCoord);
   if(T.kind==='lesson'&&!T.ok&&curStep().okFn){const N=G.N;pts.push(2*N+2,2*N+N-3,(N-3)*N+2,(N-3)*N+N-3);}
   G.marks=G.marks.filter(m=>m.k!=='hint').concat(pts.slice(0,4).map(p=>({p,k:'hint'})));view().resync();hud();}
 function tutMove(p){
   if(T.kind==='lesson'){const st=curStep();
+    if(T.g){pzGenMove();return;}
+    if(st.seq){const sg=st.seq[T.stage];
+      if(!(T.chars[sg.ok]||[]).includes(p)){wrong(st.bad||'Не то. Посчитайте дыхания белых камней.');return;}
+      T.stage++;const after=()=>{if(T.stage>=st.seq.length)lessonWin();else{T.locked=false;fb((sg.fb||'Верно!')+' Ваш ход.','ok');hud();}};
+      if(sg.reply){T.locked=true;fb(sg.fb||'Верно!','ok');scriptedReply(T.chars[sg.reply][0],after);}else after();return;}
     const good=st.any||(st.okFn?st.okFn(p):T.ok.includes(p));
-    if(good){const fin=()=>{T.solved=true;T.locked=true;fb(st.done||'Верно!','ok');AU.chime();$('tNext').disabled=false;G.marks=G.marks.filter(m=>m.k!=='hint'&&m.k!=='lib');view().resync();hud();};
-      if(T.reply!==undefined)scriptedReply(T.reply,fin);else fin();}
+    if(good){if(T.reply!==undefined)scriptedReply(T.reply,()=>lessonWin());else lessonWin();}
     else wrong(st.bad||'Не совсем. Попробуйте ещё раз — посмотрите на дыхания камней.');
     return;}
-  if(T.kind==='puzzle'&&T.pz.gen){pzGenMove();return;}
+  if(T.kind==='puzzle'&&T.g){pzGenMove();return;}
   if(T.kind==='puzzle'){const key=coordName(p),v=T.node&&T.node[key];
     if(!v){wrong('Не то. Белые отобьются — попробуйте другой ход.');return;}
     if(v===1){puzzleSolved();return;}
@@ -2980,7 +3145,7 @@ function tutMove(p){
 }
 function wrong(msg){T.tries++;T.locked=true;fb(msg,'bad');AU.deny();
   setTimeout(()=>{if(T.kind===null)return;const snapB=T.kind==='lesson'?null:T.start;
-    if(T.kind==='lesson'){const keep=G.marks.filter(m=>m.k==='hint');const r=setupPos(curStep().pos.length?curStep().pos:Array(9).fill('.........'));G.phase='lesson';G.marks=G.marks.concat(keep);}
+    if(T.kind==='lesson'){const keep=G.marks.filter(m=>m.k==='hint');setupPos(T.pos);G.phase='lesson';T.stage=0;T.gm=0;G.marks=G.marks.concat(keep);}
     else{loadPuzzleBoard();}
     T.locked=false;view().resync();if(T.tries>=2)showHint();hud();},1100);}
 /* puzzles */
@@ -2989,7 +3154,7 @@ function startDaily(){closeSheet('sHome');closeSheet('sSet');attractStop();T.kin
     /* if the composer gave up on one, a hand-made puzzle of the same difficulty takes its place */
     T.list=gs.map((g,i)=>g?Object.assign(pzFromGen(g,0),{id:dl[i].id}):Object.assign({},PUZZLES.filter(p=>p.tier===i)[dailyHash()%PUZZLES.filter(p=>p.tier===i).length],{id:dl[i].id}));
     const ds=dailyState();let i=T.list.findIndex(p=>!ds.solved.includes(p.id));if(i<0)i=0;T.idx=i;loadPuzzle();});}
-function loadPuzzleBoard(){const pz=T.pz;setupPos(pz.pos);G.phase='puzzle';T.node=pz.sol;T.gm=0;}
+function loadPuzzleBoard(){const pz=T.pz;setupPos(pz.pos);G.phase='puzzle';T.node=pz.sol;T.gm=0;T.g=pz.gen||null;}
 function loadPuzzle(){
   const pz=T.list[T.idx];T.pz=pz;T.tries=0;T.solved=false;T.locked=false;loadPuzzleBoard();
   if(V3D)V3D.sync();if(V2D){V2D.relayout();V2D.resync();}
@@ -3015,14 +3180,14 @@ function puzzleSolved(){
 function puzzleNext(){if(T.idx<T.list.length-1){T.idx++;loadPuzzle();return;}
   if(T.daily){T.daily=false;loadTraining(pzState().cur[S.pzKind+S.pzTier]||1,0);return;}
   loadTraining((T.pz.no||0)+1,0);}
-function exitTut(){closeAllTut();G.phase='idle';G.score=null;openHome();}
+function exitTut(){const wasLesson=T.kind==='lesson';closeAllTut();G.phase='idle';G.score=null;G.dead=null;if(wasLesson)openLearn();else openHome();}
 
 /* ---------- menus ---------- */
 function syncSegs(){document.querySelectorAll('.seg').forEach(seg=>{const k=seg.dataset.key;if(!k)return;seg.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(String(S[k])===b.dataset.v)));});
   const h=S.opp==='human';$('fLevel').hidden=h;$('fColor').hidden=h;$('bStart').textContent=h?'Начать партию вдвоём':'Начать партию';}
 function openHome(){
   const saved=loadGame();$('bContinue').hidden=!saved;
-  const ld=lessonsDone();$('learnBar').style.width=Math.round(ld/LESSONS.length*100)+'%';$('learnSub').textContent=ld>=LESSONS.length?'Пройдено. Можно повторить любой урок':ld?`Пройдено ${ld} из ${LESSONS.length}. Продолжим?`:'12 коротких уроков на доске — с нуля до первой партии';
+  const ld=lessonsDone();$('learnBar').style.width=Math.round(ld/LESSONS.length*100)+'%';$('learnSub').textContent=ld>=LESSONS.length?'Курс пройден. Можно повторить любой урок':ld?`Пройдено ${ld} из ${LESSONS.length}. Продолжим?`:`${LESSONS.length} уроков: правила, тактика, жизнь и смерть, стратегия и экзамен`;
   $('learnTag').hidden=ld>0;$('mLearn').classList.toggle('rec',ld===0);
   const ds=dailyState(),dl=dailyList(),n=dl.filter(p=>ds.solved.includes(p.id)).length;$('dailyBar').style.width=Math.round(n/3*100)+'%';
   $('dailySub').textContent=(n===3?'Все 3 решены сегодня':`Решено ${n} из 3 сегодня`)+(ds.streak?` · серия ${ds.streak} ${plural(ds.streak,'день','дня','дней')}`:'');
@@ -3039,7 +3204,8 @@ function buildMenus(){
     if(V3D){$('status').textContent='Ставим доску…';setTimeout(()=>{V3D.setBoard();hud();AU.place(.8);},30);}else AU.place(.8);if(V2D)V2D.relayout();});
   $('setList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(b.dataset.set==='custom'&&!customPics()[1]&&!customPics()[2])toast('Выберите картинки для чёрных и белых камней — кнопки ниже',3000);if(S.stones===b.dataset.set)return;S.stones=b.dataset.set;saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);AU.place(.8);});
   document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi'||k==='handicap'||k==='pzTier')v=+v;
-    if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();if(k==='musicStyle'){AU.init();AU.setVol();}if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
+    if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();
+      if(k==='gfx'&&ch)setTimeout(()=>ask('Перезагрузить страницу?','Новое качество графики применится после перезагрузки. Партия с ботом сохранится и продолжится с того же места.','Перезагрузить','Позже',()=>location.reload(),()=>openSettings()),150);if(k==='musicStyle'){AU.init();AU.setVol();}if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
 }
 function markEnv(){document.querySelectorAll('.env').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.env===S.env)));}
 function markBoard(){document.querySelectorAll('[data-board]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.board===S.board)));}
@@ -3089,6 +3255,7 @@ function closeTop(){
   if(!$('sAcc').hidden){if(accWelcome&&!AUTH.me&&$('accGuest').hidden){showGuestInfo();return true;}closeBack('sAcc');return true;}
   for(const id of ['sSet','sInfo','sNews','sNet'])if(!$(id).hidden){closeBack(id);return true;}
   if(!$('sPuz').hidden){closeSheet('sPuz');openHome();return true;}
+  if(!$('sLearn').hidden){closeSheet('sLearn');openHome();return true;}
   if(!$('sHome').hidden){if(G.phase==='idle')openMain();else closeSheet('sHome');return true;}
   if(!$('sMain').hidden){if(G.phase==='idle')return false;closeSheet('sMain');return true;}
   if(!$('chatPanel').hidden){closeChat();return true;}
@@ -3098,6 +3265,9 @@ function closeTop(){
 /* every window gets a ✕; the start menu shows it only while a game waits behind it */
 function sheetChrome(){document.querySelectorAll('.sheet').forEach(sh=>{if(sh.id==='sConfirm')return;const card=sh.querySelector('.card'),sx=document.createElement('div');sx.className='sx';
     sx.innerHTML='<button class="xbtn" aria-label="Закрыть"><svg viewBox="0 0 14 14"><path d="M2 2l10 10M12 2L2 12"/></svg></button>';card.prepend(sx);sx.firstChild.onclick=()=>closeTop();
+    if(sh.id==='sMain'){const eye=document.createElement('button');eye.className='xbtn eye';eye.id='mmEye';eye.setAttribute('aria-label','Скрыть меню — только фон');eye.title='Скрыть меню — только фон';
+      eye.innerHTML='<svg viewBox="0 0 24 24"><path d="M2.5 12s3.6-6.5 9.5-6.5S21.5 12 21.5 12s-3.6 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>';sx.prepend(eye);
+      eye.onclick=()=>{setCalm(true,'eye');toast('Коснитесь экрана или нажмите любую клавишу — меню вернётся',2600);};}
     /* a tap on the dimmed backdrop closes too, except where a choice has to be made */
     sh.addEventListener('click',e=>{if(e.target===sh&&!(sh.id==='sAcc'&&accWelcome&&!AUTH.me))closeTop();});});}
 /* the phone's Back button: one history entry stands for "a window is open" */
@@ -3105,7 +3275,7 @@ function backGuard(){if(anySheet()&&!(history.state&&history.state.jg))try{histo
 function onBack(){if(zenOn){setZen(false);backGuard();return;}
   if(!closeTop()&&!anySheet()&&G.phase!=='idle'){if(T.kind){closeAllTut();G.phase='idle';}openMain();}     // in a game: Back opens the menu instead of leaving the site
   backGuard();}
-function openSettings(){backTo=fromSheet();markEnv();markSet();markBoard();syncSegs();
+function openSettings(){backTo=fromSheet();markEnv();markSet();markBoard();syncSegs();$('gfxNow').textContent={low:'низкое',mid:'среднее',high:'высокое',ultra:'ультра'}[GFX.q]+(S.gfx==='auto'||!S.gfx?' (авто)':'');
   $('tMute').checked=S.mute;$('tAtari').checked=S.atari;$('tUndo').checked=S.allowUndo;$('tBotResign').checked=S.botResign;$('tClockPause').checked=S.clockPause;showTab(setTab);
   refreshSwatches();renderCustom();
   $('vSfx').value=S.sfx;$('vAmb').value=S.amb;$('vMus').value=S.music;$('tQuick').checked=S.quick;$('tLast').checked=S.lastMark;$('tFlip').checked=S.flip;$('tCoords').checked=S.coords;hud();openSheet('sSet');}
@@ -3125,6 +3295,7 @@ function boot(){
   setView(S.view);AU.setEnv(S.env);hud();
   window.addEventListener('resize',()=>{if(V3D)V3D.resize();V2D.relayout();});
   if('ResizeObserver' in window){const ro=new ResizeObserver(onUIChange);['tutPanel','scorePanel','replayPanel','top','status'].forEach(id=>ro.observe($(id)));}
+  ['pointerdown','keydown'].forEach(t=>document.addEventListener(t,calmGuard,{capture:true}));document.addEventListener('pointermove',calmMove,{passive:true});document.addEventListener('wheel',()=>poke(),{passive:true});poke();
   document.addEventListener('pointerdown',e=>{AU.init();if(zenOn){e.stopPropagation();e.preventDefault();setZen(false);}},{capture:true});document.addEventListener('keydown',onKey);
   setInterval(clockTick,200);document.addEventListener('visibilitychange',clockTick);
   document.querySelectorAll('#sSet [data-tab]').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
@@ -3173,7 +3344,8 @@ function boot(){
   $('rLook').onclick=()=>closeSheet('sResult');$('rNew').onclick=()=>{closeSheet('sResult');if(watching()){endViewing();openNet();return;}if(net()){netAct('leave');netEnd();G.level=0;G.phase='idle';}openHome();};
   $('bStart').onclick=()=>{closeSheet('sHome');newGame();};
   $('bContinue').onclick=()=>{const s=loadGame();closeSheet('sHome');if(s)resumeSaved(s);};
-  $('mLearn').onclick=()=>{const ld=lessonsDone();startLesson(ld>=LESSONS.length?0:ld);};
+  $('mLearn').onclick=openLearn;$('lnBack').onclick=()=>{closeSheet('sLearn');openHome();};
+  $('lnGo').onclick=()=>{closeSheet('sLearn');startLesson(lessonsDone()>=LESSONS.length?0:nextLessonIdx());};
   $('csFileB').onchange=e=>{setCustomPic(1,e.target.files[0]);e.target.value='';};$('csFileW').onchange=e=>{setCustomPic(2,e.target.files[0]);e.target.value='';};
   $('csReset').onclick=()=>{try{localStorage.removeItem('jadego.stones');}catch(e){}if(S.stones==='custom'){S.stones='jade';saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);}loadCustom().then(renderCustom);toast('Картинки убраны',1600);};
   $('mDaily').onclick=startDaily;$('mTrain').onclick=openPuz;$('pzGo').onclick=startTraining;$('pzBack').onclick=()=>{closeSheet('sPuz');openHome();};
