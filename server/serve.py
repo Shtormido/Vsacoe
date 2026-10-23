@@ -4,6 +4,7 @@
 Только стандартная библиотека Python 3 (есть в Kali Linux «из коробки»).
 Раздаёт папку site/: сжимает текст gzip, ставит правильные типы и заголовки
 безопасности, не показывает содержимое папок, отвечает на /healthz для проверки.
+Онлайн-партии: /api/… (комнаты на двоих, ходы проверяются на сервере, события — SSE).
 
     python3 server/serve.py                    # http://0.0.0.0:8080
     python3 server/serve.py --port 8000 --host 127.0.0.1
@@ -12,10 +13,16 @@
 import argparse
 import gzip
 import http.server
+import json
 import os
+import queue
+import re
 import socket
 import sys
 import threading
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import netgo  # noqa: E402  (online rooms)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SITE = os.path.normpath(os.path.join(HERE, '..', 'site'))
@@ -47,9 +54,78 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     })
 
     def do_GET(self):
-        if self.path.split('?', 1)[0] in ('/healthz', '/health'):
+        route = self.path.split('?', 1)[0]
+        if route in ('/healthz', '/health'):
             return self._send_bytes(200, b'ok\n', 'text/plain; charset=utf-8', cache='no-store')
+        if route.startswith('/api/'):
+            return self._api('GET', route)
         self._serve(head=False)
+
+    def do_POST(self):
+        route = self.path.split('?', 1)[0]
+        if not route.startswith('/api/'):
+            return self.send_error(405, 'Method Not Allowed')
+        self._api('POST', route)
+
+    # ---------- online play ----------
+    def _json(self, code, obj):
+        self._send_bytes(code, json.dumps(obj, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8', cache='no-store')
+
+    def _api(self, method, route):
+        try:
+            body = {}
+            if method == 'POST':
+                n = int(self.headers.get('Content-Length') or 0)
+                if n > 8192:
+                    raise netgo.ApiError('Слишком большой запрос', 413)
+                body = json.loads(self.rfile.read(n) or b'{}') if n else {}
+                if not isinstance(body, dict):
+                    raise netgo.ApiError('Ожидался JSON-объект')
+            m = re.fullmatch(r'/api/rooms/([A-Za-z0-9]{6})(?:/(join|act|events))?', route)
+            if route == '/api/ping' and method == 'GET':
+                return self._json(200, {'ok': True, 'online': True})
+            if route == '/api/rooms' and method == 'POST':
+                ip = self.client_address[0]
+                if ip.startswith('127.') or ip == '::1':   # behind nginx on the same machine: use the player's address
+                    ip = (self.headers.get('X-Forwarded-For') or ip).split(',')[0].strip()
+                return self._json(200, netgo.create(body, ip))
+            if m and method == 'GET' and m.group(2) is None:
+                return self._json(200, netgo.info(m.group(1)))
+            if m and method == 'POST' and m.group(2) == 'join':
+                return self._json(200, netgo.join(m.group(1), body))
+            if m and method == 'POST' and m.group(2) == 'act':
+                return self._json(200, netgo.act(m.group(1), body))
+            if m and method == 'GET' and m.group(2) == 'events':
+                q = re.search(r'[?&]token=([A-Za-z0-9_-]+)', self.path)
+                return self._events(m.group(1), q.group(1) if q else '')
+            raise netgo.ApiError('Не найдено', 404)
+        except netgo.ApiError as e:
+            self._json(e.code, {'error': str(e)})
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {'error': 'Неверный запрос'})
+
+    def _events(self, code, token):
+        room, q, _ = netgo.subscribe(code, token)
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Accel-Buffering', 'no')      # nginx: do not buffer the stream
+            self.end_headers()
+            self.wfile.write(b'retry: 2000\n\n')
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    self.wfile.write(b'data: ' + msg.encode('utf-8') + b'\n\n')
+                except queue.Empty:
+                    self.wfile.write(b': ping\n\n')      # keeps proxies and NAT from closing an idle stream
+                self.wfile.flush()
+                if room.phase == 'closed':
+                    break
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            netgo.unsubscribe(room, q)
 
     def do_HEAD(self):
         self._serve(head=True)
@@ -122,6 +198,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, fmt, *args):
+        if '/api/' in (getattr(self, 'path', '') or '') and ' 200 ' in (' %s ' % ' '.join(map(str, args))):
+            return  # online play is chatty; log only its errors
         sys.stdout.write('%s - %s\n' % (self.address_string(), fmt % args))
         sys.stdout.flush()
 
