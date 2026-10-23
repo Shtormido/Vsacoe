@@ -16,7 +16,7 @@ import threading
 import time
 
 ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-SIZES = (9, 13, 19)
+SIZES = (9, 13, 19, 21)
 BYO, PERIODS = 30.0, 3
 MAX_ROOMS = 500
 MAX_WATCH_ROOM = 40          # spectators in one room

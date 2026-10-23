@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}img{max-width:100%}</style>
 <title>Нефритовое Го</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2712%27 cy=%2713%27 r=%279%27 fill=%27%23184a34%27/%3E%3Ccircle cx=%2721%27 cy=%2720%27 r=%279%27 fill=%27%23ece4d4%27 stroke=%27%23121829%27 stroke-width=%271.5%27/%3E%3C/svg%3E">
 <meta name="claude:viewport-fit-sides" content="cover">
 <!-- fonts and libraries are served locally (site/vendor); when the page is opened on its own they come from the CDN -->
 <link href="vendor/fonts.css" rel="stylesheet" onerror="this.onerror=null;this.href='https://fonts.googleapis.com/css2?family=Prata&amp;family=Golos+Text:wght@400;500;600&amp;display=swap'">
@@ -88,6 +89,7 @@ body.tut #status{top:calc(12px + env(safe-area-inset-top,0px))}
 .mode b{display:block;font-family:var(--f-display);font-weight:400;font-size:18px}
 .mode span{display:block;font-size:12.5px;color:var(--kinari-dim);margin-top:4px;line-height:1.35}
 .mode .tag{position:absolute;top:10px;right:10px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:var(--shu);color:#fff;padding:3px 7px;border-radius:999px}
+.mode.wide{grid-column:1/-1}
 .mode.rec{border-color:rgba(134,207,174,.7);box-shadow:inset 0 0 0 1px rgba(134,207,174,.4)}
 .prog{height:4px;border-radius:2px;background:rgba(236,228,212,.12);margin-top:10px;overflow:hidden}.prog i{display:block;height:100%;background:var(--jade)}
 .envs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -108,6 +110,11 @@ body.tut #status{top:calc(12px + env(safe-area-inset-top,0px))}
 .set{display:flex;align-items:center;gap:10px;border:1px solid var(--hair);border-radius:14px;padding:9px 10px;background:none;cursor:pointer;text-align:left;min-width:0}
 .set .pair{display:flex;flex:none}.set .pair i{width:28px;height:28px;border-radius:50%;background-size:cover;display:block;background-color:#333}
 .set .pair i+i{margin-left:-7px}
+.custom{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.custom .btn{flex:none;padding:9px 12px;font-size:13px}
+.cpick{display:flex;align-items:center;gap:10px;flex:1 1 150px;min-width:0;border:1px dashed var(--hair);border-radius:14px;padding:9px 10px;cursor:pointer}
+.cpick input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.cpick:focus-within{border-color:var(--jade)}
+.cpick b{display:block;font-weight:600;font-size:13.5px}.cpick small{display:block;font-size:12px;color:var(--kinari-dim)}
+.cpick .pv{width:34px;height:34px;border-radius:50%;flex:none;background:#333 center/cover}.cpick .pv.empty{background:repeating-linear-gradient(45deg,rgba(236,228,212,.12) 0 4px,transparent 4px 8px)}
 .set b{font-weight:500;font-size:13px;display:block}.set span{font-size:11px;color:var(--kinari-dim);display:block;line-height:1.25}
 .set .bsq{width:34px;height:28px;border-radius:5px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
 .bsq-goban{background:repeating-linear-gradient(90deg,transparent 0 6px,rgba(30,15,5,.6) 6px 7px),repeating-linear-gradient(0deg,transparent 0 6px,rgba(30,15,5,.6) 6px 7px),#dcaa60}
@@ -342,7 +349,7 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
       <div class="row" id="netWatchRow" style="margin-top:12px"><label for="tNetWatch">Разрешить другим смотреть<small>Если вы или соперник против, партию не увидит никто: её не будет ни в списке, ни в архиве</small></label><input type="checkbox" class="sw-t" id="tNetWatch"></div>
       <h3>Создать комнату</h3>
       <div class="field"><div class="label">Доска</div>
-        <div class="seg" data-key="size"><button data-v="9">9 × 9</button><button data-v="13">13 × 13</button><button data-v="19">19 × 19</button></div></div>
+        <div class="seg" data-key="size"><button data-v="9">9 × 9</button><button data-v="13">13 × 13</button><button data-v="19">19 × 19</button><button data-v="21">21 × 21</button></div></div>
       <div class="field"><div class="label">Ваш цвет</div>
         <div class="seg" data-key="color"><button data-v="black">Чёрные</button><button data-v="white">Белые</button><button data-v="random">Жребий</button></div></div>
       <div class="field"><div class="label">Коми для белых</div>
@@ -387,13 +394,14 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
     <div class="modes">
       <button class="mode" id="mLearn"><span class="tag" id="learnTag" hidden>Начните здесь</span><b>Обучение</b><span id="learnSub">12 коротких уроков на доске — с нуля до первой партии</span><div class="prog"><i id="learnBar" style="width:0%"></i></div></button>
       <button class="mode" id="mDaily"><b>Задачи дня</b><span id="dailySub">3 новые задачи каждый день</span><div class="prog"><i id="dailyBar" style="width:0%"></i></div></button>
+      <button class="mode wide" id="mTrain"><b>Тренировка</b><span id="trainSub">бесконечные задачи: захват, спасение, жизнь и смерть — три уровня сложности</span></button>
     </div>
     <button class="btn primary" id="bContinue" style="width:100%;margin-top:12px" hidden>Продолжить партию</button>
     <h3>Новая партия</h3>
     <div class="field"><div class="label">С кем играем</div>
       <div class="seg" data-key="opp"><button data-v="bot">С ботом<small>4 уровня силы</small></button><button data-v="human">С другом<small>вдвоём на одном устройстве</small></button></div></div>
     <div class="field"><div class="label">Доска</div>
-      <div class="seg" data-key="size"><button data-v="9">9 × 9<small>15 минут</small></button><button data-v="13">13 × 13<small>полчаса</small></button><button data-v="19">19 × 19<small>большая игра</small></button></div></div>
+      <div class="seg" data-key="size"><button data-v="9">9 × 9<small>15 минут</small></button><button data-v="13">13 × 13<small>полчаса</small></button><button data-v="19">19 × 19<small>большая игра</small></button><button data-v="21">21 × 21<small>ещё просторнее</small></button></div></div>
     <div class="field" id="fLevel"><div class="label">Сила бота</div>
       <div class="seg" data-key="level"><button data-v="0">Новичок<small>ходит наугад</small></button><button data-v="1">Любитель<small>видит атари</small></button><button data-v="2">Сильный<small>просчёт ~1,5 с</small></button><button data-v="3">Мастер<small>просчёт ~3 с</small></button></div></div>
     <div class="field" id="fColor"><div class="label">Ваш цвет</div>
@@ -409,6 +417,22 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
   </div>
 </div>
 
+<!-- Puzzle training -->
+<div class="sheet" id="sPuz" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="hPuz">
+    <button class="back" id="pzBack">← Назад</button>
+    <div class="kicker">Задачи</div>
+    <h2 id="hPuz">Тренировка</h2>
+    <p>Задачи составляет и проверяет сама игра: у каждой ровно одно верное начало, а без него соперник спасся бы. Номера не кончаются — решайте сколько хотите. Ошиблись — позиция вернётся, после двух ошибок появится подсказка.</p>
+    <div class="field"><div class="label">Тема</div>
+      <div class="seg" data-key="pzKind"><button data-v="mix">Все<small>по очереди</small></button><button data-v="cap">Захват<small>сети, лестницы</small></button><button data-v="save">Спасение<small>выведите камни</small></button><button data-v="kill">Убить<small>жизнь и смерть</small></button><button data-v="live">Жить<small>два глаза</small></button></div></div>
+    <div class="field"><div class="label">Сложность</div>
+      <div class="seg" data-key="pzTier"><button data-v="0">Лёгкие</button><button data-v="1">Средние</button><button data-v="2">Трудные</button></div></div>
+    <div class="stats" id="pzStats"></div>
+    <button class="btn primary" id="pzGo" style="width:100%;margin-top:16px">Решать</button>
+  </div>
+</div>
+
 <!-- Settings -->
 <div class="sheet" id="sSet" hidden>
   <div class="card" role="dialog" aria-modal="true" aria-labelledby="hSet">
@@ -417,7 +441,13 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
     <div class="tabs" role="tablist"><button role="tab" data-tab="table">Стол</button><button role="tab" data-tab="game">Игра</button><button role="tab" data-tab="keys">Клавиши</button></div>
     <div class="pane" data-pane="table">
       <div class="field"><div class="label">Где играем</div><div class="envs" id="envList"></div></div>
-      <div class="field"><div class="label">Камни</div><div class="sets" id="setList"></div></div>
+      <div class="field"><div class="label">Камни</div><div class="sets" id="setList"></div>
+        <div class="custom">
+          <label class="cpick"><span class="pv empty" id="csB"></span><span><b>Чёрные</b><small>выбрать картинку</small></span><input type="file" accept="image/*" id="csFileB"></label>
+          <label class="cpick"><span class="pv empty" id="csW"></span><span><b>Белые</b><small>выбрать картинку</small></span><input type="file" accept="image/*" id="csFileW"></label>
+          <button class="btn" id="csReset" hidden>Убрать картинки</button>
+        </div>
+        <p class="note">Свои камни: PNG, JPG или WebP. Картинка ложится на камень сверху — лучше квадратная, с рисунком по центру; прозрачный фон станет цветом камня. Хранится только в этом браузере, сопернику по сети не видна.</p></div>
       <div class="field"><div class="label">Доска</div><div class="sets" id="boardList"></div></div>
       <div class="field"><div class="label">Сетка</div>
         <div class="seg" data-key="grid"><button data-v="auto">Авто<small>магнитная — полоски, остальные — канавки</small></button><button data-v="grooves">Канавки<small>резная сетка</small></button><button data-v="lines">Полоски<small>нарисованные линии</small></button></div></div>
@@ -473,7 +503,7 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
       <h3>Цель</h3>
       <p>Двое игроков по очереди ставят камни на пересечения линий. Побеждает тот, кто к концу партии окружит больше пространства на доске.</p>
       <h3>Доска и камни</h3>
-      <ul><li>Доски бывают 19 × 19 (основная), 13 × 13 и 9 × 9 — для быстрых партий и обучения.</li>
+      <ul><li>Доски бывают 19 × 19 (основная), 13 × 13 и 9 × 9 — для быстрых партий и обучения. Здесь есть и 21 × 21 — для тех, кому мало места.</li>
         <li>Камни ставят на пересечения, а не в клетки. Поставленный камень больше не двигается.</li>
         <li>Первыми ходят чёрные, затем ходы чередуются. Вместо хода можно спасовать.</li></ul>
       <h3>Дыхания и захват</h3>
@@ -558,7 +588,7 @@ const $=id=>document.getElementById(id);
 const isCoarse=matchMedia('(pointer:coarse)').matches;
 const HAS3D=typeof THREE!=='undefined'&&!!THREE.OrbitControls;
 const SPX=2.2,SPZ=2.37,MARGIN=1.75,STONE_HY=0.46,STONE_R={1:1.1,2:1.085};
-const COLS='ABCDEFGHJKLMNOPQRST';
+const COLS='ABCDEFGHJKLMNOPQRSTUV';
 
 /* ---------- utils & procedural textures ---------- */
 function mk(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
@@ -628,6 +658,9 @@ function stoneTex(sp,seed,W,H){
         const vv=nz.fbm(px*2.3+7,py*2.3+2,pz*2.3+5,4),v=Math.pow(1-Math.abs(vv*2-1),10)*.85;
         r+=(vein[0]-r)*v;g+=(vein[1]-g)*v;b+=(vein[2]-b)*v;
         const s=(Math.random()-.5)*4;r+=s;g+=s;b+=s;
+      }else if(sp.type==='img'){const im=sp.img;
+        if(im){const ix=Math.min(im.W-1,((px+1)/2*im.W)|0),iy=Math.min(im.H-1,((pz+1)/2*im.H)|0),o=(iy*im.W+ix)*4,a=im.data[o+3]/255;
+          r+=(im.data[o]-r)*a;g+=(im.data[o+1]-g)*a;b+=(im.data[o+2]-b)*a;}
       }else if(sp.type==='slate'){const n=nz.fbm(px*7,py*7,pz*7,3),k=.86+n*.28;r*=k;g*=k;b*=k;const s=(Math.random()-.5)*3;r+=s;g+=s;b+=s;}
       else if(sp.type==='shell'){
         const w=nz.fbm(px*2,py*2,pz*2,3),s1=Math.sin((pz+1)*42+w*7),s2=Math.sin((pz+1)*13+w*4);
@@ -773,6 +806,10 @@ const SETS={
   yunzi:{name:'Юньцзы',note:'матовые, из Юньнани',tone:'yunzi',
     dark:{type:'yunzi',base:[22,26,22],rough:.55,cc:.15,ccr:.5,emis:[3,14,7]},
     light:{type:'yunzi',base:[232,225,198],rough:.6,cc:.1,ccr:.5}},
+  /* the player's own pictures (PNG, JPG…), laid on the stone from above; img is filled in by loadCustom() */
+  custom:{name:'Свои картинки',note:'ваши PNG на камнях',tone:'classic',
+    dark:{type:'img',base:[34,34,38],rough:.4,cc:.45,ccr:.3,img:null},
+    light:{type:'img',base:[234,231,222],rough:.4,cc:.45,ccr:.3,img:null}},
 };
 /* stone resonances for the modal synth: partial frequencies, quality factor (how long it rings), stone vs board mix, contact-crack level */
 const TONES={
@@ -807,7 +844,7 @@ const ACTIONS=[['pass','Пас','KeyP'],['undo','Ход назад','KeyU'],['vi
   ['mute','Звук вкл / выкл','KeyS'],['music','Музыка вкл / выкл','KeyK'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
 const DEFKEYS=Object.fromEntries(ACTIONS.map(a=>[a[0],a[2]]));
 const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,handicap:0,clock:'off',env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,mute:false,
-  lastMark:true,quick:false,coords:true,music:.35,musicStyle:'koto',confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true,netWatch:true,rpSpeed:'1'};
+  lastMark:true,quick:false,coords:true,music:.35,musicStyle:'koto',confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true,netWatch:true,rpSpeed:'1',pzKind:'mix',pzTier:0};
 let S=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem('jadego.settings')||'null');if(s)S=Object.assign(S,s);}catch(e){}
 S.keys=Object.assign({},DEFKEYS,S.keys||{});
@@ -965,16 +1002,169 @@ function engineFactory(){
     for(let p=0;p<NN;p++){if(bb[p]===1){bs++;owner[p]=1;}else if(bb[p]===2){ws++;owner[p]=2;}else{const o=reg.owner[p];if(o===1){bt++;owner[p]=1;}else if(o===2){wt++;owner[p]=2;}}}
     return {b:{stones:bs,terr:bt,total:bs+bt},w:{stones:ws,terr:wt,komi,total:ws+wt+komi},owner};
   };
+  /* ---------- puzzles: a tactical reader, a life-and-death solver and a generator built on both ----------
+     Puzzles live on the 9×9 board. A generated puzzle is kept only when the solvers prove it: exactly one first move works,
+     the other side would be fine if it moved first, and every reading finishes inside its budget. */
+  const PZ={},BUDGET={};E.pz=PZ;
+  function chain(b,p){const c=b[p],seen=new Set([p]),st=[p],stones=[],libs=new Set();
+    while(st.length){const q=st.pop();stones.push(q);const a=nb[q];for(let i=0;i<a.length;i++){const n=a[i],v=b[n];if(v===0)libs.add(n);else if(v===c&&!seen.has(n)){seen.add(n);st.push(n);}}}
+    return {stones,libs:[...libs]};}
+  function adjChains(b,T,col){const out=[],seen=new Set();for(const q of T.stones)for(const n of nb[q])if(b[n]===col&&!seen.has(n)){const C=chain(b,n);C.stones.forEach(s=>seen.add(s));out.push(C);}return out;}
+  const bkey=b=>String.fromCharCode.apply(null,b);
+  PZ.chain=chain;
+  /* tactical reading: can `att` capture the chain standing on t within d of its own moves, whatever the defender does?
+     Moves are limited to the usual candidates (liberties, second liberties, saving or capturing the chains in contact). */
+  PZ.reader=function(t,att,budget){
+    const def=3-att,memo=new Map();let nodes=0;
+    function aCands(b,T){const s=new Set(T.libs);
+      if(T.libs.length<=2)for(const l of T.libs)for(const n of nb[l])if(b[n]===0)s.add(n);
+      for(const A of adjChains(b,T,att))if(A.libs.length===1){s.add(A.libs[0]);for(const D of adjChains(b,A,def))if(D.libs.length===1)s.add(D.libs[0]);}
+      return [...s];}
+    function dCands(b,T){const s=new Set(T.libs);
+      for(const A of adjChains(b,T,att))if(A.libs.length<=2)A.libs.forEach(l=>s.add(l));
+      if(T.libs.length<=2)for(const l of T.libs)for(const n of nb[l])if(b[n]===0)s.add(n);
+      return [...s];}
+    /* the attacker's winning move, or -1 */
+    function attack(b,ko,d){if(++nodes>budget)throw BUDGET;
+      const k='a'+d+','+ko+bkey(b);let r=memo.get(k);if(r!==undefined)return r;r=-1;
+      const T=chain(b,t),L=T.libs;
+      if(L.length===1){const tb=b.slice();if(play(tb,L[0],att,ko)){memo.set(k,L[0]);return L[0];}}
+      if(d>1&&L.length<=d)for(const m of aCands(b,T)){const tb=b.slice(),x=play(tb,m,att,ko);if(!x)continue;const nk=x.ko;if(tb[t]!==def||!defend(tb,nk,d-1)){r=m;break;}}
+      memo.set(k,r);return r;}
+    /* defender to move: true when the chain survives d more attacking moves (passing counts as a defence) */
+    function defend(b,ko,d){if(++nodes>budget)throw BUDGET;
+      const k='d'+d+','+ko+bkey(b);let r=memo.get(k);if(r!==undefined)return r;r=false;
+      const T=chain(b,t);
+      if(T.libs.length>d)r=true;
+      else{for(const w of dCands(b,T)){const tb=b.slice(),x=play(tb,w,def,ko);if(!x)continue;if(attack(tb,x.ko,d)<0){r=true;break;}}
+        if(!r&&attack(b,-1,d)<0)r=true;}
+      memo.set(k,r);return r;}
+    /* the defender's most stubborn reply: the one that makes the capture take longest (null: nothing helps, pass) */
+    function reply(b,ko,d){const T=chain(b,t);let best=null,bd=0;
+      for(const w of dCands(b,T)){const tb=b.slice(),x=play(tb,w,def,ko);if(!x)continue;const nk=x.ko;let dd=1;while(dd<=d&&attack(tb,nk,dd)<0)dd++;if(dd>bd){bd=dd;best=w;}}
+      return best;}
+    return {attack,defend,reply,nodes:()=>nodes};};
+  /* Benson's algorithm: which chains of colour c can never be captured, even if c passes forever */
+  function benson(b,c){
+    const cid=new Int16Array(NN).fill(-1),chains=[];
+    for(let p=0;p<NN;p++)if(b[p]===c&&cid[p]<0){const C=chain(b,p);C.stones.forEach(s=>cid[s]=chains.length);chains.push({libs:new Set(C.libs),alive:true});}
+    const rid=new Int16Array(NN).fill(-1),regs=[];
+    for(let p=0;p<NN;p++)if(b[p]!==c&&rid[p]<0){const pts=[],st=[p],border=new Set();rid[p]=regs.length;
+      while(st.length){const q=st.pop();pts.push(q);for(const n of nb[q]){if(b[n]===c)border.add(cid[n]);else if(rid[n]<0){rid[n]=regs.length;st.push(n);}}}
+      regs.push({pts,border:[...border],ok:true});}
+    let changed=true;
+    while(changed){changed=false;
+      for(let x=0;x<chains.length;x++){if(!chains[x].alive)continue;let v=0;
+        for(const r of regs)if(r.ok&&r.border.includes(x)&&r.pts.every(q=>b[q]!==0||chains[x].libs.has(q)))v++;
+        if(v<2){chains[x].alive=false;changed=true;}}
+      for(const r of regs)if(r.ok&&r.border.some(x=>!chains[x].alive)){r.ok=false;changed=true;}}
+    return p=>cid[p]>=0&&chains[cid[p]].alive;}
+  PZ.benson=benson;
+  /* life and death inside a closed eye space: does the group of colour def standing on w live?
+     Only points of the eye space (and passing) are played. 1 lives, 0 dies, -1 the reading went too deep. */
+  PZ.ld=function(eye,w,def,budget){
+    const memo=new Map();let nodes=0;const maxD=eye.length*2+8;
+    function solve(b,toMove,ko,passes,depth){if(++nodes>budget)throw BUDGET;
+      if(b[w]!==def)return 0;
+      if(benson(b,def)(w))return 1;
+      if(passes>=2)return 1;
+      if(depth>maxD)return -1;
+      const k=toMove+','+ko+','+passes+bkey(b);let r=memo.get(k);if(r!==undefined)return r;
+      const want=toMove===def?1:0;let found=false,unk=false;
+      for(const m of eye){if(b[m]!==0)continue;const tb=b.slice(),x=play(tb,m,toMove,ko);if(!x)continue;
+        const v=solve(tb,3-toMove,x.ko,0,depth+1);if(v===want){found=true;break;}if(v<0)unk=true;}
+      if(!found){const v=solve(b,3-toMove,-1,passes+1,depth+1);if(v===want)found=true;else if(v<0)unk=true;}
+      r=found?want:unk?-1:1-want;if(r>=0)memo.set(k,r);return r;}
+    /* moves for `col` in the eye space whose result is `want` when the other side answers */
+    function good(b,col,ko,want){const out=[];for(const m of eye){if(b[m]!==0)continue;const tb=b.slice(),x=play(tb,m,col,ko);if(!x)continue;if(solve(tb,3-col,x.ko,0,0)===want)out.push(m);}return out;}
+    return {solve,good,nodes:()=>nodes};};
+
+  /* ---------- the generator ---------- */
+  function rng(seed){let a=seed>>>0;return ()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;};}
+  const ri=(R,n)=>(R()*n)|0;
+  /* a fight in one corner: stones grow out of each other the way they do in real games */
+  function cluster(R){const b=new Int8Array(NN),box=ri(R,3)===0?[1,1,7,7]:[0,0,6,6],n=8+ri(R,9),pts=[];
+    const offs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1],[2,0],[0,2],[-2,0],[0,-2],[2,1],[1,2],[-2,1],[1,-2]];
+    const x0=box[0]+1+ri(R,box[2]-box[0]-2),y0=box[1]+1+ri(R,box[3]-box[1]-2);b[y0*N+x0]=2;pts.push(y0*N+x0);
+    let col=1,tries=0;
+    while(pts.length<n&&tries++<400){const s=pts[ri(R,pts.length)],o=offs[ri(R,offs.length)],x=s%N+o[0],y=((s/N)|0)+o[1];
+      if(x<box[0]||y<box[1]||x>=box[2]||y>=box[3])continue;const p=y*N+x;if(b[p])continue;
+      const tb=b.slice(),r=play(tb,p,col,-1);if(!r||r.cap)continue;if(chain(tb,p).libs.length<2)continue;
+      b.set(tb);pts.push(p);col=R()<.6?3-col:col;}
+    return b;}
+  /* every chain has at least two liberties: nothing on the board is already in atari */
+  function calm(b){for(let p=0;p<NN;p++)if(b[p]&&chain(b,p).libs.length<2)return false;return true;}
+  function near(b){const s=new Set();for(let p=0;p<NN;p++)if(b[p])for(const n of nb[p]){if(b[n]===0)s.add(n);for(const m of nb[n])if(b[m]===0)s.add(m);}return [...s];}
+  function genCap(R,tier){
+    for(let a=0;a<60;a++){const b=cluster(R);if(!calm(b))continue;
+      const tg=[],seen=new Set();for(let p=0;p<NN;p++)if(b[p]===2&&!seen.has(p)){const C=chain(b,p);C.stones.forEach(q=>seen.add(q));const L=C.libs.length;if(L>=2&&L<=3&&C.stones.length<=6)tg.push(p);}
+      if(!tg.length)continue;const t=tg[ri(R,tg.length)];
+      try{const rd=PZ.reader(t,1,40000);let dmin=0;
+        for(let d=2;d<=7;d++)if(rd.attack(b,-1,d)>=0){dmin=d;break;}
+        if(!dmin)continue;const tr=dmin<=2?0:dmin<=4?1:2;if(tr!==tier)continue;
+        if(!rd.defend(b,-1,dmin+1))continue;           // white to move would get away
+        const wins=[];for(const m of near(b)){const tb=b.slice(),x=play(tb,m,1,-1);if(!x)continue;if(tb[t]!==2||!rd.defend(tb,x.ko,dmin-1))wins.push(m);if(wins.length>1)break;}
+        if(wins.length!==1)continue;
+        return {kind:'cap',board:b,t,d:dmin,first:wins[0]};}catch(e){if(e!==BUDGET)throw e;}}
+    return null;}
+  function genSave(R,tier){
+    for(let a=0;a<60;a++){const b=cluster(R);
+      /* one black chain in atari or short of liberties, everything else calm */
+      const ss=[],seen=new Set();let bad=false;for(let p=0;p<NN;p++)if(b[p]&&!seen.has(p)){const C=chain(b,p);C.stones.forEach(q=>seen.add(q));const L=C.libs.length;
+        if(b[p]===2){if(L<2)bad=true;}else if(L===1||(L===2&&R()<.25))ss.push(p);}
+      if(bad||!ss.length)continue;const t=ss[ri(R,ss.length)],S=chain(b,t);if(S.stones.length>6)continue;
+      try{const rd=PZ.reader(t,2,40000);if(rd.attack(b,-1,6)<0)continue;   // white to move would capture it
+        const wins=[];for(const m of near(b)){const tb=b.slice(),x=play(tb,m,1,-1);if(!x)continue;if(rd.attack(tb,x.ko,6)<0)wins.push(m);if(wins.length>1)break;}
+        if(wins.length!==1)continue;const w=wins[0],ext=S.libs.includes(w),plain=ext&&S.libs.length===1;
+        const tr=plain&&chain((()=>{const tb=b.slice();play(tb,w,1,-1);return tb;})(),t).libs.length>=3?0:ext?1:2;
+        if(tr!==tier)continue;
+        return {kind:'save',board:b,t,first:w};}catch(e){if(e!==BUDGET)throw e;}}
+    return null;}
+  /* life and death: an eye space in the corner or on the edge, the group around it and an outer wall that cannot be cut */
+  function genLD(R,tier,live){
+    const sizes=[[3,5],[5,6],[6,8]][tier];
+    for(let a=0;a<80;a++){const b=new Int8Array(NN),corner=R()<.6,eye=new Set(),want=sizes[0]+ri(R,sizes[1]-sizes[0]+1);
+      const sx=corner?0:2+ri(R,3),maxX=corner?4:sx+5;eye.add(sx);
+      let g=0;while(eye.size<want&&g++<200){const s=[...eye][ri(R,eye.size)],o=[[1,0],[-1,0],[0,1],[0,-1]][ri(R,4)],x=s%N+o[0],y=((s/N)|0)+o[1];
+        if(x<0||y<0||x>maxX||y>2||x<(corner?0:sx-1))continue;eye.add(y*N+x);}
+      if(eye.size<want)continue;
+      const dil=set=>{const out=new Set();for(const p of set){const x=p%N,y=(p/N)|0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const X=x+dx,Y=y+dy;if(X>=0&&Y>=0&&X<N&&Y<N)out.add(Y*N+X);}}return out;};
+      const wall=[...dil(eye)].filter(p=>!eye.has(p)),inner=new Set([...eye,...wall]),outer=[...dil(inner)].filter(p=>!inner.has(p));
+      const def=live?1:2,att=3-def;wall.forEach(p=>b[p]=def);outer.forEach(p=>b[p]=att);
+      if(chain(b,wall[0]).stones.length!==wall.length)continue;
+      let weak=false;for(const p of outer)if(chain(b,p).libs.length<2)weak=true;if(weak)continue;
+      /* a stone or two inside makes the shape less obvious */
+      const E2=[...eye],k=ri(R,tier===2?3:4);
+      for(let i=0;i<k;i++){const p=E2[ri(R,E2.length)];if(b[p])continue;const col=R()<.5?att:def,tb=b.slice(),x=play(tb,p,col,-1);if(!x||x.cap)continue;if(chain(tb,p).libs.length<1)continue;b.set(tb);}
+      if(chain(b,wall[0]).libs.length<2)continue;      // a group already in atari is a capture, not life and death
+      try{const ld=PZ.ld(E2,wall[0],def,150000);
+        if(live){if(ld.solve(b,att,-1,0,0)!==0)continue;const g2=ld.good(b,def,-1,1);if(g2.length!==1)continue;return {kind:'live',board:b,eye:E2,w:wall[0],def,first:g2[0]};}
+        if(ld.solve(b,def,-1,0,0)!==1)continue;const g1=ld.good(b,att,-1,0);if(g1.length!==1)continue;return {kind:'kill',board:b,eye:E2,w:wall[0],def,first:g1[0]};}
+      catch(e){if(e!==BUDGET)throw e;}}
+    return null;}
+  /* the eight symmetries of the square, so a corner puzzle can show up in any corner */
+  function sym(p,s){const x=p%N,y=(p/N)|0,f=[[x,y],[N-1-x,y],[x,N-1-y],[N-1-x,N-1-y],[y,x],[N-1-y,x],[y,N-1-x],[N-1-y,N-1-x]][s];return f[1]*N+f[0];}
+  PZ.make=function(kind,tier,seed){
+    if(N!==9)setSize(9);
+    const R=rng(seed*2654435761+tier*97+({cap:1,save:2,kill:3,live:4}[kind]||0)*7919);
+    let pz=null;for(let i=0;i<40&&!pz;i++)pz=kind==='cap'?genCap(R,tier):kind==='save'?genSave(R,tier):genLD(R,tier,kind==='live');
+    if(!pz)return null;
+    const s=ri(R,8),b=new Array(NN).fill(0);for(let p=0;p<NN;p++)b[sym(p,s)]=pz.board[p];
+    const out={kind,tier,seed,board:b,first:sym(pz.first,s)};
+    if(pz.t!==undefined)out.t=sym(pz.t,s);if(pz.d)out.d=pz.d;
+    if(pz.eye){out.eye=pz.eye.map(p=>sym(p,s));out.w=sym(pz.w,s);out.def=pz.def;}
+    return out;};
   return E;
 }
 /*ENGINE-END*/
 const ENG=engineFactory();
-const AI=(function(){
+function makeAI(){
   let w=null,seq=0;const pend=new Map();
   const SRC='const E=('+engineFactory.toString()+')();onmessage=function(e){const d=e.data;E.setSize(d.N);const b=Int8Array.from(d.board);let out;'+
-    'if(d.type==="move")out=E.genMove(b,d.color,d.ko,d.last,d);else out={dead:E.deadStones(b,d.komi,d.sims)};out.id=d.id;postMessage(out);};';
+    'if(d.type==="move")out=E.genMove(b,d.color,d.ko,d.last,d);else if(d.type==="puzzle")out={pz:E.pz.make(d.kind,d.tier,d.seed)};else out={dead:E.deadStones(b,d.komi,d.sims)};out.id=d.id;postMessage(out);};';
   function local(msg){const E=engineFactory();E.setSize(msg.N);const b=Int8Array.from(msg.board);
     if(msg.type==='move')return E.genMove(b,msg.color,msg.ko,msg.last,Object.assign({},msg,{time:Math.min(msg.time||0,900)}));
+    if(msg.type==='puzzle')return {pz:E.pz.make(msg.kind,msg.tier,msg.seed)};
     return {dead:E.deadStones(b,msg.komi,Math.min(msg.sims,120))};}
   function fail(){if(w){try{w.terminate();}catch(e){}}w=null;const list=[...pend.values()];pend.clear();list.forEach(x=>setTimeout(()=>x.res(local(x.msg)),20));}
   function make(){try{const url=URL.createObjectURL(new Blob([SRC],{type:'text/javascript'}));w=new Worker(url);
@@ -982,7 +1172,8 @@ const AI=(function(){
   make();
   return {ask(msg){return new Promise(res=>{msg.id=++seq;if(w){pend.set(msg.id,{res,msg});try{w.postMessage(msg);}catch(e){fail();}}else setTimeout(()=>res(local(msg)),30);});},
     reset(){if(w&&pend.size){try{w.terminate();}catch(e){}pend.clear();make();}}};
-})();
+}
+const AI=makeAI(),PZW=makeAI();     // the bot, and a separate worker that composes puzzles
 
 /* ---------- audio ---------- */
 /* Struck objects are synthesised physically: a short contact pulse excites a bank of damped resonators (board, stone, bowl, lid, bell).
@@ -1848,7 +2039,7 @@ function create3D(){
   function finishTweens(){let guard=0;while(tweens.length&&guard++<5){const list=tweens.splice(0);list.forEach(t=>{if(t.kind==='flight'||t.kind==='cam')return;t.fn(1);t.done&&t.done();});}tweens=tweens.filter(t=>t.kind!=='flight');}
 
   /* stones */
-  function placeAt(m,p){pointWorld(p,m.position);m.position.x+=(Math.random()-.5)*.12;m.position.z+=(Math.random()-.5)*.12;m.position.y=STONE_HY;m.rotation.set(0,Math.random()*6.28,0);}
+  function placeAt(m,p){pointWorld(p,m.position);m.position.x+=(Math.random()-.5)*.12;m.position.z+=(Math.random()-.5)*.12;m.position.y=STONE_HY;m.rotation.set(0,stoneYaw(),0);}
   function clearStones(){for(const m of [...stoneGroup.children])if(m!==hand.mesh)stoneGroup.remove(m);stoneMeshes.clear();}
   function rebuildStones(){clearStones();for(let p=0;p<G.N*G.N;p++)if(G.board[p]){const m=stoneMesh(G.board[p]);placeAt(m,p);stoneGroup.add(m);stoneMeshes.set(p,m);}}
   function dropHand(){if(hand.mesh)stoneGroup.remove(hand.mesh);hand.mesh=null;hand.held=false;hand.preview=-1;}
@@ -1857,7 +2048,7 @@ function create3D(){
   function spawnFromBowl(c){const m=stoneMesh(c),bp=L.bowl[c];m.position.set(bp.x+(Math.random()-.5)*3,bp.y+6.3,bp.z+(Math.random()-.5)*3);m.rotation.set((Math.random()-.5)*.6,Math.random()*6,(Math.random()-.5)*.6);stoneGroup.add(m);return m;}
   function settle(m){const y0=m.rotation.y;tween(.2,k=>{m.rotation.x=Math.sin(k*Math.PI*3)*(1-k)*.05;m.rotation.y=y0;});}
   function flyTo(m,p,o,done){const to=new V();pointWorld(p,to);to.x+=(Math.random()-.5)*.12;to.z+=(Math.random()-.5)*.12;to.y=STONE_HY;
-    const from=m.position.clone(),r0=m.rotation.clone(),yaw=Math.random()*6.28;
+    const from=m.position.clone(),r0=m.rotation.clone(),yaw=stoneYaw();
     tween(o.dur*animF(),k=>{const e=ease(k);m.position.x=from.x+(to.x-from.x)*e;m.position.z=from.z+(to.z-from.z)*e;m.position.y=from.y+(to.y-from.y)*k*k+o.arc*4*k*(1-k);m.rotation.x=r0.x*(1-k);m.rotation.z=r0.z*(1-k);},
       ()=>{m.position.copy(to);m.rotation.set(0,yaw,0);stoneMeshes.set(p,m);settle(m);done();},(o.delay||0)*animF());}
   function placeHuman(p,c,quick,done){
@@ -2042,6 +2233,23 @@ function create2D(){
 
 /* ---------- sprites & swatches ---------- */
 let SPR={};
+/* pictures on stones: kept in this browser as small PNGs, decoded once into pixels for the texture code */
+function stoneYaw(){return S.stones==='custom'?(G.flipView?Math.PI:0):Math.random()*6.28;}
+function customPics(){try{return JSON.parse(localStorage.getItem('jadego.stones')||'{}')||{};}catch(e){return {};}}
+function loadCustom(){const pics=customPics(),set=SETS.custom;
+  return Promise.all([1,2].map(c=>new Promise(res=>{const sp=c===1?set.dark:set.light;if(!pics[c]){sp.img=null;res();return;}
+    const im=new Image();im.onload=()=>{const W=256,cv=mk(W,W),x=cv.getContext('2d');x.drawImage(im,0,0,W,W);sp.img={data:x.getImageData(0,0,W,W).data,W,H:W};res();};im.onerror=()=>{sp.img=null;res();};im.src=pics[c];})))
+    .then(()=>{delete swatchCache.custom;if(S.stones==='custom'){makeSprites();if(V3D)V3D.setStones();}refreshSwatches();});}
+/* a picture file → a square 256×256 PNG, cropped to the middle */
+function setCustomPic(c,file){if(!file)return;if(!/^image\//.test(file.type)){toast('Нужна картинка: PNG, JPG или WebP',2400);return;}
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{URL.revokeObjectURL(url);const W=256,cv=mk(W,W),x=cv.getContext('2d'),s=Math.min(im.width,im.height);x.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,W,W);
+    const pics=customPics();pics[c]=cv.toDataURL('image/png');
+    try{localStorage.setItem('jadego.stones',JSON.stringify(pics));}catch(e){toast('Не хватило места в браузере — возьмите картинку попроще',3000);return;}
+    S.stones='custom';saveSettings();markSet();loadCustom().then(()=>{renderCustom();AU.place(.8);toast((c===1?'Чёрные':'Белые')+' камни — с вашей картинкой',2000);});};
+  im.onerror=()=>{URL.revokeObjectURL(url);toast('Не удалось прочитать картинку',2400);};im.src=url;}
+function renderCustom(){const pics=customPics();[[1,'csB'],[2,'csW']].forEach(([c,id])=>{const e=$(id);e.style.backgroundImage=pics[c]?`url(${pics[c]})`:'';e.classList.toggle('empty',!pics[c]);});$('csReset').hidden=!pics[1]&&!pics[2];}
+function refreshSwatches(){document.querySelectorAll('[data-set]').forEach(b=>{const [a,c]=swatch(b.dataset.set);const is=b.querySelectorAll('.pair i');is[0].style.backgroundImage=`url(${a})`;is[1].style.backgroundImage=`url(${c})`;});}
 function makeSprites(){const set=SETS[S.stones],out={};[1,2].forEach(c=>{const sp=c===1?set.dark:set.light;const tx=stoneTex(sp,c===1?11:23,256,128);out[c]=stoneSprite(tx,sp,160);});SPR=out;
   $('swB').style.backgroundImage=`url(${out[1].toDataURL()})`;$('swW').style.backgroundImage=`url(${out[2].toDataURL()})`;if(V2D)V2D.setSprites(out);}
 const swatchCache={};
@@ -2377,7 +2585,7 @@ function recordGame(r){const l=loadStats();
   l.unshift({d:Date.now(),N:G.N,lv:G.level,opp:net()?G.oppName:undefined,hc:G.hc||0,komi:G.komi,you:G.human,w:r.winner,by:r.by,m:r.margin||0,mv:G.moveNum,caps:[G.caps[1],G.caps[2]],t:Math.round((Date.now()-(G.startT||Date.now()))/1000),
     moves:(G.moves||[]).join(','),ab:(G.hcPts||[]).join(',')});
   try{localStorage.setItem('jadego.stats',JSON.stringify(l.slice(0,200)));}catch(e){}}
-function sgf(g){const A='abcdefghijklmnopqrs',c=p=>A[p%g.N]+A[(p/g.N)|0],bot=g.lv===-2?(g.opp||'Соперник'):'Бот · '+LEVELS[g.lv],
+function sgf(g){const A='abcdefghijklmnopqrstu',c=p=>A[p%g.N]+A[(p/g.N)|0],bot=g.lv===-2?(g.opp||'Соперник'):'Бот · '+LEVELS[g.lv],
     names=(g.names?[g.names[1],g.names[2]]:g.lv===-1?['Игрок 1','Игрок 2']:g.you===1?['Вы',bot]:[bot,'Вы']).map(t=>String(t).replace(/[\]\\]/g,'\\$&'));
   const re=(g.w===1?'B':'W')+'+'+(g.by==='score'?String(g.m):g.by==='time'?'T':'R');
   let s=`(;GM[1]FF[4]CA[UTF-8]AP[Jade Go]SZ[${g.N}]KM[${g.komi}]RU[Chinese]DT[${new Date(g.d).toISOString().slice(0,10)}]PB[${names[0]}]PW[${names[1]}]RE[${re}]`;
@@ -2400,7 +2608,7 @@ function renderStats(){const l=loadStats(),bot=l.filter(g=>g.lv>=0),won=bot.filt
     `${tile(streak,'побед подряд сейчас')}${tile(best,'лучшая серия')}${tile(caps,'камней взято у бота')}${tile(mv,'ходов сыграно')}${tile(secs?durText(secs):'—','за доской')}${tile(ld+' / '+LESSONS.length,'уроков пройдено')}</div>`;
   if(ds.streak)h+=`<p class="note">Задачи дня: серия ${ds.streak} ${plural(ds.streak,'день','дня','дней')} подряд.</p>`;
   if(bot.length){h+=`<h3>По силе бота</h3><table class="res plain"><tr><th></th><th>Партий</th><th>Побед</th><th>%</th></tr>`+LEVELS.map((n,i)=>{const g=bot.filter(x=>x.lv===i),w=g.filter(x=>x.w===x.you).length;return `<tr><td>${n}</td><td>${g.length}</td><td>${w}</td><td>${g.length?Math.round(w/g.length*100):'—'}</td></tr>`;}).join('')+`</table>`;
-    h+=`<table class="res plain"><tr><th>Доска</th><th>9×9</th><th>13×13</th><th>19×19</th></tr><tr><td>Партий</td>${[9,13,19].map(n=>`<td>${l.filter(g=>g.N===n).length}</td>`).join('')}</tr></table>`;}
+    h+=`<table class="res plain"><tr><th>Доска</th><th>9×9</th><th>13×13</th><th>19×19</th><th>21×21</th></tr><tr><td>Партий</td>${[9,13,19,21].map(n=>`<td>${l.filter(g=>g.N===n).length}</td>`).join('')}</tr></table>`;}
   h+=`<h3>История партий</h3>`;
   if(!l.length)h+=`<p>Сыграйте первую партию — здесь появится её запись. Записи хранятся в этом браузере.</p>`;
   else h+=`<div class="games">`+l.slice(0,30).map((g,i)=>{const x=gameLine(g);return `<div class="game"><div class="gi"><b class="${x.cls}">${x.head}</b><span>${x.sub}</span></div><button class="btn" data-rp="${i}" title="Пролистать партию ход за ходом">Повтор</button><button class="btn" data-sgf="${i}" title="Скачать запись партии в формате SGF">SGF</button></div>`;}).join('')+`</div>`+
@@ -2459,8 +2667,9 @@ function endViewing(){
   if(watching()){netEnd();G.token++;G.busy=false;G.level=0;G.phase='idle';G.result=null;showScore(false);closeSheet('sResult');view().resync();hud();}}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='1.9';
+const APP_VER='2.0';
 const NEWS=[
+ ['2.0','Доска 21×21, свои камни и бесконечные задачи',['Новая доска 21 × 21 — для партий с ботом, вдвоём и по сети','Свои камни: загрузите любые картинки (PNG, JPG, WebP) для чёрных и белых — они лягут на камни в 3D и в 2D (Настройки → Стол → Камни)','Тренировка: задачи без конца — захват (сети и лестницы), спасение камней, убить группу, жить. Три уровня сложности, у каждой задачи свой номер','Каждую задачу игра составляет и проверяет сама: верное начало одно, а без него соперник спасся бы. На неверный ход белые отвечают, после двух ошибок — подсказка','Задачи дня теперь тоже составляются заново каждый день']],
  ['1.9','Гости, повторы и зрители',['Гостевой режим: по сети можно играть без регистрации — достаточно ввести имя. Партии гостей не влияют на рейтинг, администратор может отключить гостей','Повтор любой сыгранной партии ход за ходом или автопросмотром: свои партии из статистики и из аккаунта, чужие открытые — из архива сервера','Список «Идут сейчас»: зайдите зрителем и смотрите чужую партию вживую. Рядом — архив недавних партий сервера','Переключатель «Разрешить другим смотреть»: если хоть один игрок против, партию не увидит никто. В аккаунте можно скрыть все свои партии, а прямо во время игры — закрыть партию от зрителей (в чате)']],
  ['1.8','Аккаунты',['Регистрация и вход на сервер: пароли хранятся только в виде стойкого хеша','Онлайн-партии привязаны к аккаунту — в свою партию можно вернуться с другого устройства','Рейтинг Эло, история партий на сервере с записью SGF, таблица лучших игроков','Администратор может закрыть регистрацию, выдавать приглашения или сделать сервер закрытым']],
  ['1.7','Игра по сети',['Партия с другом на другом устройстве: создайте комнату и отправьте код или ссылку','Сервер проверяет каждый ход и ведёт часы — разойтись в позиции невозможно','Чат, просьба вернуть ход, совместный подсчёт очков, реванш со сменой цветов','После обновления страницы или обрыва связи партия продолжается с того же места']],
@@ -2576,10 +2785,67 @@ const PUZZLES=[
  {id:'h3',tier:2,t:'Разрез',type:'cap',pos:['.........','.........','....X....','...Xo....','..XO.X...','.........','.........','.........','.........'],sol:{E5:{r:'D4',n:{F6:1}}}},
  {id:'h4',tier:2,t:'Изогнутая тройка',type:'kill',pos:['.........','.........','.........','.........','.........','XX.......','OOX......','.OOX.....','..OX.....'],sol:{A1:1}},
 ];
-const PTASK={cap:'Чёрные начинают и захватывают камни, отмеченные красным.',save:'Чёрный камень в атари. Чёрные начинают и спасают его.',kill:'Чёрные начинают и убивают белую группу: не дайте ей сделать два глаза.'};
+const PTASK={cap:'Чёрные начинают и захватывают камни, отмеченные красным.',save:'Чёрные камни, отмеченные красным, в опасности. Чёрные начинают и спасают их.',
+  kill:'Чёрные начинают и убивают белую группу: не дайте ей сделать два глаза.',live:'Чёрная группа окружена. Чёрные начинают и живут: сделайте два глаза.'};
+const TIERS=['лёгкая','средняя','трудная'],PZK=['cap','save','kill','live'],PZNAME={cap:'захват',save:'спасение',kill:'убить',live:'жить'};
 function todayKey(d){d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function dailyList(){const k=todayKey();let h=0;for(const ch of k)h=(h*31+ch.charCodeAt(0))>>>0;const tiers=[0,1,2].map(t=>PUZZLES.filter(p=>p.tier===t));
-  return tiers.map((list,i)=>list[(h>>>(i*4))%list.length]);}
+/* three puzzles a day, one per difficulty, composed from the date: everyone gets the same ones */
+function dailyHash(){const k=todayKey();let h=0;for(const ch of k)h=(h*31+ch.charCodeAt(0))>>>0;return h;}
+function dailyList(){const h=dailyHash();return [0,1,2].map(i=>{const kind=PZK[(h+i)%4],seed=100000+(h>>>(i*3))%900000;return {id:`g-${kind}-${i}-${seed}`,kind,tier:i,seed};});}
+/* generated puzzles: the worker composes them, this page judges the moves with the same solvers */
+const PZCACHE=new Map();
+function genPuzzle(kind,tier,seed){const k=kind+tier+':'+seed;if(!PZCACHE.has(k))PZCACHE.set(k,PZW.ask({type:'puzzle',N:9,board:[],kind,tier,seed}).then(r=>r.pz));return PZCACHE.get(k);}
+function pzTitle(g){if(g.kind==='cap')return g.d<=2?'Захват в два хода':`Захват в ${g.d} ${plural(g.d,'ход','хода','ходов')}`;return {save:'Спасите камни',kill:'Убейте группу',live:'Сделайте два глаза'}[g.kind];}
+function pzFromGen(g,no){const tgt=new Set(g.t!==undefined?ENG.pz.chain(Int8Array.from(g.board),g.t).stones:[]),rows=[];
+  for(let y=0;y<9;y++){let r='';for(let x=0;x<9;x++){const p=y*9+x,v=g.board[p];r+=v===1?(tgt.has(p)?'x':'X'):v===2?(tgt.has(p)?'o':'O'):'.';}rows.push(r);}
+  return {id:`g-${g.kind}-${g.tier}-${g.seed}`,tier:g.tier,type:g.kind,t:pzTitle(g),pos:rows,gen:g,no};}
+function pzState(){let s=null;try{s=JSON.parse(localStorage.getItem('jadego.pz')||'null');}catch(e){}s=s||{};s.cur=s.cur||{};s.solved=s.solved||{};s.ids=s.ids||[];s.seen=s.seen||[];return s;}
+/* the same position turned or mirrored counts as one: small life-and-death shapes do come round again */
+function pzCanon(b){let best='';for(let k=0;k<8;k++){let o='';for(let y=0;y<9;y++)for(let x=0;x<9;x++){const X=k&1?8-x:x,Y=k&2?8-y:y,p=k&4?X*9+Y:Y*9+X;o+=b[p];}if(!best||o<best)best=o;}
+  let h=0;for(let i=0;i<best.length;i++)h=(h*33+best.charCodeAt(i))>>>0;return h.toString(36);}
+function pzSave(s){try{localStorage.setItem('jadego.pz',JSON.stringify(s));}catch(e){}}
+function pzKindFor(n){return S.pzKind==='mix'?PZK[n%4]:S.pzKind;}
+function openPuz(){const st=pzState(),tot=PZK.reduce((a,k)=>a+(st.solved[k]||0),0),tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
+  $('pzStats').innerHTML=tile(tot,'решено всего')+PZK.map(k=>tile(st.solved[k]||0,PZNAME[k])).join('');syncSegs();openSheet('sPuz');}
+function startTraining(){closeSheet('sPuz');T.kind='puzzle';T.daily=false;const st=pzState();loadTraining(st.cur[S.pzKind+S.pzTier]||1,0);}
+/* puzzle n of the chosen theme and difficulty; one the composer could not finish is skipped */
+function loadTraining(n,skips,dups){const kind=pzKindFor(n),tier=S.pzTier,key=S.pzKind+tier;dups=dups||0;$('status').hidden=false;$('status').textContent='Составляю задачу…';
+  genPuzzle(kind,tier,n).then(g=>{if(T.kind!=='puzzle'||T.daily)return;
+    if(!g){if(skips<5)loadTraining(n+1,skips+1,dups);else{toast('Не получилось составить задачу — попробуйте другую тему',3000);exitTut();}return;}
+    const st=pzState(),cn=pzCanon(g.board);
+    if(st.seen.includes(cn)&&st.cur[key]!==n&&dups<30){loadTraining(n+1,skips,dups+1);return;}      // seen lately: take the next number
+    if(!st.seen.includes(cn)){st.seen.push(cn);st.seen=st.seen.slice(-400);}
+    st.cur[key]=n;pzSave(st);T.list=[pzFromGen(g,n)];T.idx=0;loadPuzzle();
+    genPuzzle(pzKindFor(n+1),tier,n+1);});}       // the next one is composed while this one is solved
+function pzHint(){const g=T.pz.gen,b=Int8Array.from(G.board),P=ENG.pz;
+  try{if(!T.gm)return [g.first];
+    if(g.kind==='cap'){const m=P.reader(g.t,1,60000).attack(b,G.ko,Math.max(1,g.d-T.gm+1));return m>=0?[m]:[];}
+    if(g.kind==='save')return [g.first];
+    return P.ld(g.eye,g.w,g.def,200000).good(b,1,G.ko,g.kind==='kill'?0:1).slice(0,2);}catch(e){return [];}}
+/* is black's move right, is the puzzle over, and how white answers */
+function pzJudge(g,b,ko){const P=ENG.pz;
+  if(g.kind==='cap'){if(b[g.t]!==2)return {ok:true,done:true};
+    const rd=P.reader(g.t,1,60000),left=Math.max(1,g.d-T.gm+1);
+    if(rd.defend(b,ko,left))return {ok:false};
+    return {ok:true,reply:rd.reply(b,ko,left)};}
+  if(g.kind==='save'){if(b[g.t]!==1)return {ok:false};return P.reader(g.t,2,60000).attack(b,ko,6)<0?{ok:true,done:true}:{ok:false,msg:'Белые всё равно захватят эти камни. Попробуйте другой ход.'};}
+  const kill=g.kind==='kill',want=kill?0:1,ld=P.ld(g.eye,g.w,g.def,250000);
+  if(b[g.w]!==g.def)return kill?{ok:true,done:true}:{ok:false};
+  if(ld.solve(b,2,ko,0,0)!==want)return {ok:false,msg:kill?'Белые успевают сделать два глаза. Попробуйте другой ход.':'Белые всё равно убивают группу. Попробуйте другой ход.'};
+  if(!kill&&P.benson(b,1)(g.w))return {ok:true,done:true};
+  /* settled: the result stands even if white plays twice in a row */
+  let settled=true;const replies=[];
+  for(const m of g.eye){if(b[m]!==0)continue;const tb=b.slice(),x=ENG.play(tb,m,2,ko);if(!x)continue;const nk=x.ko;replies.push({m,tb,nk});if(settled&&ld.solve(tb,2,nk,0,0)!==want)settled=false;}
+  if(settled)return {ok:true,done:true};
+  /* white's most testing answer: the one that leaves black the fewest good replies */
+  let best=null,bn=1e9;for(const r of replies){const n=ld.good(r.tb,1,r.nk,want).length;if(n>=1&&n<bn){bn=n;best=r.m;}}
+  return {ok:true,reply:best};}
+function pzGenMove(){const b=Int8Array.from(G.board);T.gm++;let r;
+  try{r=pzJudge(T.pz.gen,b,G.ko);}catch(e){r={ok:false};}
+  if(!r.ok){wrong(r.msg||'Не то. Белые отобьются — попробуйте другой ход.');return;}
+  if(r.done){puzzleSolved();return;}
+  if(r.reply==null){G.toPlay=1;fb('Белые пасуют — продолжайте.','ok');hud();return;}
+  T.locked=true;fb('Хорошо! Белые отвечают…','ok');scriptedReply(r.reply,()=>{T.locked=false;fb('Ваш ход — продолжайте.','ok');hud();});}
 function dailyState(){let s=null;try{s=JSON.parse(localStorage.getItem('jadego.daily')||'null');}catch(e){}s=s||{date:'',solved:[],streak:0,lastFull:''};if(s.date!==todayKey()){s.date=todayKey();s.solved=[];}return s;}
 function saveDaily(s){try{localStorage.setItem('jadego.daily',JSON.stringify(s));}catch(e){}}
 function lessonsDone(){try{return +(localStorage.getItem('jadego.lessons')||0);}catch(e){return 0;}}
@@ -2590,7 +2856,7 @@ function setupPos(rows,targetsAsMarks){
   const ok=[],chars={};
   rows.forEach((r,y)=>{for(let x=0;x<N;x++){const ch=r[x]||'.',p=y*N+x;
     if(ch==='X'||ch==='x')G.board[p]=1;else if(ch==='O'||ch==='o')G.board[p]=2;
-    if(ch==='o')G.marks.push({p,k:'target'});if(ch==='+')G.marks.push({p,k:'lib'});if(ch==='!')G.marks.push({p,k:'x'});
+    if(ch==='o'||ch==='x')G.marks.push({p,k:'target'});if(ch==='+')G.marks.push({p,k:'lib'});if(ch==='!')G.marks.push({p,k:'x'});
     (chars[ch]=chars[ch]||[]).push(p);}});
   return {changed,chars};
 }
@@ -2624,7 +2890,7 @@ function lessonNext(){const ls=LESSONS[T.li],st=curStep();
   if(T.si<ls.s.length-1){T.si++;loadStep();return;}
   setLessonsDone(T.li+1);if(T.li<LESSONS.length-1){T.li++;T.si=0;loadStep();}}
 function lessonPrev(){if(T.si>0){T.si--;loadStep();return;}if(T.li>0){T.li--;T.si=LESSONS[T.li].s.length-1;loadStep();}}
-function showHint(){const pts=T.kind==='lesson'?(T.ok||[]):Object.keys(T.node||{}).map(parseCoord);
+function showHint(){const pts=T.kind==='lesson'?(T.ok||[]):T.pz&&T.pz.gen?pzHint():Object.keys(T.node||{}).map(parseCoord);
   if(T.kind==='lesson'&&!T.ok&&curStep().okFn){const N=G.N;pts.push(2*N+2,2*N+N-3,(N-3)*N+2,(N-3)*N+N-3);}
   G.marks=G.marks.filter(m=>m.k!=='hint').concat(pts.slice(0,4).map(p=>({p,k:'hint'})));view().resync();hud();}
 function tutMove(p){
@@ -2634,6 +2900,7 @@ function tutMove(p){
       if(T.reply!==undefined)scriptedReply(T.reply,fin);else fin();}
     else wrong(st.bad||'Не совсем. Попробуйте ещё раз — посмотрите на дыхания камней.');
     return;}
+  if(T.kind==='puzzle'&&T.pz.gen){pzGenMove();return;}
   if(T.kind==='puzzle'){const key=coordName(p),v=T.node&&T.node[key];
     if(!v){wrong('Не то. Белые отобьются — попробуйте другой ход.');return;}
     if(v===1){puzzleSolved();return;}
@@ -2645,23 +2912,28 @@ function wrong(msg){T.tries++;T.locked=true;fb(msg,'bad');AU.deny();
     else{loadPuzzleBoard();}
     T.locked=false;view().resync();if(T.tries>=2)showHint();hud();},1100);}
 /* puzzles */
-function startDaily(){closeSheet('sHome');closeSheet('sSet');T.kind='puzzle';T.list=dailyList();const ds=dailyState();let i=T.list.findIndex(p=>!ds.solved.includes(p.id));T.daily=true;if(i<0)i=0;T.idx=i;loadPuzzle();}
-function loadPuzzleBoard(){const pz=T.pz;setupPos(pz.pos);G.phase='puzzle';T.node=pz.sol;}
+function startDaily(){closeSheet('sHome');closeSheet('sSet');T.kind='puzzle';T.daily=true;$('status').hidden=false;$('status').textContent='Составляю задачи дня…';
+  const dl=dailyList();Promise.all(dl.map(d=>genPuzzle(d.kind,d.tier,d.seed))).then(gs=>{if(T.kind!=='puzzle'||!T.daily)return;
+    /* if the composer gave up on one, a hand-made puzzle of the same difficulty takes its place */
+    T.list=gs.map((g,i)=>g?Object.assign(pzFromGen(g,0),{id:dl[i].id}):Object.assign({},PUZZLES.filter(p=>p.tier===i)[dailyHash()%PUZZLES.filter(p=>p.tier===i).length],{id:dl[i].id}));
+    const ds=dailyState();let i=T.list.findIndex(p=>!ds.solved.includes(p.id));if(i<0)i=0;T.idx=i;loadPuzzle();});}
+function loadPuzzleBoard(){const pz=T.pz;setupPos(pz.pos);G.phase='puzzle';T.node=pz.sol;T.gm=0;}
 function loadPuzzle(){
   const pz=T.list[T.idx];T.pz=pz;T.tries=0;T.solved=false;T.locked=false;loadPuzzleBoard();
   if(V3D)V3D.sync();if(V2D){V2D.relayout();V2D.resync();}
   const ds=dailyState(),solved=ds.solved.includes(pz.id);
-  $('tKick').textContent=T.daily?`Задача дня ${T.idx+1} из ${T.list.length} · ${['лёгкая','средняя','трудная'][pz.tier]}`:`Тренировка · ${['лёгкая','средняя','трудная'][pz.tier]}`;
+  $('tKick').textContent=T.daily?`Задача дня ${T.idx+1} из ${T.list.length} · ${TIERS[pz.tier]}`:`Задача № ${pz.no||1} · ${TIERS[pz.tier]} · ${PZNAME[pz.type]}`;
   $('tTitle').textContent=pz.t+(solved?' ✓':'');$('tText').textContent='Чёрные ходят первыми.'+(ds.streak?` Серия: ${ds.streak} ${plural(ds.streak,'день','дня','дней')} подряд.`:'');
   $('tTask').textContent=PTASK[pz.type];fb(null);
-  $('tDots').innerHTML=T.list.map((p,k)=>`<i class="${dailyState().solved.includes(p.id)?'on':k===T.idx?'cur':''}"></i>`).join('');
+  $('tDots').innerHTML=T.daily?T.list.map((p,k)=>`<i class="${dailyState().solved.includes(p.id)?'on':k===T.idx?'cur':''}"></i>`).join(''):'';
   $('tPrev').hidden=false;$('tPrev').disabled=false;$('tPrev').textContent='Заново';
-  $('tHint').hidden=false;$('tNext').textContent=T.idx<T.list.length-1?'Следующая':'Ещё задача';$('tNext').disabled=false;
+  $('tHint').hidden=false;$('tNext').textContent=T.idx<T.list.length-1||!T.daily?'Следующая':'Ещё задачи';$('tNext').disabled=false;
   showPanel();hud();
 }
 function plural(n,a,b,c){const m=n%10,h=n%100;return m===1&&h!==11?a:m>=2&&m<=4&&(h<10||h>=20)?b:c;}
 function puzzleSolved(){
-  T.solved=true;T.locked=true;AU.chime();const pz=T.pz;let msg=pz.type==='kill'?'Решено! Белые больше не смогут сделать два глаза.':pz.type==='save'?'Решено! Камень спасён.':'Решено! Камни захвачены.';
+  T.solved=true;T.locked=true;AU.chime();const pz=T.pz;let msg=pz.type==='kill'?'Решено! Белые больше не смогут сделать два глаза.':pz.type==='live'?'Решено! Группа живёт.':pz.type==='save'?'Решено! Камни спасены.':'Решено! Камни захвачены.';
+  const st=pzState();if(!st.ids.includes(pz.id)){st.ids.push(pz.id);st.ids=st.ids.slice(-1000);st.solved[pz.type]=(st.solved[pz.type]||0)+1;pzSave(st);}
   if(T.daily){const ds=dailyState();if(!ds.solved.includes(pz.id))ds.solved.push(pz.id);
     if(T.list.every(p=>ds.solved.includes(p.id))&&ds.lastFull!==ds.date){const y=new Date();y.setDate(y.getDate()-1);ds.streak=ds.lastFull===todayKey(y)?ds.streak+1:1;ds.lastFull=ds.date;
       msg+=` Все задачи дня решены! Серия: ${ds.streak} ${plural(ds.streak,'день','дня','дней')}.`;AU.bell();}
@@ -2669,7 +2941,8 @@ function puzzleSolved(){
   fb(msg,'ok');$('tTitle').textContent=pz.t+' ✓';G.marks=G.marks.filter(m=>m.k!=='hint');view().resync();hud();
 }
 function puzzleNext(){if(T.idx<T.list.length-1){T.idx++;loadPuzzle();return;}
-  const ds=dailyState(),rest=PUZZLES.filter(p=>!T.list.includes(p));T.daily=false;T.list=[rest[(Math.random()*rest.length)|0]||PUZZLES[0]];T.idx=0;loadPuzzle();}
+  if(T.daily){T.daily=false;loadTraining(pzState().cur[S.pzKind+S.pzTier]||1,0);return;}
+  loadTraining((T.pz.no||0)+1,0);}
 function exitTut(){closeAllTut();G.phase='idle';G.score=null;openHome();}
 
 /* ---------- menus ---------- */
@@ -2681,6 +2954,7 @@ function openHome(){
   $('learnTag').hidden=ld>0;$('mLearn').classList.toggle('rec',ld===0);
   const ds=dailyState(),dl=dailyList(),n=dl.filter(p=>ds.solved.includes(p.id)).length;$('dailyBar').style.width=Math.round(n/3*100)+'%';
   $('dailySub').textContent=(n===3?'Все 3 решены сегодня':`Решено ${n} из 3 сегодня`)+(ds.streak?` · серия ${ds.streak} ${plural(ds.streak,'день','дня','дней')}`:'');
+  const ps=pzState(),pt=PZK.reduce((a,k)=>a+(ps.solved[k]||0),0);$('trainSub').textContent=(pt?`Решено ${pt} · `:'')+'бесконечные задачи: захват, спасение, жизнь и смерть — три уровня сложности';
   syncSegs();openSheet('sHome');
 }
 function buildMenus(){
@@ -2691,8 +2965,8 @@ function buildMenus(){
   $('boardList').innerHTML=Object.entries(BOARDS).map(([k,b])=>`<button class="set" data-board="${k}"><i class="bsq bsq-${k}"></i><span><b>${b.name}</b><span>${b.note}</span></span></button>`).join('');
   $('boardList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(S.board===b.dataset.board)return;S.board=b.dataset.board;saveSettings();markBoard();
     if(V3D){$('status').textContent='Ставим доску…';setTimeout(()=>{V3D.setBoard();hud();AU.place(.8);},30);}else AU.place(.8);if(V2D)V2D.relayout();});
-  $('setList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(S.stones===b.dataset.set)return;S.stones=b.dataset.set;saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);AU.place(.8);});
-  document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi'||k==='handicap')v=+v;
+  $('setList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(b.dataset.set==='custom'&&!customPics()[1]&&!customPics()[2])toast('Выберите картинки для чёрных и белых камней — кнопки ниже',3000);if(S.stones===b.dataset.set)return;S.stones=b.dataset.set;saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);AU.place(.8);});
+  document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi'||k==='handicap'||k==='pzTier')v=+v;
     if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();if(k==='musicStyle'){AU.init();AU.setVol();}if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
 }
 function markEnv(){document.querySelectorAll('.env').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.env===S.env)));}
@@ -2730,6 +3004,7 @@ function onKey(e){AU.init();if(zenOn){e.preventDefault();setZen(false);return;}
   if(e.key==='Escape'){if(!$('sMain').hidden){if(G.phase!=='idle')closeSheet('sMain');return;}
     for(const id of ['sSet','sInfo','sNews'])if(!$(id).hidden){closeBack(id);return;}
     if(!$('sHome').hidden){if(G.phase==='idle')openMain();else closeSheet('sHome');return;}
+    if(!$('sPuz').hidden){closeSheet('sPuz');openHome();return;}
     ['sConfirm','sResult'].forEach(closeSheet);if(G.phase==='replay'){rpClose();return;}if(G.phase==='idle')openMain();return;}
   if(anySheet()||e.target.tagName==='INPUT'||e.altKey||e.metaKey)return;
   if(G.phase==='replay'&&!e.ctrlKey){const d={ArrowLeft:-1,ArrowRight:1,Home:-1e4,End:1e4}[e.code];
@@ -2740,7 +3015,7 @@ function onKey(e){AU.init();if(zenOn){e.preventDefault();setZen(false);return;}
   if(e.repeat&&!/^(rot|zoom)/.test(a))return;e.preventDefault();doAction(a);}
 function openSettings(){backTo=fromSheet();markEnv();markSet();markBoard();syncSegs();
   $('tMute').checked=S.mute;$('tAtari').checked=S.atari;$('tUndo').checked=S.allowUndo;$('tBotResign').checked=S.botResign;$('tClockPause').checked=S.clockPause;showTab(setTab);
-  document.querySelectorAll('[data-set]').forEach(b=>{const [a,c]=swatch(b.dataset.set);const is=b.querySelectorAll('.pair i');is[0].style.backgroundImage=`url(${a})`;is[1].style.backgroundImage=`url(${c})`;});
+  refreshSwatches();renderCustom();
   $('vSfx').value=S.sfx;$('vAmb').value=S.amb;$('vMus').value=S.music;$('tQuick').checked=S.quick;$('tLast').checked=S.lastMark;$('tFlip').checked=S.flip;$('tCoords').checked=S.coords;hud();openSheet('sSet');}
 function setView(v){if(v==='3d'&&!V3D){toast('3D недоступно в этом браузере — открыта 2D-доска');v='2d';}
   S.view=v;saveSettings();const three=v==='3d';$('gl').hidden=!three;$('c2d').hidden=three;
@@ -2753,7 +3028,7 @@ function boot(){
   buildMenus();syncSegs();
   V2D=create2D();
   if(HAS3D){try{V3D=create3D();if(V3D)V3D.init();}catch(e){console.error(e);V3D=null;}}
-  makeSprites();
+  makeSprites();loadCustom();
   if(!V3D)S.view='2d';
   setView(S.view);AU.setEnv(S.env);hud();
   window.addEventListener('resize',()=>{if(V3D)V3D.resize();V2D.relayout();});
@@ -2805,7 +3080,9 @@ function boot(){
   $('bStart').onclick=()=>{closeSheet('sHome');newGame();};
   $('bContinue').onclick=()=>{const s=loadGame();closeSheet('sHome');if(s)resumeSaved(s);};
   $('mLearn').onclick=()=>{const ld=lessonsDone();startLesson(ld>=LESSONS.length?0:ld);};
-  $('mDaily').onclick=startDaily;
+  $('csFileB').onchange=e=>{setCustomPic(1,e.target.files[0]);e.target.value='';};$('csFileW').onchange=e=>{setCustomPic(2,e.target.files[0]);e.target.value='';};
+  $('csReset').onclick=()=>{try{localStorage.removeItem('jadego.stones');}catch(e){}if(S.stones==='custom'){S.stones='jade';saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);}loadCustom().then(renderCustom);toast('Картинки убраны',1600);};
+  $('mDaily').onclick=startDaily;$('mTrain').onclick=openPuz;$('pzGo').onclick=startTraining;$('pzBack').onclick=()=>{closeSheet('sPuz');openHome();};
   $('bResume').onclick=()=>{if(net()){netAct('resume');return;}resumePlay();};$('bConfirm').onclick=()=>{if(net()){netAct('agree',{ver:NET.st.deadVer});return;}const s=G.score,d=s.b.total-s.w.total;endGame({winner:d>0?1:2,margin:Math.abs(d),by:'score'});};
   $('vSfx').oninput=e=>{S.sfx=+e.target.value;AU.setVol();saveSettings();};$('vSfx').onchange=()=>AU.place(1);
   $('vAmb').oninput=e=>{S.amb=+e.target.value;AU.setVol();saveSettings();};
