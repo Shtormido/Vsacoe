@@ -226,6 +226,8 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
     <div class="field"><div class="label">Где играем</div><div class="envs" id="envList"></div></div>
     <div class="field"><div class="label">Камни</div><div class="sets" id="setList"></div></div>
     <div class="field"><div class="label">Доска</div><div class="sets" id="boardList"></div></div>
+    <div class="field"><div class="label">Сетка</div>
+      <div class="seg" data-key="grid"><button data-v="auto">Авто<small>магнитная — полоски, остальные — канавки</small></button><button data-v="grooves">Канавки<small>резная сетка</small></button><button data-v="lines">Полоски<small>нарисованные линии</small></button></div></div>
     <div class="field"><div class="label">Вид</div>
       <div class="seg" data-key="view"><button data-v="3d">3D-стол</button><button data-v="2d">2D-доска</button></div></div>
     <div class="field">
@@ -311,12 +313,14 @@ function woodCanvas(W,H,o){
 }
 const KAYA={base:[222,170,96],dark:[172,112,52],seed:7,rings:7,freq:.004,wobble:16,wfreq:.0015,grit:7};
 function hoshiPts(N){if(N<7)return [];const e=N<13?2:3,m=(N-1)/2;const p=[[e,e],[e,N-1-e],[N-1-e,e],[N-1-e,N-1-e]];if(N%2)p.push([m,m]);if(N>=19)p.push([e,m],[m,e],[N-1-e,m],[m,N-1-e]);return p;}
+/* grid style: 'auto' = printed lines on the magnetic board, carved grooves on every other board */
+function carved(st){return S.grid==='lines'?false:S.grid==='grooves'?true:!st.fold;}
 function paintCanvas(W,H,rgb){const c=mk(W,H),x=c.getContext('2d');x.fillStyle=`rgb(${rgb})`;x.fillRect(0,0,W,H);noiseFill(x,W,H,W*H/120,rgb[0]*.6,rgb[0]*1.3);return c;}
 function boardWood(st,W,H,o){return st.paint?paintCanvas(W,H,st.paint):woodCanvas(W,H,Object.assign({},KAYA,st.wood||{},o||{}));}
 /* ruled top of the board. mode: 'color', 'rough' (roughness map: satin wood, glossier lacquered lines) or 'bump' (carved grooves).
    Carved boards have the grid cut in as grooves, so each cell reads as a raised square; the magnetic board has a printed grid and a fold seam. */
 function boardTopCanvas(N,bw,bd,px,mode,st){
-  st=st||BOARDS.goban;const W=px,H=Math.round(px*bd/bw),s=W/bw,mx=(bw-(N-1)*SPX)/2,mz=(bd-(N-1)*SPZ)/2,cv=!!st.carved;let c;
+  st=st||BOARDS.goban;const W=px,H=Math.round(px*bd/bw),s=W/bw,mx=(bw-(N-1)*SPX)/2,mz=(bd-(N-1)*SPZ)/2,cv=carved(st);let c;
   if(mode==='color')c=boardWood(st,W,H);else{c=mk(W,H);const x=c.getContext('2d'),g=mode==='bump'?230:(st.rough||112);x.fillStyle=`rgb(${g},${g},${g})`;x.fillRect(0,0,W,H);if(mode==='rough')noiseFill(x,W,H,W*6,g-30,g+38);}
   const x=c.getContext('2d');x.lineCap='square';
   const grid=(w,col,dx,dy)=>{x.strokeStyle=col;for(let i=0;i<N;i++){const e=i===0||i===N-1;x.lineWidth=cv?w:e?Math.max(2,.15*s):Math.max(1.3,.085*s);
@@ -472,17 +476,17 @@ const ENVS={
    T/LG body and feet height (1 unit ≈ 1 cm), pad extra margin outside the grid, rim a raised frame, rough base roughness (0–255) */
 const BOARDS={
   goban:{name:'Гобан',note:'кайя, высота по обстановке'},
-  tray:{name:'Поднос с бортиком',note:'резная сетка, ножки',T:4.4,LG:2.6,pad:1.6,rim:{h:1,w:1.5},wood:{base:[186,112,56],dark:[128,70,32],rings:9,freq:.006},carved:true,rough:100,bowl:'wood',sound:'tray'},
-  walnut:{name:'Ореховая плита',note:'плоская, резная сетка',T:1.8,LG:0,pad:.5,wood:{base:[164,104,54],dark:[96,56,26],rings:8,freq:.007},carved:true,rough:105,bowl:'wood',sound:'table'},
-  red:{name:'Красная МДФ',note:'плоская, резная сетка',T:1.2,LG:0,pad:.5,paint:[132,28,32],carved:true,rough:135,bowl:0x7a1a1e,sound:'mdf'},
+  tray:{name:'Поднос с бортиком',note:'бортик, ножки',T:4.4,LG:2.6,pad:1.6,rim:{h:1,w:1.5},wood:{base:[186,112,56],dark:[128,70,32],rings:9,freq:.006},rough:100,bowl:'wood',sound:'tray'},
+  walnut:{name:'Ореховая плита',note:'плоская, орех',T:1.8,LG:0,pad:.5,wood:{base:[164,104,54],dark:[96,56,26],rings:8,freq:.007},rough:105,bowl:'wood',sound:'table'},
+  red:{name:'Красная МДФ',note:'плоская, крашеная',T:1.2,LG:0,pad:.5,paint:[132,28,32],rough:135,bowl:0x7a1a1e,sound:'mdf'},
   magnet:{name:'Магнитная',note:'складная, пластик',T:1.8,LG:0,pad:.9,rim:{h:.35,w:.9,col:0x1c1c1c},wood:{base:[232,200,164],dark:[214,178,140],rings:4,grit:4},ink:'rgba(20,16,12,.9)',fold:true,rough:70,frame:0x1c1c1c,bowl:0x1c1c1c,sound:'plastic'},
 };
 
 /* ---------- settings ---------- */
-const DEF={board:'goban',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,lastMark:true,quick:false,coords:true};
+const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,lastMark:true,quick:false,coords:true};
 let S=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem('jadego.settings')||'null');if(s)S=Object.assign(S,s);}catch(e){}
-if(!ENVS[S.env])S.env='garden';if(!BOARDS[S.board])S.board='goban';if(!SETS[S.stones])S.stones='jade';
+if(!ENVS[S.env])S.env='garden';if(!BOARDS[S.board])S.board='goban';if(!['auto','grooves','lines'].includes(S.grid))S.grid='auto';if(!SETS[S.stones])S.stones='jade';
 function saveSettings(){try{localStorage.setItem('jadego.settings',JSON.stringify(S));}catch(e){}}
 
 /* ---------- engine ---------- */
@@ -929,10 +933,10 @@ function create3D(){
     L.bowl[hb]=new V(bw/2-2,base,bd/2+13);L.bowl[ob]=new V(-(bw/2-2),base,-(bd/2+13));
     L.lid[hb]=new V(bw/2-2-15.5,base,bd/2+13);L.lid[ob]=new V(-(bw/2-2-15.5),base,-(bd/2+13));
     const bev=Math.min(.45,T*.06),px=isCoarse?1280:2048;
-    const topTex=new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px,'color',st)),roughTex=new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px>>1,'rough',st)),bumpTex=st.carved||st.fold?new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px>>1,'bump',st)):topTex;topTex.encoding=THREE.sRGBEncoding;
+    const topTex=new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px,'color',st)),roughTex=new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px>>1,'rough',st)),bumpTex=carved(st)||st.fold?new THREE.CanvasTexture(boardTopCanvas(N,bw,bd,px>>1,'bump',st)):topTex;topTex.encoding=THREE.sRGBEncoding;
     [topTex,roughTex,bumpTex].forEach(t=>{t.anisotropy=maxAniso;t.repeat.set((bw-2*bev)/bw,(bd-2*bev)/bd);t.offset.set(bev/bw,bev/bd);});
     const sideTex=ctex(boardWood(st,512,256,{vertical:false,seed:9,freq:.01}),1/bw,1/Math.max(T,4));
-    const topMat=new THREE.MeshStandardMaterial({map:topTex,roughnessMap:roughTex,roughness:1,bumpMap:bumpTex,bumpScale:st.carved?.05:st.fold?.01:.004});
+    const topMat=new THREE.MeshStandardMaterial({map:topTex,roughnessMap:roughTex,roughness:1,bumpMap:bumpTex,bumpScale:carved(st)?.05:st.fold?.01:.004});
     const lin=h=>new THREE.Color(h).convertSRGBToLinear();
     const sideMat=st.frame?std({color:lin(st.frame),roughness:.5}):new THREE.MeshStandardMaterial({map:sideTex,roughness:.55,bumpMap:sideTex,bumpScale:.008});
     const add=(geo,mat,x,y,z)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;boardGroup.add(m);return m;};
@@ -1441,6 +1445,7 @@ function create3D(){
     rebuild,resync,onCommit,placeHuman,placeBot,deco,frame,resize,
     setEnv(){rebuild(true);},
     setBoard(){rebuild(true);},
+    setGrid(){finishTweens();dropHand();buildBoard();rebuildStones();syncLids();terrKey='';markKey='';deco();},
     setStones(){finishTweens();dropHand();makeStoneMats();buildBoard();rebuildStones();syncLids();terrKey='';markKey='';deco();},
     setActive(v){active=v;if(v){lastT=performance.now();resize();}},
     handState(){return !hand.held?'empty':hand.preview>=0?'preview':'held';},
@@ -1463,8 +1468,8 @@ function create2D(){
     const o=m*cell,span=(N-1)*cell,ink=st.ink||'rgba(24,15,6,.85)';
     const grid=(w,col,d)=>{x.strokeStyle=col;for(let i=0;i<N;i++){x.lineWidth=w||((i===0||i===N-1)?Math.max(1.6,cell*.05):Math.max(1,cell*.03));x.beginPath();x.moveTo(o+i*cell+d,o+d);x.lineTo(o+i*cell+d,o+span+d);x.stroke();x.beginPath();x.moveTo(o+d,o+i*cell+d);x.lineTo(o+span+d,o+i*cell+d);x.stroke();}};
     /* carved boards: a dark groove with a lit lower edge; printed boards: a thin ink line */
-    if(st.carved){const gw=Math.max(2,cell*.1);grid(gw,'rgba(20,8,2,.55)',0);grid(Math.max(1,gw*.25),'rgba(255,225,190,.25)',gw*.45);}else grid(0,ink,0);
-    x.fillStyle=st.carved?'rgba(10,4,0,.85)':ink;hoshiPts(N).forEach(([i,j])=>{x.beginPath();x.arc(o+i*cell,o+j*cell,Math.max(2,cell*(st.carved?.08:.1)),0,7);x.fill();});
+    const gv=carved(st);if(gv){const gw=Math.max(2,cell*.1);grid(gw,'rgba(20,8,2,.55)',0);grid(Math.max(1,gw*.25),'rgba(255,225,190,.25)',gw*.45);}else grid(0,ink,0);
+    x.fillStyle=gv?'rgba(10,4,0,.85)':ink;hoshiPts(N).forEach(([i,j])=>{x.beginPath();x.arc(o+i*cell,o+j*cell,Math.max(2,cell*(gv?.08:.1)),0,7);x.fill();});
     if(st.fold){x.fillStyle='rgba(25,20,16,.85)';x.fillRect(0,o+((N-1)/2+.5)*cell-1,size,2);}
     if(st.rim){x.strokeStyle=st.rim.col?'#1c1c1c':'rgba(90,45,15,.9)';x.lineWidth=Math.max(3,cell*.18);x.strokeRect(x.lineWidth/2,x.lineWidth/2,size-x.lineWidth,size-x.lineWidth);}
     if(S.coords){x.fillStyle=st.paint?'rgba(255,220,210,.75)':'rgba(60,38,14,.8)';x.font=`500 ${Math.max(9,cell*.34)}px "Golos Text",system-ui,sans-serif`;x.textAlign='center';x.textBaseline='middle';
@@ -1836,7 +1841,7 @@ function buildMenus(){
     if(V3D){$('status').textContent='Ставим доску…';setTimeout(()=>{V3D.setBoard();hud();AU.place(.8);},30);}else AU.place(.8);if(V2D)V2D.relayout();});
   $('setList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(S.stones===b.dataset.set)return;S.stones=b.dataset.set;saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);AU.place(.8);});
   document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi')v=+v;
-    if(k==='view'){setView(v);}else{S[k]=v;saveSettings();}syncSegs();}));
+    if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
 }
 function markEnv(){document.querySelectorAll('.env').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.env===S.env)));}
 function markBoard(){document.querySelectorAll('[data-board]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.board===S.board)));}
