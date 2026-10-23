@@ -486,6 +486,32 @@ def live(limit=50):
     return out[:limit]
 
 
+def admin_rooms():
+    """Every room, for the admin: who sits where and whether they are connected (never the moves of a hidden game)."""
+    with LOCK:
+        out = [{'code': r.code, 'n': r.n, 'phase': r.phase, 'names': {c: (s['name'] if s else None) for c, s in r.seats.items()},
+                'guest': {c: bool(s and not s['uid']) for c, s in r.seats.items()}, 'online': {c: r.online(c) for c in (1, 2)},
+                'moves': len(r.moves), 'public': r.public(), 'watchers': r.watchers(), 'touched': int(r.touched * 1000)}
+               for r in ROOMS.values()]
+        return sorted(out, key=lambda x: -x['touched'])
+
+
+def counts():
+    with LOCK:
+        return {'rooms': len(ROOMS), 'playing': sum(1 for r in ROOMS.values() if r.phase in ('play', 'scoring')),
+                'players': sum(1 for r in ROOMS.values() for _, c in r.subs if c), 'watchers': sum(r.watchers() for r in ROOMS.values())}
+
+
+def close_room(code):
+    """The admin closes a room: players are sent back to the menu, nothing is recorded."""
+    with LOCK:
+        r = _room(code)
+        r.kick_watchers()
+        del ROOMS[r.code]
+        r.phase = 'closed'
+        r.broadcast()
+
+
 def set_hidden(uid, hide):
     """An account switched "hide my games": its seats follow at once, spectators leave hidden games."""
     with LOCK:

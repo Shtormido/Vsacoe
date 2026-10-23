@@ -14,6 +14,11 @@ Admin commands (Kali/Linux service: run as the service user against its data fol
     python3 server/accounts.py invite [--uses N]            # code for --signup invite
     python3 server/accounts.py invites
     python3 server/accounts.py guests on|off                # may people play online without an account
+    python3 server/accounts.py signup open|invite|closed    # who may create an account
+    python3 server/accounts.py block LOGIN | unblock LOGIN
+    python3 server/accounts.py rating LOGIN 1650             # set a rating by hand
+    python3 server/accounts.py recompute                    # replay every rated game to rebuild the ratings
+Most of this is also in the browser: Account → Server management (admins only).
     sudo -u jadego python3 /opt/jade-go/server/accounts.py --data /var/lib/jade-go list
 """
 import argparse
@@ -33,6 +38,7 @@ DEFAULT_DATA = os.environ.get('JADEGO_DATA') or os.path.normpath(os.path.join(HE
 ITER = 240_000
 SESSION_DAYS = 30
 LOGIN_RE = re.compile(r'^[A-Za-z0-9_.-]{3,20}$')
+SIGNUP_MODES = ('open', 'invite', 'closed')
 LOGIN_RULE = 'Логин: 3–20 латинских букв, цифр, точек, дефисов или подчёркиваний'
 
 SCHEMA = '''
@@ -47,11 +53,13 @@ CREATE TABLE IF NOT EXISTS games(
   winner INTEGER, by TEXT, margin REAL, moves TEXT, black_delta REAL, white_delta REAL, ended INTEGER);
 CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY, uses INTEGER NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, t INTEGER NOT NULL, admin INTEGER, admin_login TEXT, action TEXT NOT NULL, detail TEXT);
 CREATE INDEX IF NOT EXISTS games_black ON games(black);
 CREATE INDEX IF NOT EXISTS games_white ON games(white);
 '''
 # columns added after the first release: (table, column, definition)
 MIGRATIONS = (('users', 'hide_games', 'INTEGER NOT NULL DEFAULT 0'),     # keep all my games from spectators and the archive
+              ('users', 'blocked', 'INTEGER NOT NULL DEFAULT 0'),        # set by an admin: no sign-in
               ('games', 'public', 'INTEGER NOT NULL DEFAULT 0'),         # both players allowed others to watch
               ('games', 'started', 'INTEGER'),
               ('games', 'clock', 'INTEGER'))
@@ -98,10 +106,10 @@ def elo(ra, rb, score_a, games_a, games_b):
 
 
 class Accounts:
-    def __init__(self, data_dir=DEFAULT_DATA, signup='open'):
+    def __init__(self, data_dir=DEFAULT_DATA, signup=None):
         os.makedirs(data_dir, exist_ok=True)
         self.path = os.path.join(data_dir, 'jadego.db')
-        self.signup = signup if signup in ('open', 'invite', 'closed') else 'open'
+        self.started = time.time()
         self.db = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.Lock()
@@ -114,6 +122,8 @@ class Accounts:
                     self.db.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table, col, sql))
             self.db.execute('CREATE INDEX IF NOT EXISTS games_public ON games(public, ended)')
         self.attempts = {}       # key -> [times] for login throttling
+        if signup in SIGNUP_MODES:  # given at start (--signup): stored, so the admin can still change it later
+            self.set_setting('signup', signup)
 
     def q(self, sql, args=(), one=False):
         with self.lock:
@@ -134,6 +144,12 @@ class Accounts:
 
     def set_setting(self, key, value):
         self.q('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', (key, str(value)))
+
+    @property
+    def signup(self):
+        """open — anyone may sign up, invite — with an invitation code, closed — only the admin creates accounts"""
+        v = self.setting('signup', 'open')
+        return v if v in SIGNUP_MODES else 'open'
 
     @property
     def guests(self):
@@ -184,6 +200,8 @@ class Accounts:
             for key in ('ip:' + ip, 'login:' + login.lower()):
                 self.attempts.setdefault(key, []).append(time.time())
             raise AuthError('Неверный логин или пароль', 401)
+        if u['blocked']:
+            raise AuthError('Аккаунт заблокирован администратором сервера', 403)
         self.attempts.pop('login:' + login.lower(), None)
         return u
 
@@ -238,13 +256,14 @@ class Accounts:
         self.q('INSERT INTO sessions(hash,uid,created,expires) VALUES(?,?,?,?)',
                (hashlib.sha256(token.encode()).hexdigest(), uid, now, now + SESSION_DAYS * 86400))
         self.q('DELETE FROM sessions WHERE expires<?', (now,))
+        self.q('UPDATE users SET seen=? WHERE id=?', (now, uid))
         return token
 
     def user_by_session(self, token):
         if not token:
             return None
         h = hashlib.sha256(token.encode()).hexdigest()
-        u = self.q('SELECT u.* FROM sessions s JOIN users u ON u.id=s.uid WHERE s.hash=? AND s.expires>?', (h, int(time.time())), one=True)
+        u = self.q('SELECT u.* FROM sessions s JOIN users u ON u.id=s.uid WHERE s.hash=? AND s.expires>? AND u.blocked=0', (h, int(time.time())), one=True)
         if u:
             self.q('UPDATE users SET seen=? WHERE id=?', (int(time.time()), u['id']))
         return u
@@ -306,7 +325,7 @@ class Accounts:
         return self._card(g, moves=True)
 
     def leaderboard(self, limit=20):
-        rows = self.q('SELECT * FROM users WHERE games>0 ORDER BY rating DESC LIMIT ?', (limit,))
+        rows = self.q('SELECT * FROM users WHERE games>0 AND blocked=0 ORDER BY rating DESC LIMIT ?', (limit,))
         return [{'name': r['name'], 'rating': round(r['rating']), 'games': r['games'], 'wins': r['wins']} for r in rows]
 
     # ---------- invites ----------
@@ -314,6 +333,156 @@ class Accounts:
         code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
         self.q('INSERT INTO invites(code,uses,created) VALUES(?,?,?)', (code, max(1, int(uses)), int(time.time())))
         return code
+
+
+    # ---------- administration ----------
+    def log(self, admin, action, detail=''):
+        """The admin journal: who did what and when (admin is a users row, or None for the command line)."""
+        self.q('INSERT INTO audit(t,admin,admin_login,action,detail) VALUES(?,?,?,?,?)',
+               (int(time.time()), admin['id'] if admin else None, admin['login'] if admin else 'консоль', action, str(detail)[:300]))
+        self.q('DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT 2000)')
+
+    def journal(self, limit=60):
+        return [{'t': r['t'] * 1000, 'who': r['admin_login'], 'action': r['action'], 'detail': r['detail']}
+                for r in self.q('SELECT * FROM audit ORDER BY id DESC LIMIT ?', (limit,))]
+
+    @staticmethod
+    def row(u):
+        return {'id': u['id'], 'login': u['login'], 'name': u['name'], 'role': u['role'], 'rating': round(u['rating']),
+                'games': u['games'], 'wins': u['wins'], 'created': u['created'] * 1000, 'seen': (u['seen'] or 0) * 1000,
+                'blocked': bool(u['blocked']), 'hide': bool(u['hide_games'])}
+
+    def users(self, query='', offset=0, limit=50):
+        like = '%' + str(query or '').strip() + '%'
+        rows = self.q('SELECT * FROM users WHERE login LIKE ? OR name LIKE ? ORDER BY COALESCE(seen,created) DESC LIMIT ? OFFSET ?',
+                      (like, like, limit, max(0, int(offset or 0))))
+        total = self.q('SELECT COUNT(*) AS n FROM users WHERE login LIKE ? OR name LIKE ?', (like, like), one=True)['n']
+        return {'users': [self.row(u) for u in rows], 'total': total}
+
+    def user(self, uid):
+        u = self.q('SELECT * FROM users WHERE id=?', (uid,), one=True)
+        if not u:
+            raise AuthError('Нет такого игрока', 404)
+        return u
+
+    def admins(self):
+        return self.q('SELECT COUNT(*) AS n FROM users WHERE role=\'admin\' AND blocked=0', one=True)['n']
+
+    def admin_user(self, admin, uid, action, d):
+        """One change to one account. Returns the updated row (None once deleted)."""
+        u = self.user(uid)
+        me = admin and admin['id'] == u['id']
+        last = u['role'] == 'admin' and self.admins() <= 1
+        if action == 'login':
+            old_login = u['login']
+            u = self.rename(u, d.get('login'))
+            self.log(admin, 'логин', '%s → %s' % (old_login, u['login']))
+        elif action == 'name':
+            name = clean_name(d.get('name'))
+            if not name:
+                raise AuthError('Имя не может быть пустым')
+            self.q('UPDATE users SET name=? WHERE id=?', (name, uid))
+            self.log(admin, 'имя', '%s: «%s»' % (u['login'], name))
+        elif action == 'password':
+            check_new_password(d.get('password'))
+            self.q('UPDATE users SET pw=? WHERE id=?', (hash_password(d['password']), uid))
+            self.q('DELETE FROM sessions WHERE uid=?', (uid,))
+            self.log(admin, 'пароль', '%s: новый пароль, все входы завершены' % u['login'])
+        elif action == 'rating':
+            try:
+                rating = float(d.get('rating'))
+                games = int(d.get('games', u['games']))
+                wins = int(d.get('wins', u['wins']))
+            except (TypeError, ValueError):
+                raise AuthError('Рейтинг, партии и победы — числа')
+            if not 0 <= rating <= 5000 or games < 0 or not 0 <= wins <= games:
+                raise AuthError('Рейтинг от 0 до 5000, побед не больше, чем партий')
+            self.q('UPDATE users SET rating=?, games=?, wins=? WHERE id=?', (rating, games, wins, uid))
+            self.log(admin, 'рейтинг', '%s: %d → %d, партий %d, побед %d' % (u['login'], round(u['rating']), round(rating), games, wins))
+        elif action == 'role':
+            role = 'admin' if d.get('role') == 'admin' else 'user'
+            if role == 'user' and last:
+                raise AuthError('Это последний администратор — сначала назначьте другого')
+            self.q('UPDATE users SET role=? WHERE id=?', (role, uid))
+            self.log(admin, 'права', '%s: %s' % (u['login'], 'администратор' if role == 'admin' else 'обычный игрок'))
+        elif action == 'block':
+            on = d.get('on') is True
+            if on and (me or last):
+                raise AuthError('Нельзя заблокировать себя или последнего администратора')
+            self.q('UPDATE users SET blocked=? WHERE id=?', (1 if on else 0, uid))
+            if on:
+                self.q('DELETE FROM sessions WHERE uid=?', (uid,))
+            self.log(admin, 'блокировка' if on else 'разблокировка', u['login'])
+        elif action == 'logout':
+            self.q('DELETE FROM sessions WHERE uid=?', (uid,))
+            self.log(admin, 'выход везде', u['login'])
+        elif action == 'clear_games':
+            n = self.q('SELECT COUNT(*) AS n FROM games WHERE black=? OR white=?', (uid, uid), one=True)['n']
+            self.q('DELETE FROM games WHERE black=? OR white=?', (uid, uid))
+            self.log(admin, 'история игрока', '%s: удалено партий %d' % (u['login'], n))
+        elif action == 'delete':
+            if me or last:
+                raise AuthError('Нельзя удалить себя или последнего администратора')
+            self.q('DELETE FROM users WHERE id=?', (uid,))
+            self.log(admin, 'удаление аккаунта', '%s (#%d)' % (u['login'], uid))
+            return None
+        else:
+            raise AuthError('Неизвестное действие')
+        return self.row(self.user(uid))
+
+    def games_admin(self, query='', offset=0, limit=50):
+        like = '%' + str(query or '').strip() + '%'
+        rows = self.q('SELECT * FROM games WHERE black_name LIKE ? OR white_name LIKE ? OR room LIKE ? ORDER BY ended DESC LIMIT ? OFFSET ?',
+                      (like, like, like, limit, max(0, int(offset or 0))))
+        total = self.q('SELECT COUNT(*) AS n FROM games WHERE black_name LIKE ? OR white_name LIKE ? OR room LIKE ?', (like, like, like), one=True)['n']
+        out = []
+        for g in rows:
+            c = self._card(g)
+            c.update({'public': bool(g['public']), 'rated': bool(g['black_delta'] or g['white_delta']), 'room': g['room']})
+            out.append(c)
+        return {'games': out, 'total': total}
+
+    def delete_games(self, admin, ids=None, everything=False):
+        if everything:
+            n = self.q('SELECT COUNT(*) AS n FROM games', one=True)['n']
+            self.q('DELETE FROM games')
+            self.log(admin, 'вся история', 'удалено партий %d' % n)
+            return n
+        ids = [int(i) for i in (ids or []) if str(i).isdigit()][:500]
+        if not ids:
+            return 0
+        self.q('DELETE FROM games WHERE id IN (%s)' % ','.join('?' * len(ids)), ids)
+        self.log(admin, 'удаление партий', '№ ' + ', '.join(map(str, ids[:30])) + ('…' if len(ids) > 30 else ''))
+        return len(ids)
+
+    def recompute(self, admin=None):
+        """Rebuilds every rating from scratch by replaying the rated games that are still in the history."""
+        with self.lock:
+            self.db.execute('UPDATE users SET rating=1500, games=0, wins=0')
+            n = 0
+            for g in self.db.execute('SELECT id,black,white,winner FROM games ORDER BY ended, id').fetchall():
+                b = self.db.execute('SELECT * FROM users WHERE id=?', (g['black'],)).fetchone() if g['black'] else None
+                w = self.db.execute('SELECT * FROM users WHERE id=?', (g['white'],)).fetchone() if g['white'] else None
+                db_ = dw = 0.0
+                if b and w and b['id'] != w['id']:
+                    db_, dw = elo(b['rating'], w['rating'], 1.0 if g['winner'] == 1 else 0.0, b['games'], w['games'])
+                    for u, dl, won in ((b, db_, g['winner'] == 1), (w, dw, g['winner'] == 2)):
+                        self.db.execute('UPDATE users SET rating=rating+?, games=games+1, wins=wins+? WHERE id=?', (dl, 1 if won else 0, u['id']))
+                    n += 1
+                self.db.execute('UPDATE games SET black_delta=?, white_delta=? WHERE id=?', (db_, dw, g['id']))
+        self.log(admin, 'пересчёт рейтинга', 'по %d рейтинговым партиям' % n)
+        return n
+
+    def invites(self):
+        return [{'code': r['code'], 'uses': r['uses'], 'created': r['created'] * 1000} for r in self.q('SELECT * FROM invites WHERE uses>0 ORDER BY created DESC')]
+
+    def stats(self):
+        one = lambda sql: self.q(sql, one=True)['n']
+        size = sum(os.path.getsize(self.path + x) for x in ('', '-wal', '-shm') if os.path.exists(self.path + x))
+        return {'users': one('SELECT COUNT(*) AS n FROM users'), 'admins': one("SELECT COUNT(*) AS n FROM users WHERE role='admin'"),
+                'blocked': one('SELECT COUNT(*) AS n FROM users WHERE blocked=1'), 'active': one('SELECT COUNT(*) AS n FROM users WHERE seen>%d' % (time.time() - 7 * 86400)),
+                'games': one('SELECT COUNT(*) AS n FROM games'), 'public': one('SELECT COUNT(*) AS n FROM games WHERE public=1'),
+                'today': one('SELECT COUNT(*) AS n FROM games WHERE ended>%d' % (time.time() - 86400)), 'db': size, 'uptime': int(time.time() - self.started)}
 
 
 # ---------- admin command line ----------
@@ -349,6 +518,13 @@ def main():
     i.add_argument('--uses', type=int, default=1)
     sub.add_parser('invites')
     sub.add_parser('guests', help='игра по сети без аккаунта').add_argument('state', nargs='?', choices=('on', 'off'))
+    sub.add_parser('signup', help='кто может зарегистрироваться').add_argument('mode', nargs='?', choices=SIGNUP_MODES)
+    for c in ('block', 'unblock'):
+        sub.add_parser(c).add_argument('login')
+    rt = sub.add_parser('rating', help='задать рейтинг вручную')
+    rt.add_argument('login')
+    rt.add_argument('value', type=float)
+    sub.add_parser('recompute', help='пересчитать рейтинг по истории партий')
     args = ap.parse_args()
     acc = Accounts(args.data)
 
@@ -390,6 +566,21 @@ def main():
         elif args.cmd == 'invites':
             for r in acc.q('SELECT * FROM invites WHERE uses>0 ORDER BY created DESC'):
                 print('%s  осталось %d' % (r['code'], r['uses']))
+        elif args.cmd == 'signup':
+            if args.mode:
+                acc.set_setting('signup', args.mode)
+                acc.log(None, 'регистрация', args.mode)
+            print('Регистрация: %s.' % {'open': 'открыта для всех', 'invite': 'по кодам приглашения', 'closed': 'закрыта, аккаунты создаёт администратор'}[acc.signup])
+        elif args.cmd in ('block', 'unblock'):
+            u = find(args.login)
+            acc.admin_user(None, u['id'], 'block', {'on': args.cmd == 'block'})
+            print('%s %s.' % (u['login'], 'заблокирован, все его входы завершены' if args.cmd == 'block' else 'разблокирован'))
+        elif args.cmd == 'rating':
+            u = find(args.login)
+            acc.admin_user(None, u['id'], 'rating', {'rating': args.value})
+            print('Рейтинг %s теперь %d.' % (u['login'], round(args.value)))
+        elif args.cmd == 'recompute':
+            print('Рейтинг пересчитан по %d рейтинговым партиям.' % acc.recompute())
         elif args.cmd == 'guests':
             if args.state:
                 acc.set_setting('guests', args.state)

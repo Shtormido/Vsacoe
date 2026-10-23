@@ -25,6 +25,7 @@ import os
 import queue
 import re
 import socket
+import urllib.parse
 import sqlite3
 import sys
 import threading
@@ -114,7 +115,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _auth(self, method, route, body):
         u = self._user()
         if route == '/api/auth/me':
-            return self._json(200, {'user': ACC.public(u), 'signup': ACC.signup, 'private': PRIVATE, 'guests': self._guests()})
+            return self._json(200, {'user': ACC.public(u), 'signup': ACC.signup, 'private': PRIVATE, 'guests': self._guests(), 'motd': ACC.setting('motd', '')})
         if method != 'POST':
             raise netgo.ApiError('Не найдено', 404)
         if route in ('/api/auth/login', '/api/auth/register'):
@@ -151,6 +152,74 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json(200, {'guests': self._guests()})
         except accounts.AuthError as e:
             raise netgo.ApiError(str(e), e.code)
+        raise netgo.ApiError('Не найдено', 404)
+
+    # ---------- server management (admins only) ----------
+    def _admin(self, method, route, body):
+        me = self._user()
+        if not me:
+            raise netgo.ApiError('Нужно войти в аккаунт', 401)
+        if me['role'] != 'admin':
+            raise netgo.ApiError('Это может только администратор сервера', 403)
+        qs = urllib.parse.parse_qs(self.path.partition('?')[2])
+        arg = lambda k, d='': (qs.get(k) or [d])[0]
+        what = route[len('/api/admin/'):]
+        try:
+            if method == 'GET':
+                if what == 'overview':
+                    st = ACC.stats()
+                    st.update(netgo.counts())
+                    return self._json(200, {'stats': st, 'journal': ACC.journal(),
+                                            'settings': {'guests': ACC.guests, 'signup': ACC.signup, 'motd': ACC.setting('motd', ''), 'private': PRIVATE}})
+                if what == 'users':
+                    return self._json(200, ACC.users(arg('q'), arg('offset', '0')))
+                if what == 'games':
+                    return self._json(200, ACC.games_admin(arg('q'), arg('offset', '0')))
+                if what == 'invites':
+                    return self._json(200, {'invites': ACC.invites()})
+                if what == 'rooms':
+                    return self._json(200, {'rooms': netgo.admin_rooms()})
+                raise netgo.ApiError('Не найдено', 404)
+            if what == 'user':
+                uid, action = int(body.get('id') or 0), body.get('action')
+                row = ACC.admin_user(me, uid, action, body)
+                headers = None
+                if uid == me['id'] and action in ('password', 'logout'):     # changing your own password must not sign you out here
+                    headers = {'Set-Cookie': self._cookie(ACC.new_session(me['id']), accounts.SESSION_DAYS * 86400)}
+                return self._json(200, {'user': row}, headers=headers)
+            if what == 'games':
+                a = body.get('action')
+                if a == 'recompute':
+                    return self._json(200, {'rated': ACC.recompute(me)})
+                return self._json(200, {'deleted': ACC.delete_games(me, body.get('ids'), everything=a == 'clear_all')})
+            if what == 'invites':
+                if body.get('action') == 'delete':
+                    ACC.q('DELETE FROM invites WHERE code=?', (str(body.get('code') or ''),))
+                    ACC.log(me, 'приглашение удалено', body.get('code'))
+                else:
+                    code = ACC.make_invite(max(1, min(1000, int(body.get('uses') or 1))))
+                    ACC.log(me, 'приглашение', '%s на %s' % (code, body.get('uses') or 1))
+                return self._json(200, {'invites': ACC.invites()})
+            if what == 'rooms':
+                netgo.close_room(body.get('code'))
+                ACC.log(me, 'комната закрыта', body.get('code'))
+                return self._json(200, {'rooms': netgo.admin_rooms()})
+            if what == 'settings':
+                if isinstance(body.get('guests'), bool):
+                    ACC.set_setting('guests', 'on' if body['guests'] else 'off')
+                    ACC.log(me, 'гости', 'разрешены' if body['guests'] else 'запрещены')
+                if body.get('signup') in accounts.SIGNUP_MODES:
+                    ACC.set_setting('signup', body['signup'])
+                    ACC.log(me, 'регистрация', body['signup'])
+                if isinstance(body.get('motd'), str):
+                    motd = re.sub(r'[\x00-\x1f\x7f]', ' ', body['motd']).strip()[:300]
+                    ACC.set_setting('motd', motd)
+                    ACC.log(me, 'объявление', motd or '(убрано)')
+                return self._json(200, {'settings': {'guests': ACC.guests, 'signup': ACC.signup, 'motd': ACC.setting('motd', ''), 'private': PRIVATE}})
+        except accounts.AuthError as e:
+            raise netgo.ApiError(str(e), e.code)
+        except (TypeError, ValueError):
+            raise netgo.ApiError('Неверные данные')
         raise netgo.ApiError('Не найдено', 404)
 
     def do_GET(self):
@@ -195,6 +264,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json(200, {'ok': True, 'online': True, 'accounts': True})
             if route.startswith('/api/auth/'):
                 return self._auth(method, route, body)
+            if route.startswith('/api/admin/'):
+                return self._admin(method, route, body)
             if route == '/api/leaderboard' and method == 'GET':
                 return self._json(200, {'top': ACC.leaderboard()})
             if route == '/api/me/games' and method == 'GET':
@@ -369,8 +440,8 @@ def main():
     ap.add_argument('--port', type=int, default=int(os.environ.get('JADEGO_PORT', '8080')), help='порт (по умолчанию 8080)')
     ap.add_argument('--dir', default=os.environ.get('JADEGO_DIR', DEFAULT_SITE), help='папка с игрой (по умолчанию ../site)')
     ap.add_argument('--data', default=accounts.DEFAULT_DATA, help='папка для базы аккаунтов (по умолчанию ../data или $JADEGO_DATA)')
-    ap.add_argument('--signup', choices=('open', 'invite', 'closed'), default=os.environ.get('JADEGO_SIGNUP', 'open'),
-                    help='регистрация: open — для всех, invite — по приглашениям, closed — только админ')
+    ap.add_argument('--signup', choices=('open', 'invite', 'closed'), default=os.environ.get('JADEGO_SIGNUP') or None,
+                    help='регистрация: open — для всех, invite — по приглашениям, closed — только админ (запоминается в базе; потом меняется в панели)')
     ap.add_argument('--guests', choices=('on', 'off'), default=os.environ.get('JADEGO_GUESTS') or None,
                     help='игра по сети без аккаунта: on — можно, off — только с аккаунтом (запоминается в базе)')
     ap.add_argument('--private', action='store_true', default=os.environ.get('JADEGO_PRIVATE', '') in ('1', 'yes', 'true'),

@@ -90,6 +90,18 @@ body.tut #status{top:calc(12px + env(safe-area-inset-top,0px))}
 .mode span{display:block;font-size:12.5px;color:var(--kinari-dim);margin-top:4px;line-height:1.35}
 .mode .tag{position:absolute;top:10px;right:10px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:var(--shu);color:#fff;padding:3px 7px;border-radius:999px}
 .mode.wide{grid-column:1/-1}
+.card.wide{max-width:760px}
+.motd{margin:10px 0 2px;padding:10px 12px;border-radius:12px;background:rgba(134,207,174,.12);border:1px solid rgba(134,207,174,.35);font-size:13.5px;line-height:1.4;white-space:pre-wrap}
+.urow{display:flex;align-items:center;gap:10px;padding:10px 4px;border-top:1px solid var(--hair);cursor:pointer;border-radius:8px}.urow:hover{background:rgba(236,228,212,.04)}
+.urow .ui{flex:1;min-width:0}.urow b{font-weight:600}.urow small{color:var(--kinari-dim);font-size:12.5px}.urow span{display:block;font-size:12px;color:var(--kinari-dim);margin-top:2px}
+.flag{flex:none;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:999px;background:rgba(134,207,174,.2);color:var(--jade)}.flag.red{background:rgba(224,106,79,.2);color:#f2a28e}
+.ued{margin:0 0 10px;padding:12px;border:1px solid rgba(134,207,174,.35);border-radius:14px;background:rgba(134,207,174,.05)}
+.ued .ef{margin-top:8px}.ued .ef:first-child{margin-top:0}.ued .ef>label{display:block;font-size:12px;color:var(--kinari-dim);margin-bottom:4px}.ued .joinrow{margin-top:0}.ued .joinrow .inp{min-width:0}
+.ued .btnrow .btn{flex:1 1 150px;padding:9px 10px;font-size:13px}
+.grow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--hair)}.grow input{flex:none;width:18px;height:18px;accent-color:var(--jade)}.grow .gi{flex:1;min-width:0}
+.grow b{font-weight:600;font-size:13.5px}.grow span{display:block;font-size:12px;color:var(--kinari-dim);margin-top:2px}
+.jrnl div{padding:7px 0;border-top:1px solid var(--hair);font-size:13px;line-height:1.35}.jrnl small{color:var(--kinari-dim)}
+textarea.inp{resize:vertical;min-height:56px;font-weight:400;line-height:1.4}
 .quiz{display:flex;flex-direction:column;gap:6px;margin-top:10px}.quiz .btn{text-align:left;padding:10px 12px;font-size:13.5px;font-weight:500}
 .quiz .btn.ok{background:var(--jade);color:var(--jade-ink);border-color:var(--jade)}.quiz .btn.bad{border-color:var(--shu);color:#f2a28e}.quiz .btn:disabled{cursor:default}.quiz .btn.ok:disabled{opacity:1}
 .lsns{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin-top:8px}
@@ -310,6 +322,7 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
   <div class="card main" role="dialog" aria-modal="true" aria-labelledby="hMain">
     <div class="kicker">碁 · древняя игра окружения</div>
     <h2 id="hMain" class="title">Нефритовое Го</h2>
+    <p class="motd" id="mmMotd" hidden></p>
     <p>Настоящий стол, живой стук камней и соперник, который подстроится под вас.</p>
     <div class="menu">
       <button class="mi primary" id="mmContinue" hidden><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg><div class="mt"><b>Продолжить партию</b><span id="mmContSub"></span></div></button>
@@ -317,6 +330,7 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
       <button class="mi" id="mmNet"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/><path d="M12 4v3M12 17v3" opacity=".5"/></svg><div class="mt"><b>Игра по сети</b><span id="mmNetSub">партия с другом на другом устройстве — по коду или ссылке</span></div></button>
       <button class="mi" id="mmZen"><svg viewBox="0 0 24 24"><path d="M3 15c3-5 6-5 9 0s6 5 9 0"/><path d="M3 9c3-3 6-3 9 0s6 3 9 0" opacity=".55"/></svg><div class="mt"><b>Созерцание</b><span>просто побыть здесь: камера медленно облетает место под музыку</span></div></button>
       <button class="mi" id="mmAcc" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/></svg><div class="mt"><b>Аккаунт</b><span id="mmAccSub">войти или зарегистрироваться</span></div></button>
+      <button class="mi" id="mmAdmin" hidden><svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.6"/></svg><div class="mt"><b>Управление сервером</b><span>игроки, рейтинг, история, приглашения</span></div></button>
       <button class="mi" id="mmSet"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><div class="mt"><b>Настройки</b><span>место, доска, камни, правила партии, клавиши</span></div></button>
       <button class="mi" id="mmInfo"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><div class="mt"><b>Сведения</b><span>правила, история го, статистика и история партий</span></div></button>
       <button class="mi" id="mmNews"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.4 5.6.6-4.2 3.9 1.2 5.6L12 15.7 7 18.5l1.2-5.6L4 9l5.6-.6z"/></svg><div class="mt"><b>Что нового</b><span id="mmNewsSub"></span></div><i class="tag" id="mmNewsTag" hidden>Новое</i></button>
@@ -362,6 +376,7 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
       <h3>Приватность</h3>
       <div class="row"><label for="aHide">Скрывать все мои партии<small>Их не будет в списке «Идут сейчас» и в архиве сервера, зрители не смогут войти — ни в новые партии, ни в уже сыгранные. Вам ваша история видна всегда.</small></label><input type="checkbox" class="sw-t" id="aHide"></div>
       <div id="aAdmin" hidden><h3>Сервер</h3>
+        <button class="btn primary" id="aAdminOpen" style="width:100%;margin-top:6px">Управление сервером</button>
         <div class="row"><label for="aGuests">Гости могут играть по сети<small id="aGuestsNote">Без аккаунта, под любым именем. Их партии не влияют на рейтинг.</small></label><input type="checkbox" class="sw-t" id="aGuests"></div></div>
       <h3>Лучшие игроки сервера</h3><div id="accTop"></div>
       <h3>Сменить логин</h3>
@@ -456,6 +471,44 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
       <div class="seg" data-key="clock"><button data-v="off">Без часов</button><button data-v="5">5 мин<small>+ 3 × 30 с</small></button><button data-v="10">10 мин<small>+ 3 × 30 с</small></button><button data-v="20">20 мин<small>+ 3 × 30 с</small></button></div></div>
     <button class="btn primary" id="bStart" style="width:100%;margin-top:18px">Начать партию</button>
     <div class="btnrow"><button class="btn" id="hmSet">Настройки</button><button class="btn" id="hmInfo">Правила, история, статистика</button></div>
+  </div>
+</div>
+
+<!-- Server management (admins) -->
+<div class="sheet" id="sAdmin" hidden>
+  <div class="card wide" role="dialog" aria-modal="true" aria-labelledby="hAdmin">
+    <button class="back" id="admBack">← Назад</button>
+    <div class="kicker">Администратор</div>
+    <h2 id="hAdmin">Управление сервером</h2>
+    <div class="tabs" role="tablist"><button role="tab" data-adm="overview">Обзор</button><button role="tab" data-adm="users">Игроки</button><button role="tab" data-adm="games">Партии</button><button role="tab" data-adm="server">Сервер</button></div>
+    <div data-admp="overview">
+      <div class="stats" id="admStats"></div>
+      <h3>Журнал администраторов</h3><div class="jrnl" id="admJournal"></div>
+    </div>
+    <div data-admp="users" hidden>
+      <div class="joinrow"><input class="inp" id="admQ" placeholder="Поиск по логину или имени" autocomplete="off" spellcheck="false"><button class="btn" id="admQGo">Найти</button></div>
+      <p class="note" id="admUCount"></p><div id="admUsers"></div>
+      <button class="btn" id="admUMore" style="width:100%;margin-top:8px" hidden>Показать ещё</button>
+    </div>
+    <div data-admp="games" hidden>
+      <div class="joinrow"><input class="inp" id="admGQ" placeholder="Поиск по имени игрока или коду комнаты" autocomplete="off" spellcheck="false"><button class="btn" id="admGQGo">Найти</button></div>
+      <div class="btnrow"><button class="btn danger" id="admGDel" disabled>Удалить выбранные</button><button class="btn" id="admRecompute">Пересчитать рейтинг</button><button class="btn danger" id="admGAll">Очистить всю историю</button></div>
+      <p class="note">Удаление партии не меняет рейтинг само по себе. Чтобы рейтинг соответствовал оставшейся истории, нажмите «Пересчитать рейтинг» — он заново проиграет все рейтинговые партии по порядку (ручные правки рейтинга при этом сбросятся).</p>
+      <p class="note" id="admGCount"></p><div id="admGames"></div>
+      <button class="btn" id="admGMore" style="width:100%;margin-top:8px" hidden>Показать ещё</button>
+    </div>
+    <div data-admp="server" hidden>
+      <h3>Регистрация</h3>
+      <div class="seg" id="admSignup"><button data-sv="open">Открыта<small>для всех</small></button><button data-sv="invite">По приглашениям<small>нужен код</small></button><button data-sv="closed">Закрыта<small>аккаунты создаёт админ</small></button></div>
+      <div class="row" style="margin-top:10px"><label for="admGuests">Гости могут играть по сети<small id="admGuestsNote">Без аккаунта, под любым именем. Их партии не влияют на рейтинг.</small></label><input type="checkbox" class="sw-t" id="admGuests"></div>
+      <h3>Объявление на главном экране</h3>
+      <textarea class="inp" id="admMotd" maxlength="300" rows="2" placeholder="Например: «Турнир в субботу в 18:00». Пусто — объявления нет."></textarea>
+      <div class="btnrow"><button class="btn" id="admMotdSave">Сохранить объявление</button></div>
+      <h3>Коды приглашения</h3>
+      <div class="joinrow"><input class="inp" id="admInvUses" type="number" min="1" max="1000" value="1" style="max-width:120px" aria-label="Сколько регистраций по коду"><button class="btn" id="admInvNew">Создать код</button></div>
+      <div id="admInv"></div>
+      <h3>Комнаты сейчас</h3><p class="note">Зависшую или брошенную комнату можно закрыть: игроки вернутся в меню, партия не запишется.</p><div id="admRooms"></div>
+    </div>
   </div>
 </div>
 
@@ -2479,7 +2532,7 @@ let CONF={};
 function ask(title,text,yes,no,onYes,onNo){$('hConf').textContent=title;$('pConf').textContent=text;$('cYes').textContent=yes;$('cNo').textContent=no;CONF={yes:onYes,no:onNo};openSheet('sConfirm');}
 /* ---------- accounts (server side: players, ratings, game history) ---------- */
 const AUTH={ok:false,me:null,signup:'open',private:false,guests:false};let accTab='login';
-function authLoad(){if(location.protocol==='file:')return Promise.resolve();return netApi('auth/me').then(r=>{AUTH.ok=true;AUTH.me=r.user;AUTH.signup=r.signup;AUTH.private=r.private;AUTH.guests=!!r.guests;},()=>{AUTH.ok=false;});}
+function authLoad(){if(location.protocol==='file:')return Promise.resolve();return netApi('auth/me').then(r=>{AUTH.ok=true;AUTH.me=r.user;AUTH.signup=r.signup;AUTH.private=r.private;AUTH.guests=!!r.guests;AUTH.motd=r.motd||'';},()=>{AUTH.ok=false;});}
 function guestName(v){try{if(v!==undefined)localStorage.setItem('jadego.guest',v);return localStorage.getItem('jadego.guest')||'';}catch(e){return v||'';}}
 function authLabel(){return AUTH.me?`${AUTH.me.name} · рейтинг ${AUTH.me.rating}`:AUTH.signup==='closed'?'войти':'войти или зарегистрироваться';}
 /* first visit without an account: the page opens on sign-up (sign-in when the server takes no new accounts) */
@@ -2500,7 +2553,7 @@ function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=
       ' Без аккаунта тоже можно играть — нажмите «Продолжить как гость» и посмотрите, что при этом доступно.';
     return;}
   $('hAcc').textContent=me.name;$('aNewName').value=me.name;$('aHide').checked=!!me.hide;
-  $('aAdmin').hidden=me.role!=='admin';$('aGuests').checked=AUTH.guests;$('aGuests').disabled=AUTH.private;
+  $('aAdmin').hidden=me.role!=='admin';$('aAdminOpen').hidden=me.role!=='admin';$('aGuests').checked=AUTH.guests;$('aGuests').disabled=AUTH.private;
   $('aGuestsNote').textContent=AUTH.private?'Сервер закрытый (--private): без аккаунта в игру не войти, гостей нет.':'Без аккаунта, под любым именем. Их партии не влияют на рейтинг.';
   const tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
   $('accStats').innerHTML=tile(me.rating,'рейтинг')+tile(me.games,plural(me.games,'партия','партии','партий')+' по сети')+tile(me.games?Math.round(me.wins/me.games*100)+'%':'—','побед')+
@@ -2531,6 +2584,75 @@ function netWho(){const w=$('netWho');if(!AUTH.ok){w.innerHTML='';w.hidden=true;
   else w.innerHTML='Чтобы играть по сети, войдите в аккаунт.<button class="btn primary" id="netLogin">Войти или зарегистрироваться</button>';
   if($('netLogin'))$('netLogin').onclick=()=>{backTo='net';accTab='login';renderAcc();openSheet('sAcc');};
   $('netForms').querySelectorAll('h3,.field,#netCreate,.joinrow,#netWatchRow').forEach(e=>e.classList.toggle('dim',!AUTH.me&&!AUTH.guests));}
+
+/* ---------- server management (admins): players, ratings, history, invitations, rooms ---------- */
+const ADM={tab:'overview',q:'',users:[],utotal:0,open:null,gq:'',games:[],gtotal:0,picked:new Set(),back:null,settings:null};
+const dmy=t=>{const d=new Date(t);return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getFullYear()).slice(2)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+function openAdmin(back){ADM.back=back||null;openSheet('sAdmin');admTab(ADM.tab);}
+function admClose(){closeSheet('sAdmin');authLoad().then(mainLabels);if(ADM.back==='acc'){openAcc();return;}if(G.phase==='idle'||demo())openMain();}
+/* confirmations borrow the shared dialog and come back here */
+function admAsk(title,text,yes,fn){ask(title,text,yes,'Отмена',()=>{openSheet('sAdmin');fn();},()=>openSheet('sAdmin'));}
+function admTab(t){ADM.tab=t;document.querySelectorAll('[data-adm]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.adm===t)));document.querySelectorAll('[data-admp]').forEach(p=>p.hidden=p.dataset.admp!==t);
+  if(t==='overview')admOverview();else if(t==='users')admUsers(true);else if(t==='games')admGames(true);else admServer();}
+function admErr(e){toast(e.message,3200);}
+function admOverview(){netApi('admin/overview').then(r=>{const s=r.stats;ADM.settings=r.settings;const tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
+  const mb=s.db>1048576?(s.db/1048576).toFixed(1).replace('.',',')+' МБ':Math.max(1,Math.round(s.db/1024))+' КБ',up=s.uptime>86400?Math.floor(s.uptime/86400)+' дн '+Math.floor(s.uptime%86400/3600)+' ч':durText(s.uptime);
+  $('admStats').innerHTML=tile(s.users,'игроков')+tile(s.active,'заходили за неделю')+tile(s.admins,'администраторов')+tile(s.games,'партий в истории')+tile(s.today,'партий за сутки')+tile(s.public,'открытых партий')+
+    tile(s.playing,'партий идёт')+tile(s.players,'игроков онлайн')+tile(s.watchers,'зрителей')+tile(s.blocked,'заблокировано')+tile(mb,'база')+tile(up,'сервер работает');
+  $('admJournal').innerHTML=r.journal.length?r.journal.map(j=>`<div><small>${dmy(j.t)} · ${esc(j.who)}</small><br><b>${esc(j.action)}</b>${j.detail?' — '+esc(j.detail):''}</div>`).join(''):'<p class="note">Пока пусто.</p>';},admErr);}
+function admUsers(fresh){if(fresh){ADM.users=[];ADM.open=null;}
+  netApi('admin/users?q='+encodeURIComponent(ADM.q)+'&offset='+ADM.users.length).then(r=>{ADM.users=ADM.users.concat(r.users);ADM.utotal=r.total;admUsersRender();},admErr);}
+function admUsersRender(){const me=AUTH.me&&AUTH.me.id;
+  $('admUCount').textContent=ADM.q?`Найдено: ${ADM.utotal}`:`Всего игроков: ${ADM.utotal}`;$('admUMore').hidden=ADM.users.length>=ADM.utotal;
+  $('admUsers').innerHTML=ADM.users.map(u=>`<div class="urow" data-u="${u.id}"><div class="ui"><b>${esc(u.login)}</b> <small>${esc(u.name)}${u.id===me?' · это вы':''}</small>
+      <span>рейтинг ${u.rating} · партий ${u.games} · побед ${u.wins} · ${u.seen?'был '+dmy(u.seen):'ещё не заходил'}</span></div>${u.role==='admin'?'<i class="flag">админ</i>':''}${u.blocked?'<i class="flag red">заблокирован</i>':''}</div>`+(ADM.open===u.id?admEditor(u):'')).join('')||'<p class="note">Никого не нашлось.</p>';
+  $('admUsers').querySelectorAll('[data-u]').forEach(r=>r.onclick=()=>{const id=+r.dataset.u;ADM.open=ADM.open===id?null:id;admUsersRender();});
+  const ed=$('admUsers').querySelector('.ued');if(ed)admEditorWire(ed,ADM.users.find(u=>u.id===ADM.open));}
+function admEditor(u){const v=t=>esc(String(t));return `<div class="ued">
+  <div class="ef"><label>Логин</label><div class="joinrow"><input class="inp" data-f="login" maxlength="20" value="${v(u.login)}" spellcheck="false" autocomplete="off"><button class="btn" data-a="login">Сохранить</button></div></div>
+  <div class="ef"><label>Имя в игре</label><div class="joinrow"><input class="inp" data-f="name" maxlength="20" value="${v(u.name)}" autocomplete="off"><button class="btn" data-a="name">Сохранить</button></div></div>
+  <div class="ef"><label>Рейтинг Эло · партий · побед</label><div class="joinrow"><input class="inp" data-f="rating" type="number" min="0" max="5000" value="${u.rating}"><input class="inp" data-f="games" type="number" min="0" value="${u.games}"><input class="inp" data-f="wins" type="number" min="0" value="${u.wins}"><button class="btn" data-a="rating">Сохранить</button></div></div>
+  <div class="ef"><label>Новый пароль — все входы игрока завершатся</label><div class="joinrow"><input class="inp" data-f="password" maxlength="128" placeholder="от 6 символов" autocomplete="new-password"><button class="btn" data-a="password">Задать</button></div></div>
+  <div class="row"><label>Администратор<small>полный доступ к этой панели</small></label><input type="checkbox" class="sw-t" data-t="role"${u.role==='admin'?' checked':''}></div>
+  <div class="row"><label>Заблокирован<small>не сможет войти, все его входы завершатся</small></label><input type="checkbox" class="sw-t" data-t="block"${u.blocked?' checked':''}></div>
+  <div class="btnrow"><button class="btn" data-a="logout">Выйти на всех устройствах</button><button class="btn" data-a="clear_games">Удалить его партии</button><button class="btn danger" data-a="delete">Удалить аккаунт</button></div></div>`;}
+function admEditorWire(ed,u){ed.onclick=e=>e.stopPropagation();const f=k=>ed.querySelector(`[data-f="${k}"]`).value;
+  const run=(action,extra,msg)=>netApi('admin/user',Object.assign({id:u.id,action},extra||{})).then(r=>{
+    if(r.user)Object.assign(ADM.users.find(x=>x.id===u.id),r.user);else{ADM.users=ADM.users.filter(x=>x.id!==u.id);ADM.utotal--;ADM.open=null;}
+    admUsersRender();toast(msg||'Сохранено',2200);if(AUTH.me&&u.id===AUTH.me.id)authLoad().then(mainLabels);},e=>{admErr(e);admUsersRender();});
+  ed.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const a=b.dataset.a;
+    if(a==='login')run('login',{login:f('login').trim()},'Логин изменён');
+    else if(a==='name')run('name',{name:f('name')},'Имя изменено');
+    else if(a==='rating')run('rating',{rating:+f('rating'),games:+f('games'),wins:+f('wins')},'Рейтинг изменён');
+    else if(a==='password'){if(f('password').length<6){toast('Пароль — не короче 6 символов',2400);return;}run('password',{password:f('password')},'Пароль задан, все входы игрока завершены');}
+    else if(a==='logout')run('logout',{},'Игрок вышел на всех устройствах');
+    else if(a==='clear_games')admAsk('Удалить партии игрока?',`Все партии «${u.login}» исчезнут из истории сервера и у его соперников. Рейтинг не изменится, пока вы его не пересчитаете.`,'Удалить',()=>run('clear_games',{},'Партии игрока удалены'));
+    else if(a==='delete')admAsk('Удалить аккаунт?',`Аккаунт «${u.login}» будет удалён навсегда. Его партии останутся в истории под его именем.`,'Удалить',()=>run('delete',{},'Аккаунт удалён'));});
+  ed.querySelectorAll('[data-t]').forEach(t=>t.onchange=()=>{if(t.dataset.t==='role')run('role',{role:t.checked?'admin':'user'},t.checked?'Теперь администратор':'Права администратора сняты');
+    else run('block',{on:t.checked},t.checked?'Игрок заблокирован':'Игрок разблокирован');});}
+function admGames(fresh){if(fresh){ADM.games=[];ADM.picked.clear();}
+  netApi('admin/games?q='+encodeURIComponent(ADM.gq)+'&offset='+ADM.games.length).then(r=>{ADM.games=ADM.games.concat(r.games);ADM.gtotal=r.total;admGamesRender();},admErr);}
+function admGamesRender(){const nm=(g,c)=>esc(g.names[c]||'—')+(g.guest[c]?' <small>гость</small>':'');
+  $('admGCount').textContent=(ADM.gq?'Найдено':'Партий в истории')+': '+ADM.gtotal;$('admGMore').hidden=ADM.games.length>=ADM.gtotal;
+  $('admGames').innerHTML=ADM.games.map(g=>`<label class="grow"><input type="checkbox" data-g="${g.id}"${ADM.picked.has(g.id)?' checked':''}><div class="gi"><b>${nm(g,1)} — ${nm(g,2)}</b><span>№ ${g.id} · ${dmy(g.d)} · ${g.n}×${g.n} · ${resultLine(g.w,g.by,g.m)} · ${g.count} ${plural(g.count,'ход','хода','ходов')}${g.rated?' · рейтинговая':''}${g.public?' · открытая':''}</span></div></label>`).join('')||'<p class="note">Партий нет.</p>';
+  $('admGames').querySelectorAll('[data-g]').forEach(c=>c.onchange=()=>{const id=+c.dataset.g;c.checked?ADM.picked.add(id):ADM.picked.delete(id);admGDelLabel();});admGDelLabel();}
+function admGDelLabel(){const n=ADM.picked.size;$('admGDel').disabled=!n;$('admGDel').textContent=n?`Удалить выбранные (${n})`:'Удалить выбранные';}
+function admServer(){const fill=st=>{ADM.settings=st;document.querySelectorAll('#admSignup [data-sv]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.sv===st.signup)));
+    $('admGuests').checked=st.guests;$('admGuests').disabled=st.private;$('admGuestsNote').textContent=st.private?'Сервер закрытый (--private): без аккаунта в игру не войти.':'Без аккаунта, под любым именем. Их партии не влияют на рейтинг.';
+    if(document.activeElement!==$('admMotd'))$('admMotd').value=st.motd||'';};
+  if(ADM.settings)fill(ADM.settings);netApi('admin/overview').then(r=>fill(r.settings),admErr);
+  const save=b=>netApi('admin/settings',b).then(r=>{fill(r.settings);AUTH.signup=r.settings.signup;AUTH.guests=r.settings.guests;AUTH.motd=r.settings.motd;mainLabels();toast('Сохранено',1800);},admErr);
+  document.querySelectorAll('#admSignup [data-sv]').forEach(b=>b.onclick=()=>save({signup:b.dataset.sv}));
+  $('admGuests').onchange=e=>save({guests:e.target.checked});$('admMotdSave').onclick=()=>save({motd:$('admMotd').value});
+  const inv=list=>{$('admInv').innerHTML=list.length?list.map(i=>`<div class="grow"><div class="gi"><b style="font-family:ui-monospace,monospace;letter-spacing:.08em">${esc(i.code)}</b><span>осталось регистраций: ${i.uses} · создан ${dmy(i.created)}</span></div><button class="btn" data-copy="${esc(i.code)}">Копировать</button><button class="btn danger" data-del="${esc(i.code)}">Удалить</button></div>`).join(''):'<p class="note">Действующих кодов нет.</p>';
+    $('admInv').querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{(navigator.clipboard?navigator.clipboard.writeText(b.dataset.copy):Promise.reject()).then(()=>toast('Код скопирован',1500),()=>prompt('Код приглашения:',b.dataset.copy));});
+    $('admInv').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>netApi('admin/invites',{action:'delete',code:b.dataset.del}).then(r=>inv(r.invites),admErr));};
+  netApi('admin/invites').then(r=>inv(r.invites),admErr);
+  $('admInvNew').onclick=()=>netApi('admin/invites',{action:'create',uses:Math.max(1,Math.min(1000,+$('admInvUses').value||1))}).then(r=>{inv(r.invites);toast('Код создан: '+r.invites[0].code,3000);},admErr);
+  const rooms=list=>{const nm=(x,c)=>x.names[c]?esc(x.names[c])+(x.guest[c]?' <small>гость</small>':'')+(x.online[c]?'':' <small>(не в сети)</small>'):'<small>свободно</small>';
+    $('admRooms').innerHTML=list.length?list.map(x=>`<div class="grow"><div class="gi"><b>${nm(x,1)} — ${nm(x,2)}</b><span>комната ${esc(x.code)} · ${x.n}×${x.n} · ${{waiting:'ждёт соперника',play:'идёт',scoring:'подсчёт',over:'окончена'}[x.phase]||x.phase} · ходов ${x.moves}${x.public?' · открытая, зрителей '+x.watchers:' · скрытая'} · активность ${dmy(x.touched)}</span></div><button class="btn danger" data-close="${esc(x.code)}">Закрыть</button></div>`).join(''):'<p class="note">Сейчас комнат нет.</p>';
+    $('admRooms').querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>admAsk('Закрыть комнату?','Игроки вернутся в меню, партия не запишется в историю.','Закрыть',()=>netApi('admin/rooms',{action:'close',code:b.dataset.close}).then(r=>{rooms(r.rooms);toast('Комната закрыта',1800);},admErr)));};
+  netApi('admin/rooms').then(r=>rooms(r.rooms),admErr);}
 
 /* ---------- online play: rooms on our server, state pushed over Server-Sent Events ----------
    The server holds the move list and checks every move; this page replays the same moves with its own engine.
@@ -2781,8 +2903,9 @@ function attractStep(tok){if(tok!==ATT.tok||!demo()||G.phase!=='idle')return;
   if(is3D())V3D.placeBot(r.move,c,done);else setTimeout(done,250);}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.4';
+const APP_VER='2.5';
 const NEWS=[
+ ['2.5','Управление сервером',['Для администраторов — панель в браузере: главное меню или «Аккаунт» → «Управление сервером»','Игроки: поиск, смена логина, имени и пароля, правка рейтинга Эло, блокировка, выход на всех устройствах, права администратора, удаление','Партии: удаление выбранных, всех партий игрока или всей истории, пересчёт рейтинга по оставшимся партиям','Сервер: режим регистрации, гости, коды приглашения, объявление на главном экране, закрытие зависших комнат','Обзор: сколько игроков и партий, кто онлайн, размер базы — и журнал всех действий администраторов']],
  ['2.4','Смена логина',['В окне «Аккаунт» можно сменить логин — подтверждается текущим паролем','Рейтинг, история партий и входы на других устройствах остаются: они привязаны к аккаунту, а не к логину','Администратор может сменить логин игроку: accounts.py rename СТАРЫЙ НОВЫЙ']],
  ['2.3','Новый курс, качество графики, «только фон»',['Обучение переписано целиком: 22 урока в пяти главах — правила, тактика (двойное атари, лестница, гонка за дыхания), жизнь и смерть, стратегия и экзамен','Упражнения проверяет сама игра: на верный ход белые отвечают, на неверный — позиция возвращается, после двух ошибок — подсказка. Есть вопросы на понимание и отметка мёртвых камней','Список уроков с главами и прогрессом — можно открыть любой урок','Качество графики: авто, низкое, среднее, высокое или ультра (Настройки → Стол)','Если минуту ничего не трогать на главном экране, меню плавно уходит и остаётся живая заставка без затемнения. То же — кнопкой-глазом в углу меню']],
  ['2.2','Заставка, гость и удобство на телефоне',['На главном экране — заставка: бот сам разыгрывает партию, камни прилетают из чаш, камера плавно облетает стол. На широком экране меню слева, партия справа','«Продолжить как гость» вместо «Позже»: сначала видно, что доступно без аккаунта и чего не будет','У каждого окна есть крестик в углу — он не уезжает при прокрутке. Окно закрывается и касанием по затемнённому фону','Кнопка «Назад» на телефоне закрывает окно, а в партии открывает меню — и не уводит с сайта','Окна на телефоне помещаются в видимую часть экрана, полосы прокрутки стали тонкими и аккуратными']],
@@ -2800,7 +2923,7 @@ const NEWS=[
  ['1.0','Первая версия',['3D-стол и 2D-доска, бот четырёх уровней','12 уроков и ежедневные задачи']]];
 let backTo=null;
 function seenVer(){try{return localStorage.getItem('jadego.seen');}catch(e){return null;}}
-function mainLabels(){$('mmAcc').hidden=!AUTH.ok;$('mmAccSub').textContent=authLabel();$('mmNet').classList.toggle('off',NET.ok===false);
+function mainLabels(){$('mmAcc').hidden=!AUTH.ok;$('mmAdmin').hidden=!(AUTH.me&&AUTH.me.role==='admin');$('mmMotd').hidden=!AUTH.motd;$('mmMotd').textContent=AUTH.motd||'';$('mmAccSub').textContent=authLabel();$('mmNet').classList.toggle('off',NET.ok===false);
   $('mmNetSub').textContent=NET.ok===false?'нужен сервер: python3 server/serve.py':'партия с другом по коду или ссылке, чужие партии вживую и в архиве';}
 function openMain(){endViewing();accWelcome=false;attractStart();const playing=G.phase==='play'||(net()&&G.phase==='scoring'),ns=!playing&&netSaved(),saved=playing||ns?null:loadGame(),g=playing?G:saved;
   $('mmContinue').hidden=!g&&!ns;
@@ -3262,6 +3385,7 @@ function closeTop(){
   for(const id of ['sSet','sInfo','sNews','sNet'])if(!$(id).hidden){closeBack(id);return true;}
   if(!$('sPuz').hidden){closeSheet('sPuz');openHome();return true;}
   if(!$('sLearn').hidden){closeSheet('sLearn');openHome();return true;}
+  if(!$('sAdmin').hidden){admClose();return true;}
   if(!$('sHome').hidden){if(G.phase==='idle')openMain();else closeSheet('sHome');return true;}
   if(!$('sMain').hidden){if(G.phase==='idle')return false;closeSheet('sMain');return true;}
   if(!$('chatPanel').hidden){closeChat();return true;}
@@ -3359,7 +3483,14 @@ function boot(){
   $('lnGo').onclick=()=>{closeSheet('sLearn');startLesson(lessonsDone()>=LESSONS.length?0:nextLessonIdx());};
   $('csFileB').onchange=e=>{setCustomPic(1,e.target.files[0]);e.target.value='';};$('csFileW').onchange=e=>{setCustomPic(2,e.target.files[0]);e.target.value='';};
   $('csReset').onclick=()=>{try{localStorage.removeItem('jadego.stones');}catch(e){}if(S.stones==='custom'){S.stones='jade';saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);}loadCustom().then(renderCustom);toast('Картинки убраны',1600);};
-  $('mDaily').onclick=startDaily;$('mTrain').onclick=openPuz;$('pzGo').onclick=startTraining;$('pzBack').onclick=()=>{closeSheet('sPuz');openHome();};
+  $('mDaily').onclick=startDaily;
+  $('mmAdmin').onclick=()=>openAdmin('main');$('aAdminOpen').onclick=()=>{closeSheet('sAcc');openAdmin('acc');};$('admBack').onclick=admClose;
+  document.querySelectorAll('[data-adm]').forEach(b=>b.onclick=()=>admTab(b.dataset.adm));
+  $('admQGo').onclick=()=>{ADM.q=$('admQ').value.trim();admUsers(true);};$('admQ').addEventListener('keydown',e=>{if(e.key==='Enter')$('admQGo').click();});$('admUMore').onclick=()=>admUsers(false);
+  $('admGQGo').onclick=()=>{ADM.gq=$('admGQ').value.trim();admGames(true);};$('admGQ').addEventListener('keydown',e=>{if(e.key==='Enter')$('admGQGo').click();});$('admGMore').onclick=()=>admGames(false);
+  $('admGDel').onclick=()=>{const ids=[...ADM.picked];admAsk('Удалить выбранные партии?',`Партий: ${ids.length}. Они исчезнут из истории у обоих игроков и из архива.`,'Удалить',()=>netApi('admin/games',{action:'delete',ids}).then(r=>{toast('Удалено партий: '+r.deleted,2200);admGames(true);},admErr));};
+  $('admGAll').onclick=()=>admAsk('Очистить всю историю?','Все сыгранные партии сервера будут удалены безвозвратно. Аккаунты и рейтинг останутся.','Очистить',()=>netApi('admin/games',{action:'clear_all'}).then(r=>{toast('Удалено партий: '+r.deleted,2400);admGames(true);},admErr));
+  $('admRecompute').onclick=()=>admAsk('Пересчитать рейтинг?','Рейтинг всех игроков будет построен заново по оставшейся истории партий. Ручные правки рейтинга сбросятся.','Пересчитать',()=>netApi('admin/games',{action:'recompute'}).then(r=>{toast('Рейтинг пересчитан по '+r.rated+' '+plural(r.rated,'партии','партиям','партиям'),2600);authLoad().then(mainLabels);},admErr));$('mTrain').onclick=openPuz;$('pzGo').onclick=startTraining;$('pzBack').onclick=()=>{closeSheet('sPuz');openHome();};
   $('bResume').onclick=()=>{if(net()){netAct('resume');return;}resumePlay();};$('bConfirm').onclick=()=>{if(net()){netAct('agree',{ver:NET.st.deadVer});return;}const s=G.score,d=s.b.total-s.w.total;endGame({winner:d>0?1:2,margin:Math.abs(d),by:'score'});};
   $('vSfx').oninput=e=>{S.sfx=+e.target.value;AU.setVol();saveSettings();};$('vSfx').onchange=()=>AU.place(1);
   $('vAmb').oninput=e=>{S.amb=+e.target.value;AU.setVol();saveSettings();};

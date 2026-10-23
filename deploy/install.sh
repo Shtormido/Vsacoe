@@ -18,7 +18,7 @@ USER_NAME=jadego
 UNIT=/etc/systemd/system/$APP.service
 PORT=8080
 HOST=0.0.0.0
-SIGNUP=open
+SIGNUP=
 PRIVATE=0
 GUESTS=
 DATA=/var/lib/$APP
@@ -39,7 +39,7 @@ done
 
 if [ "$(id -u)" -ne 0 ]; then echo "Запустите через sudo: sudo $0 $*" >&2; exit 1; fi
 case "$PORT" in ''|*[!0-9]*) echo "Порт должен быть числом" >&2; exit 1 ;; esac
-case "$SIGNUP" in open|invite|closed) ;; *) echo "--signup: open, invite или closed" >&2; exit 1 ;; esac
+case "$SIGNUP" in ''|open|invite|closed) ;; *) echo "--signup: open, invite или closed" >&2; exit 1 ;; esac
 case "$GUESTS" in ''|on|off) ;; *) echo "--guests: on или off" >&2; exit 1 ;; esac
 
 if [ "$MODE" = uninstall ]; then
@@ -82,7 +82,6 @@ Environment=JADEGO_HOST=$HOST
 Environment=JADEGO_PORT=$PORT
 Environment=JADEGO_DIR=$DEST/site
 Environment=JADEGO_DATA=$DATA
-Environment=JADEGO_SIGNUP=$SIGNUP
 Environment=JADEGO_PRIVATE=$PRIVATE
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
@@ -114,6 +113,9 @@ systemctl daemon-reload
 systemctl enable --now "$APP"
 sleep 1
 # guests are a setting kept in the database, so the admin can change it later without reinstalling
+if [ -n "$SIGNUP" ]; then
+  runuser -u "$USER_NAME" -- python3 "$DEST/server/accounts.py" --data "$DATA" signup "$SIGNUP" || true
+fi
 if [ -n "$GUESTS" ]; then
   runuser -u "$USER_NAME" -- python3 "$DEST/server/accounts.py" --data "$DATA" guests "$GUESTS" || true
 fi
@@ -130,8 +132,9 @@ if systemctl is-active --quiet "$APP"; then
   for ip in $(hostname -I 2>/dev/null); do case "$ip" in *:*) ;; *) echo "  В локальной сети:    http://$ip:$PORT/";; esac; done
   echo
   echo "Управление:  systemctl status|restart|stop $APP     Логи:  journalctl -u $APP -f"
-  echo "Аккаунты:    регистрация $SIGNUP$( [ "$PRIVATE" = 1 ] && echo ', сервер закрытый'). Первый зарегистрированный станет администратором."
-  echo "             sudo -u $USER_NAME python3 $DEST/server/accounts.py --data $DATA list   (add, passwd, del, invite, admin, guests)"
+  echo "Аккаунты:    регистрация ${SIGNUP:-как была (по умолчанию открыта)}$( [ "$PRIVATE" = 1 ] && echo ', сервер закрытый'). Первый зарегистрированный станет администратором."
+  echo "             Управление сервером — в браузере: Аккаунт → Управление сервером (для администраторов)."
+  echo "             sudo -u $USER_NAME python3 $DEST/server/accounts.py --data $DATA list   (add, passwd, rename, del, block, rating, recompute, invite, admin, signup, guests)"
 else
   echo "Сервис не запустился. Смотрите:  journalctl -u $APP -n 50" >&2
   exit 1
