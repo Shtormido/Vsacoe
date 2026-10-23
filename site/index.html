@@ -6,9 +6,8 @@
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}img{max-width:100%}</style>
 <title>Нефритовое Го</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- fonts and libraries are served locally (site/vendor); when the page is opened on its own they come from the CDN -->
+<link href="vendor/fonts.css" rel="stylesheet" onerror="this.onerror=null;this.href='https://fonts.googleapis.com/css2?family=Prata&amp;family=Golos+Text:wght@400;500;600&amp;display=swap'">
 <style>
 :root{
   /* Layout: the table scene fills the screen; indigo-lacquer glass rails pin to the top and bottom edges; sheets rise from the bottom on phones and float centred on wide screens */
@@ -418,8 +417,10 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="vendor/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
+<script src="vendor/OrbitControls.js"></script>
+<script>window.THREE&&THREE.OrbitControls||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"><\/script>')</script>
 <script>
 (function(){
 'use strict';
