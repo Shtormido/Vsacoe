@@ -290,11 +290,14 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
       <div class="field"><div class="label">Доска</div><div class="sets" id="boardList"></div></div>
       <div class="field"><div class="label">Сетка</div>
         <div class="seg" data-key="grid"><button data-v="auto">Авто<small>магнитная — полоски, остальные — канавки</small></button><button data-v="grooves">Канавки<small>резная сетка</small></button><button data-v="lines">Полоски<small>нарисованные линии</small></button></div></div>
+      <div class="field"><div class="label">Музыка</div>
+        <div class="seg" data-key="musicStyle"><button data-v="koto">Кото<small>и сякухати</small></button><button data-v="guqin">Гуцинь<small>китайская цитра</small></button><button data-v="ambient">Эмбиент<small>мягкие пэды, колокольчики</small></button><button data-v="off">Выкл</button></div></div>
       <div class="field"><div class="label">Вид</div>
         <div class="seg" data-key="view"><button data-v="3d">3D-стол</button><button data-v="2d">2D-доска</button></div></div>
       <div class="field">
         <div class="row"><label for="vSfx">Звук камней</label><input type="range" id="vSfx" min="0" max="1" step="0.05"></div>
         <div class="row"><label for="vAmb">Звуки вокруг</label><input type="range" id="vAmb" min="0" max="1" step="0.05"></div>
+        <div class="row"><label for="vMus">Музыка</label><input type="range" id="vMus" min="0" max="1" step="0.05"></div>
         <div class="row"><label for="tMute">Без звука</label><input type="checkbox" class="sw-t" id="tMute"></div>
         <div class="row"><label for="tCoords">Координаты на 2D-доске</label><input type="checkbox" class="sw-t" id="tCoords"></div>
       </div>
@@ -606,9 +609,9 @@ const SETS={
 };
 /* stone resonances for the modal synth: partial frequencies, quality factor (how long it rings), stone vs board mix, contact-crack level */
 const TONES={
-  classic:{f:[3100,4650,6500,8800],q:85,mix:.5,crack:.55},
-  jade:{f:[3650,5500,7700,10400],q:240,mix:.6,crack:.45},
-  yunzi:{f:[2700,4050,5700],q:55,mix:.4,crack:.35},
+  classic:{f:[3100,4650,6500,8800],q:70,mix:.7,crack:.48},
+  jade:{f:[3650,5500,7700,10400],q:150,mix:.72,crack:.42},
+  yunzi:{f:[2700,4050,5700],q:45,mix:.55,crack:.36},
 };
 const ENVS={
   garden:{name:'Сад в Киото',desc:'скамья с красным сукном, сакура',thick:8,legs:0,exposure:1.05,audio:{room:.35,wet:.1,bright:.75,amb:'garden',board:'table'},bg2:'#b9b6aa'},
@@ -634,10 +637,10 @@ const BOARDS={
 const ACTIONS=[['pass','Пас','KeyP'],['undo','Ход назад','KeyU'],['view','2D / 3D','KeyV'],['cam','Сменить камеру','KeyC'],
   ['rotL','Повернуть стол влево','ArrowLeft'],['rotR','Повернуть стол вправо','ArrowRight'],['zoomIn','Приблизить','ArrowUp'],['zoomOut','Отдалить','ArrowDown'],
   ['hint','Подсказка (уроки, задачи)','KeyH'],['next','Дальше (уроки, задачи)','Enter'],['menu','Настройки','KeyM'],['info','Сведения: правила, история, статистика','KeyI'],['home','Главное меню','KeyN'],
-  ['mute','Звук вкл / выкл','KeyS'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
+  ['mute','Звук вкл / выкл','KeyS'],['music','Музыка вкл / выкл','KeyK'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
 const DEFKEYS=Object.fromEntries(ACTIONS.map(a=>[a[0],a[2]]));
 const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,handicap:0,clock:'off',env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,mute:false,
-  lastMark:true,quick:false,coords:true,confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true};
+  lastMark:true,quick:false,coords:true,music:.35,musicStyle:'koto',confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true};
 let S=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem('jadego.settings')||'null');if(s)S=Object.assign(S,s);}catch(e){}
 S.keys=Object.assign({},DEFKEYS,S.keys||{});
@@ -833,7 +836,7 @@ const AU=(function(){
     master=ctx.createGain();master.connect(comp);
     sfx=ctx.createGain();sfx.gain.value=S.mute?0:S.sfx;amb=ctx.createGain();amb.gain.value=S.mute?0:S.amb;amb.connect(master);
     conv=ctx.createConvolver();wet=ctx.createGain();sfx.connect(master);sfx.connect(conv);amb.connect(conv);conv.connect(wet);wet.connect(master);
-    bufs();if(envKey)applyEnv();
+    bufs();musInit();if(envKey)applyEnv();
     document.addEventListener('visibilitychange',()=>{if(!ctx)return;if(document.hidden)ctx.suspend();else ctx.resume();});
   }
   function impulse(sec,bright){const sr=ctx.sampleRate,len=Math.max(1,(sr*sec)|0),b=ctx.createBuffer(2,len,sr);
@@ -865,8 +868,8 @@ const AU=(function(){
     if(b==='tray')return [{f:rnd(170,200),a:.8,d:.04},{f:rnd(290,330),a:.6,d:.035}].concat(dense(30,480,7000,.55,18,40,.32));
     if(b==='mdf')return [{f:rnd(110,130),a:.5,d:.02},{f:rnd(260,300),a:.5,d:.018}].concat(dense(24,450,5000,.5,8,16,.55));
     if(b==='plastic')return [{f:rnd(620,720),a:.8,d:.012},{f:rnd(980,1100),a:.6,d:.01}].concat(dense(20,1400,9000,.6,25,60,.25));
-    if(b==='goban')return [{f:rnd(150,172),a:1,d:.065},{f:rnd(222,248),a:.7,d:.05},{f:rnd(318,352),a:.45,d:.04}].concat(dense(34,430,6800,.55,20,46,.35));
-    return [{f:rnd(96,118),a:.45,d:.03},{f:rnd(236,262),a:.6,d:.032},{f:rnd(372,415),a:.5,d:.026}].concat(dense(30,520,7200,.6,18,40,.3));}
+    if(b==='goban')return [{f:rnd(150,172),a:.6,d:.034},{f:rnd(222,248),a:.48,d:.028},{f:rnd(318,352),a:.36,d:.022}].concat(dense(34,430,6800,.55,12,28,.3));
+    return [{f:rnd(96,118),a:.22,d:.02},{f:rnd(236,262),a:.38,d:.02},{f:rnd(372,415),a:.34,d:.017}].concat(dense(30,520,7200,.55,11,26,.28));}
   function stoneModes(j,up){const s=TONES[SETS[S.stones].tone];return s.f.map((f,i)=>{const F=f*rnd(1-j,1+j)*(up||1);return {f:F,a:[1,.75,.55,.4][i],d:s.q*rnd(.8,1.2)/(Math.PI*F)};});}
   /* stone onto board: hard 0.2–0.3 ms contact rings stone and board; often a second, softer touch as the convex stone rocks and settles */
   function renderHit(){const s=TONES[SETS[S.stones].tone],ex=pulse(rnd(.00018,.00032));
@@ -933,7 +936,7 @@ const AU=(function(){
   function osc(type,t,dur,dest){const o=ctx.createOscillator();o.type=type;o.connect(dest);o.start(t);o.stop(t+dur);return o;}
   function env(t,a,at,hold,rel){const g=ctx.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(a,t+at);g.gain.setValueAtTime(a,t+at+hold);g.gain.linearRampToValueAtTime(0,t+at+hold+rel);return g;}
   /* wind: pink noise through a wandering low-pass; rustle: the leaves' hiss rides the same gusts */
-  function wind(level,cut){const f=filt('lowpass',cut,.5),g=gn(level);chain(loop(pink),f,g,amb);lfo(.071,cut*.45,f.frequency);lfo(.13,cut*.2,f.frequency);lfo(.043,level*.55,g.gain);lfo(.11,level*.25,g.gain);}
+  function wind(level,cut){const f=filt('lowpass',cut,.5),g=gn(level);chain(loop(pink),filt('highpass',160,.5),f,g,amb);lfo(.071,cut*.45,f.frequency);lfo(.13,cut*.2,f.frequency);lfo(.043,level*.55,g.gain);lfo(.11,level*.25,g.gain);}
   function rustle(level,lo){const g=gn(level);chain(loop(white),filt('highpass',lo||2600),filt('lowpass',8000),g,amb);lfo(.043,level*.6,g.gain);lfo(.17,level*.3,g.gain);}
   function bed(buf,level,pv,lo,hi){let n=loop(buf);if(lo)n=chain(n,filt('highpass',lo));if(hi)n=chain(n,filt('lowpass',hi));const g=gn(level);chain(n,g,pan(pv||0,true));return g;}
   function sparrow(t){const p=pan(rnd(-.8,.8)),n=2+(Math.random()*4|0);for(let k=0;k<n;k++){const tt=t+k*rnd(.1,.18),g=env(tt,.016,.006,.0,.05),f=rnd(3800,5200),o=osc('sine',tt,.07,g);
@@ -969,29 +972,92 @@ const AU=(function(){
   /* a wave: swell, break (the filter opens), then the foam fizzing back down the sand */
   function wave(t){const p=pan(rnd(-.5,.5)),tb=t+rnd(1.6,2.4),dur=rnd(5,8),f=ctx.createBiquadFilter(),g=ctx.createGain(),s=ctx.createBufferSource();s.buffer=pink;s.loop=true;f.type='lowpass';f.Q.value=.4;
     f.frequency.setValueAtTime(250,t);f.frequency.linearRampToValueAtTime(700,tb-.2);f.frequency.linearRampToValueAtTime(rnd(2200,3400),tb+.15);f.frequency.exponentialRampToValueAtTime(450,t+dur);
-    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.07,tb-.2);g.gain.linearRampToValueAtTime(rnd(.2,.32),tb+.1);g.gain.setTargetAtTime(0,tb+.3,dur*.28);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.07,tb-.2);g.gain.linearRampToValueAtTime(rnd(.14,.22),tb+.1);g.gain.setTargetAtTime(0,tb+.3,dur*.28);
     s.connect(f);f.connect(g);g.connect(p);s.start(t,Math.random()*3);s.stop(t+dur+2);
     const s2=ctx.createBufferSource(),h=ctx.createBiquadFilter(),g2=ctx.createGain();s2.buffer=white;s2.loop=true;h.type='highpass';h.frequency.value=3500;
     g2.gain.setValueAtTime(0,tb);g2.gain.linearRampToValueAtTime(.035,tb+.4);g2.gain.setTargetAtTime(0,tb+.8,1.1);s2.connect(h);h.connect(g2);g2.connect(p);s2.start(tb,Math.random());s2.stop(tb+6);}
   function gull(t){const p=pan(rnd(-.8,.8)),n=1+(Math.random()*3|0);for(let k=0;k<n;k++){const tt=t+k*rnd(.35,.55),bp=ctx.createBiquadFilter(),g=ctx.createGain(),f0=rnd(1100,1400),o=osc('sawtooth',tt,.6,bp);
     bp.type='bandpass';bp.frequency.value=2400;bp.Q.value=2.5;o.frequency.setValueAtTime(f0,tt);o.frequency.linearRampToValueAtTime(f0*1.55,tt+.09);o.frequency.exponentialRampToValueAtTime(f0*.8,tt+.38);
     g.gain.setValueAtTime(0,tt);g.gain.linearRampToValueAtTime(.018,tt+.04);g.gain.setTargetAtTime(0,tt+.25,.06);bp.connect(g);g.connect(p);}}
+  /* ---------- music: generative and calm, never the same twice ----------
+     Pentatonic modes, slow tempo, lots of silence. Plucked strings are Karplus-Strong strings rendered once per pitch;
+     the shakuhachi is a breathy sine voice with the "meri" scoop into each note and vibrato that blooms late. */
+  let mus=null,musLoop=null;const M={next:0,bar:0,root:0,leadFree:0,style:null};
+  const SCALES={yo:[0,2,5,7,9],gong:[0,2,4,7,9],in:[0,1,5,7,8]};
+  const STYLES={koto:{tonic:62,scale:'yo',bpm:60},guqin:{tonic:50,scale:'gong',bpm:50},ambient:{tonic:57,scale:'yo',bpm:44}};
+  const mtof=m=>440*Math.pow(2,(m-69)/12);
+  function deg(d){const st=STYLES[M.style],sc=SCALES[st.scale],o=Math.floor(d/5);return st.tonic+12*o+sc[((d%5)+5)%5];}
+  /* plucked string: noise burst through a tuned delay loop (fractional delay via allpass), plucked off-centre */
+  function ksBuf(f,sec,t60,soft,pos){const sr=ctx.sampleRate,n=Math.round(sr*sec),y=new Float32Array(n),L=sr/f-.5;let N=Math.floor(L),D=L-N;if(D<.1){N--;D+=1;}
+    const C=(1-D)/(1+D),g=Math.pow(.001,1/(t60*f)),ex=new Float32Array(N),k=Math.max(1,Math.round(N*(pos||.18)));let lp=0;
+    for(let i=0;i<N;i++){lp+=(1-soft)*((Math.random()*2-1)-lp);ex[i]=lp;}for(let i=N-1;i>=k;i--)ex[i]-=ex[i-k];
+    let ax=0,ay=0;for(let i=0;i<n;i++){const a=i>=N?y[i-N]:0,b=i>N?y[i-N-1]:0,v=.5*(a+b),ap=C*v+ax-C*ay;ax=v;ay=ap;y[i]=(i<N?ex[i]:0)+g*ap;}
+    return toBuf(fadeTail(norm(y,.8)));}
+  function pluckBuf(kind,m){const key=kind+m;if(lib[key])return lib[key];const f=mtof(m);
+    return lib[key]=kind==='koto'?ksBuf(f,4,2.6,.35,.16):ksBuf(f,6,5,.7,.11);}
+  function pan2(v,dest){if(!ctx.createStereoPanner)return dest;const p=ctx.createStereoPanner();p.pan.value=v;p.connect(dest);return p;}
+  /* koto pluck, optionally pressed behind the bridge to bend up (oshide); guqin pluck, optionally slid along the string */
+  function pluck(kind,t,m,vel,bend){const s=ctx.createBufferSource();s.buffer=pluckBuf(kind,m);const g=ctx.createGain();g.gain.value=vel;s.connect(g);g.connect(pan2(rnd(-.35,.35),mus));
+    if(bend){s.playbackRate.setValueAtTime(1,t+bend.at);s.playbackRate.linearRampToValueAtTime(Math.pow(2,bend.st/12),t+bend.at+bend.dur);}
+    s.start(t);s.stop(t+(kind==='koto'?4:6));}
+  /* guqin harmonic (fanyin): a light touch on a node gives a pure, bell-like overtone */
+  function harmonic(t,m,vel){const g=ctx.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.004);g.gain.setTargetAtTime(0,t+.01,.7);osc('sine',t,3.2,g).frequency.value=mtof(m);g.connect(pan2(rnd(-.4,.4),mus));}
+  function shaku(t,m,dur,vel){const f=mtof(m),out=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2600;out.connect(lp);lp.connect(pan2(rnd(-.2,.2),mus));
+    out.gain.setValueAtTime(0,t);out.gain.linearRampToValueAtTime(vel,t+.35);out.gain.linearRampToValueAtTime(vel*.8,t+dur*.6);out.gain.linearRampToValueAtTime(vel*.95,t+dur-.3);out.gain.linearRampToValueAtTime(0,t+dur+.5);
+    const g2=ctx.createGain();g2.gain.value=.18;g2.connect(out);const o=osc('sine',t,dur+.6,out),o2=osc('triangle',t,dur+.6,g2);
+    for(const x of [o,o2]){x.frequency.setValueAtTime(f*.965,t);x.frequency.exponentialRampToValueAtTime(f,t+.28);}
+    const vib=ctx.createOscillator(),vd=ctx.createGain();vib.frequency.value=rnd(4.6,5.4);vd.gain.setValueAtTime(0,t);vd.gain.linearRampToValueAtTime(0,t+dur*.45);vd.gain.linearRampToValueAtTime(f*.008,t+dur);
+    vib.connect(vd);vd.connect(o.frequency);vd.connect(o2.frequency);vib.start(t);vib.stop(t+dur+.6);
+    const n=ctx.createBufferSource(),bp=ctx.createBiquadFilter(),bg=ctx.createGain();n.buffer=white;n.loop=true;bp.type='bandpass';bp.frequency.value=f*2;bp.Q.value=1.5;
+    bg.gain.setValueAtTime(0,t);bg.gain.linearRampToValueAtTime(vel*.28,t+.08);bg.gain.linearRampToValueAtTime(vel*.06,t+.5);bg.gain.linearRampToValueAtTime(0,t+dur+.4);n.connect(bp);bp.connect(bg);bg.connect(lp);n.start(t,Math.random());n.stop(t+dur+.6);}
+  /* soft pad: detuned voices, slow swell, darkened */
+  function pad(t,ms,dur,vel){const out=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=700;lp.Q.value=.3;out.connect(lp);lp.connect(mus);
+    out.gain.setValueAtTime(0,t);out.gain.linearRampToValueAtTime(vel,t+dur*.35);out.gain.setValueAtTime(vel,t+dur*.6);out.gain.linearRampToValueAtTime(0,t+dur+1.5);
+    for(const m of ms)[[-.7,'sine',.65],[.7,'triangle',.25]].forEach(([dt,ty,a])=>{const g=ctx.createGain();g.gain.value=a;g.connect(out);const o=osc(ty,t,dur+1.6,g);o.frequency.value=mtof(m);o.detune.value=dt;});}
+  function bellNote(t,m,vel){play(rin(),t,vel,rnd(-.4,.4),mtof(m)/540,mus);}
+  /* one bar at a time: harmony moves slowly, the melody speaks in short phrases and then rests */
+  function bar(t){const st=STYLES[M.style],b=60/st.bpm,i=M.bar++;
+    if(i%4===0)M.root=i===0?0:pickR([0,0,2,3,4]);
+    const r=M.root,chord=[r,r+2,r+4];
+    if(M.style==='ambient'){if(i%2===0)pad(t,[deg(r-5),deg(r),deg(r+2),deg(r+4)],b*8,.05);
+      for(let k=0;k<4;k++)if(Math.random()<.22)bellNote(t+k*b+rnd(0,.2),deg(pickR(chord)+5),rnd(.025,.05));return;}
+    if(M.style==='koto'&&i%4===0)pad(t,[deg(r-5),deg(r-2)],b*16,.011);
+    const kind=M.style==='koto'?'koto':'guqin',lo=M.style==='koto'?0:-2;
+    if(M.style==='koto'){const roll=Math.random();
+      if(roll<.4){const fig=pickR([[0,1,2,3],[0,2,1,3],[0,1,2],[2,1,0]]);fig.forEach((x,k)=>pluck(kind,t+k*b*.5,deg(lo+chord[0]+[0,2,4,5][x]),rnd(.16,.24),Math.random()<.08?{at:.25,dur:.25,st:1}:null));}
+      else if(roll<.7){pluck(kind,t,deg(lo+r),.22);pluck(kind,t+b*2,deg(lo+r+4),.16);}
+      else if(roll<.85)pluck(kind,t,deg(lo+r+5),.18,Math.random()<.4?{at:.35,dur:.3,st:2}:null);}
+    else{if(Math.random()<.6)pluck(kind,t,deg(lo+r),.3,Math.random()<.35?{at:.4,dur:.9,st:pickR([2,-2])}:null);
+      if(Math.random()<.4)pluck(kind,t+b*2,deg(lo+pickR(chord)+5),.22);if(Math.random()<.18)harmonic(t+b*3,deg(lo+pickR(chord)+10),.04);}
+    /* lead: a short phrase, then silence for a few bars (shakuhachi over koto, the upper guqin line otherwise) */
+    if(t<M.leadFree||Math.random()>.45)return;
+    const len=3+((Math.random()*4)|0);let d=pickR(chord),tt=0;
+    for(let k=0;k<len;k++){const last=k===len-1,dur=last?b*rnd(3,4):b*pickR([1,1.5,2,2,3]);if(last)d=pickR(chord)+(d>5?5:0);
+      if(M.style==='koto')shaku(t+tt,deg(d),dur,.085);else pluck('guqin',t+tt,deg(d),.2,Math.random()<.25?{at:.3,dur:.6,st:pickR([2,-2])}:null);
+      tt+=dur+(Math.random()<.3?b*.5:0);d=clamp(d+pickR([-2,-1,-1,1,1,2]),0,8);}
+    M.leadFree=t+tt+4*b*(1+((Math.random()*3)|0));}
+  function musTick(){if(!ok()||!mus)return;const on=!S.mute&&S.musicStyle!=='off'&&S.music>0;if(!on)return;
+    if(M.style!==S.musicStyle){M.style=S.musicStyle;M.bar=0;M.next=ctx.currentTime+.3;M.leadFree=M.next+4*60/STYLES[M.style].bpm*2;}
+    if(M.next<ctx.currentTime)M.next=ctx.currentTime+.1;const b=60/STYLES[M.style].bpm;while(M.next<ctx.currentTime+1.2){bar(M.next);M.next+=4*b;}}
+  function musVol(){if(!mus)return;const v=S.mute||S.musicStyle==='off'?0:S.music;mus.gain.setTargetAtTime(v*2.4,ctx.currentTime,.4);}
+  function musInit(){mus=ctx.createGain();mus.gain.value=0;const rv=ctx.createConvolver(),rw=ctx.createGain();rv.buffer=impulse(3.2,.3);rw.gain.value=.55;
+    mus.connect(master);mus.connect(rv);rv.connect(rw);rw.connect(master);musVol();musLoop=setInterval(musTick,250);}
   function applyEnv(){
     if(!ctx||!white)return;stopAmb();const a=ENVS[envKey].audio;conv.buffer=impulse(a.room,a.bright);wet.gain.value=a.wet;ensureHits();
-    if(a.amb==='garden'){wind(.16,520);rustle(.01);bed(lib.trickle||(lib.trickle=streamBuf(500,2600,24,3)),.05,-.45,250,6000);sched(sparrow,3,9);sched(uguisu,14,34);sched(shishi,24,42);}
-    else if(a.amb==='rain'){const r=lib.rain||(lib.rain=rainBuf());bed(r,.16,-.5,350,7500);bed(r,.16,.5,350,7500);chain(loop(brown),filt('lowpass',200),gn(.08),amb);kettle();
+    if(a.amb==='garden'){wind(.09,420);rustle(.005);bed(lib.trickle||(lib.trickle=streamBuf(500,2600,24,3)),.05,-.45,250,6000);sched(sparrow,3,9);sched(uguisu,14,34);sched(shishi,24,42);}
+    else if(a.amb==='rain'){const r=lib.rain||(lib.rain=rainBuf());bed(r,.1,-.5,350,5200);bed(r,.1,.5,350,5200);chain(loop(brown),filt('lowpass',200),gn(.08),amb);kettle();
       sched(t=>drip(t,rnd(-.8,.8),rnd(.012,.03)),.25,1.4);sched(thunder,45,110);}
     else if(a.amb==='fire'){chain(loop(brown),filt('lowpass',170),gn(.07),pan(-.3,true));const f=gn(.04);chain(loop(pink),filt('bandpass',420,.6),f,pan(-.3,true));lfo(.7,.018,f.gain);
       const h=gn(.004);chain(loop(white),filt('highpass',3000),h,pan(-.3,true));lfo(1.3,.002,h.gain);
       lib.tick=lib.tick||clockBuf(2650);lib.tock=lib.tock||clockBuf(2250);sched(pops,.04,.35);sched(clock,1,1);}
-    else if(a.amb==='night'){wind(.07,300);sched(suzumushi(4450,-.6),.8,1.6);sched(suzumushi(4700,.55),.9,1.9);sched(suzumushi(4250,.1),1.6,3.2);sched(frog(.3),3,8);sched(owl,30,70);sched(furinEv,25,55);}
-    else if(a.amb==='onsen'){wind(.11,420);bed(lib.pour||(lib.pour=streamBuf(220,1100,70,5)),.12,-.2,120,5000);sched(t=>drip(t,rnd(-.5,.3),rnd(.01,.025)),.6,2.4);sched(snowThud,14,32);sched(crow,40,80);}
-    else if(a.amb==='autumn'){wind(.18,620);rustle(.016,2200);sched(skitter,2,6);sched(crow,18,40);sched(bonshoEv,40,75);sched(sparrow,8,16);}
-    else if(a.amb==='sea'){sched(wave,5,8.5);wind(.09,380);rustle(.004,4000);sched(gull,6,15);sched(furinEv,28,60);}
+    else if(a.amb==='night'){wind(.045,280);sched(suzumushi(4450,-.6),.8,1.6);sched(suzumushi(4700,.55),.9,1.9);sched(suzumushi(4250,.1),1.6,3.2);sched(frog(.3),3,8);sched(owl,30,70);sched(furinEv,25,55);}
+    else if(a.amb==='onsen'){wind(.07,360);bed(lib.pour||(lib.pour=streamBuf(220,1100,70,5)),.12,-.2,120,5000);sched(t=>drip(t,rnd(-.5,.3),rnd(.01,.025)),.6,2.4);sched(snowThud,14,32);sched(crow,40,80);}
+    else if(a.amb==='autumn'){wind(.1,480);rustle(.008,2600);sched(skitter,2,6);sched(crow,18,40);sched(bonshoEv,40,75);sched(sparrow,8,16);}
+    else if(a.amb==='sea'){sched(wave,5,8.5);wind(.06,340);sched(gull,6,15);sched(furinEv,28,60);}
   }
   return {init,place,rummage,capture,soft,pass,deny,bell,chime,hooks,
     setEnv(k){envKey=k;applyEnv();},
-    setVol(){if(!ctx)return;sfx.gain.value=S.mute?0:S.sfx;amb.gain.value=S.mute?0:S.amb;}};
+    setVol(){if(!ctx)return;sfx.gain.value=S.mute?0:S.sfx;amb.gain.value=S.mute?0:S.amb;musVol();}};
 })();
 
 /* ---------- game state ---------- */
@@ -1866,8 +1932,9 @@ function renderStats(){const l=loadStats(),bot=l.filter(g=>g.lv>=0),won=bot.filt
   $('statBody').querySelectorAll('[data-sgf]').forEach(b=>b.onclick=()=>{const g=l[+b.dataset.sgf],dt=new Date(g.d);download(`jade-go-${dt.toISOString().slice(0,10)}-${g.N}x${g.N}.sgf`,sgf(g));});
   const rb=$('bStatReset');if(rb)rb.onclick=()=>{if(!resetArm){resetArm=true;renderStats();return;}resetArm=false;try{localStorage.removeItem('jadego.stats');}catch(e){}renderStats();toast('Статистика стёрта',1600);};}
 /* ---------- main menu and changelog ---------- */
-const APP_VER='1.4';
+const APP_VER='1.5';
 const NEWS=[
+ ['1.5','Спокойная музыка и мягче звук',['Генеративная музыка, которая не повторяется: кото и сякухати, гуцинь или эмбиент','Отдельная громкость музыки, клавиша K — включить или выключить','Стук камня суше и короче, как на настоящей доске','Фоновые звуки тише и без шипения']],
  ['1.4','Главное меню и сведения',['Новое главное меню: Игра, Настройки, Сведения, Что нового','Раздел «Сведения»: полные правила, история го, статистика','История партий и скачивание записи партии в формате SGF','Кнопки «Настройки» и «Сведения» на нижней панели']],
  ['1.3','Настройки игры и горячие клавиши',['Настройки разделены на вкладки: Стол, Игра, Клавиши','Подтверждение хода, скорость анимации, подсветка камней в атари','Можно запретить ход назад и сдачу бота','Фора от 2 до 9 камней и игровые часы с бёёми','Горячие клавиши можно переназначить; стрелки поворачивают и приближают стол']],
  ['1.2','Новые доски',['Китайский поднос с бортиком и ножками','Ореховая плита, красная МДФ и магнитная складная доска','Цилиндрические чаши с плоскими крышками','Сетка на выбор: канавки или полоски']],
@@ -2090,7 +2157,7 @@ function buildMenus(){
     if(V3D){$('status').textContent='Ставим доску…';setTimeout(()=>{V3D.setBoard();hud();AU.place(.8);},30);}else AU.place(.8);if(V2D)V2D.relayout();});
   $('setList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(S.stones===b.dataset.set)return;S.stones=b.dataset.set;saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);AU.place(.8);});
   document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi'||k==='handicap')v=+v;
-    if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
+    if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();if(k==='musicStyle'){AU.init();AU.setVol();}if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
 }
 function markEnv(){document.querySelectorAll('.env').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.env===S.env)));}
 function markBoard(){document.querySelectorAll('[data-board]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.board===S.board)));}
@@ -2114,6 +2181,7 @@ function doAction(a){
   else if(a==='hint'){if(T.kind&&!T.solved)showHint();}else if(a==='next'){if(T.kind&&!$('tNext').disabled)$('tNext').click();}
   else if(a==='menu')openSettings();else if(a==='info')openInfo();else if(a==='home'){if(T.kind){closeAllTut();G.phase='idle';}openMain();}
   else if(a==='mute'){S.mute=!S.mute;saveSettings();AU.setVol();toast(S.mute?'Звук выключен':'Звук включён',1400);}
+  else if(a==='music'){if(S.musicStyle==='off'){S.musicStyle=S.lastMusic||'koto';}else{S.lastMusic=S.musicStyle;S.musicStyle='off';}saveSettings();syncSegs();AU.setVol();toast(S.musicStyle==='off'?'Музыка выключена':'Музыка включена',1400);}
   else if(a==='full')toggleFull();else if(a==='resign'){if(G.phase==='play')$('bResign').click();}}
 function onKey(e){AU.init();
   if(capKey&&!$('sSet').hidden){e.preventDefault();if(e.code==='Escape'){capKey=null;renderKeys();return;}if(e.code==='Backspace'||e.code==='Delete'){bindKey(capKey,'');return;}
@@ -2130,7 +2198,7 @@ function onKey(e){AU.init();
 function openSettings(){backTo=fromSheet();markEnv();markSet();markBoard();syncSegs();
   $('tMute').checked=S.mute;$('tAtari').checked=S.atari;$('tUndo').checked=S.allowUndo;$('tBotResign').checked=S.botResign;$('tClockPause').checked=S.clockPause;showTab(setTab);
   document.querySelectorAll('[data-set]').forEach(b=>{const [a,c]=swatch(b.dataset.set);const is=b.querySelectorAll('.pair i');is[0].style.backgroundImage=`url(${a})`;is[1].style.backgroundImage=`url(${c})`;});
-  $('vSfx').value=S.sfx;$('vAmb').value=S.amb;$('tQuick').checked=S.quick;$('tLast').checked=S.lastMark;$('tFlip').checked=S.flip;$('tCoords').checked=S.coords;hud();openSheet('sSet');}
+  $('vSfx').value=S.sfx;$('vAmb').value=S.amb;$('vMus').value=S.music;$('tQuick').checked=S.quick;$('tLast').checked=S.lastMark;$('tFlip').checked=S.flip;$('tCoords').checked=S.coords;hud();openSheet('sSet');}
 function setView(v){if(v==='3d'&&!V3D){toast('3D недоступно в этом браузере — открыта 2D-доска');v='2d';}
   S.view=v;saveSettings();const three=v==='3d';$('gl').hidden=!three;$('c2d').hidden=three;
   if(V3D){V3D.setActive(three);if(three){V3D.resync();V3D.refit();}}
@@ -2176,6 +2244,7 @@ function boot(){
   $('bResume').onclick=resumePlay;$('bConfirm').onclick=()=>{const s=G.score,d=s.b.total-s.w.total;endGame({winner:d>0?1:2,margin:Math.abs(d),by:'score'});};
   $('vSfx').oninput=e=>{S.sfx=+e.target.value;AU.setVol();saveSettings();};$('vSfx').onchange=()=>AU.place(1);
   $('vAmb').oninput=e=>{S.amb=+e.target.value;AU.setVol();saveSettings();};
+  $('vMus').oninput=e=>{S.music=+e.target.value;AU.setVol();saveSettings();};
   $('tQuick').onchange=e=>{S.quick=e.target.checked;saveSettings();hud();};
   $('tLast').onchange=e=>{S.lastMark=e.target.checked;saveSettings();view().resync();};
   $('tFlip').onchange=e=>{S.flip=e.target.checked;saveSettings();if(G.phase==='play'&&hot()){G.flipView=S.flip&&G.toPlay===2;if(is3D())V3D.turnCam();}};
