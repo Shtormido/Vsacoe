@@ -2409,13 +2409,19 @@ const AUTH={ok:false,me:null,signup:'open',private:false,guests:false};let accTa
 function authLoad(){if(location.protocol==='file:')return Promise.resolve();return netApi('auth/me').then(r=>{AUTH.ok=true;AUTH.me=r.user;AUTH.signup=r.signup;AUTH.private=r.private;AUTH.guests=!!r.guests;},()=>{AUTH.ok=false;});}
 function guestName(v){try{if(v!==undefined)localStorage.setItem('jadego.guest',v);return localStorage.getItem('jadego.guest')||'';}catch(e){return v||'';}}
 function authLabel(){return AUTH.me?`${AUTH.me.name} · рейтинг ${AUTH.me.rating}`:AUTH.signup==='closed'?'войти':'войти или зарегистрироваться';}
-function openAcc(t){backTo=fromSheet();if(t)accTab=t;renderAcc();openSheet('sAcc');if(AUTH.me)authLoad().then(()=>{if(!$('sAcc').hidden&&AUTH.me)renderAcc();mainLabels();});}
-function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=!me;
+/* first visit without an account: the page opens on sign-up (sign-in when the server takes no new accounts) */
+let accWelcome=false;
+function openWelcome(){accWelcome=true;backTo=null;accTab=AUTH.signup==='closed'?'login':'register';renderAcc();openSheet('sAcc');}
+function openAcc(t){accWelcome=false;backTo=fromSheet();if(t)accTab=t;renderAcc();openSheet('sAcc');if(AUTH.me)authLoad().then(()=>{if(!$('sAcc').hidden&&AUTH.me)renderAcc();mainLabels();});}
+function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=!me;$('aBack').hidden=accWelcome&&!me;$('aClose').textContent=accWelcome&&!me?'Позже':'Готово';$('aClose').classList.toggle('primary',!(accWelcome&&!me));
   if(!me){if(AUTH.signup==='closed')accTab='login';const reg=accTab==='register';$('hAcc').textContent=reg?'Регистрация':'Вход';$('aRegTab').hidden=AUTH.signup==='closed';
     document.querySelectorAll('[data-atab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.atab===accTab)));
     $('aReg').hidden=$('aPw2Row').hidden=!reg;$('aInvRow').hidden=!(reg&&AUTH.signup==='invite');$('aGo').textContent=reg?'Создать аккаунт':'Войти';$('aPw').autocomplete=reg?'new-password':'current-password';
     $('accLead').textContent=(AUTH.guests?'С аккаунтом сервер ведёт ваш рейтинг и историю партий по сети. Без него можно играть гостем — партии гостей не влияют на рейтинг.':'Аккаунт нужен для игры по сети: соперники видят ваше имя, а сервер ведёт рейтинг и историю партий.')+
-      (AUTH.signup==='closed'?' Регистрация на этом сервере закрыта — аккаунт выдаёт администратор.':AUTH.signup==='invite'?' Зарегистрироваться можно по коду приглашения от администратора.':'');return;}
+      (AUTH.signup==='closed'?' Регистрация на этом сервере закрыта — аккаунт выдаёт администратор.':AUTH.signup==='invite'?' Зарегистрироваться можно по коду приглашения от администратора.':'');
+    if(accWelcome)$('accLead').textContent='Добро пожаловать в «Нефритовое Го»! '+(AUTH.signup==='closed'?'Войдите в аккаунт, который выдал администратор.':'Создайте аккаунт — сервер будет вести ваш рейтинг и историю партий. Уже есть аккаунт? Откройте вкладку «Вход».')+
+      ' С ботом, вдвоём и в задачах можно играть и без аккаунта — нажмите «Позже».';
+    return;}
   $('hAcc').textContent=me.name;$('aNewName').value=me.name;$('aHide').checked=!!me.hide;
   $('aAdmin').hidden=me.role!=='admin';$('aGuests').checked=AUTH.guests;$('aGuests').disabled=AUTH.private;
   $('aGuestsNote').textContent=AUTH.private?'Сервер закрытый (--private): без аккаунта в игру не войти, гостей нет.':'Без аккаунта, под любым именем. Их партии не влияют на рейтинг.';
@@ -2439,6 +2445,7 @@ function accSubmit(e){e.preventDefault();const reg=accTab==='register';
   const body=reg?{login:$('aLogin').value.trim(),password:$('aPw').value,name:$('aName').value.trim(),invite:$('aInv').value.trim()}:{login:$('aLogin').value.trim(),password:$('aPw').value};
   $('aGo').disabled=true;netApi('auth/'+(reg?'register':'login'),body).then(r=>{AUTH.me=r.user;$('aPw').value=$('aPw2').value='';toast((reg?'Аккаунт создан. ':'')+'Вы вошли как '+r.user.name,2600);
     if(r.user.role==='admin'&&reg)setTimeout(()=>toast('Вы первый на этом сервере — вы его администратор',3200),2700);
+    if(accWelcome){accWelcome=false;closeBack('sAcc');return;}
     renderAcc();if(backTo==='net'){closeBack('sAcc');return;}},e=>toast(e.message,3200)).finally(()=>{$('aGo').disabled=false;});}
 function netWho(){const w=$('netWho');if(!AUTH.ok){w.innerHTML='';w.hidden=true;return;}w.hidden=false;
   if(AUTH.me){w.innerHTML=`Вы играете как <b>${esc(AUTH.me.name)}</b> · рейтинг ${AUTH.me.rating}`+(AUTH.me.hide?'<p class="note">В аккаунте включено «Скрывать все мои партии» — зрители их не увидят.</p>':'');}
@@ -2667,8 +2674,9 @@ function endViewing(){
   if(watching()){netEnd();G.token++;G.busy=false;G.level=0;G.phase='idle';G.result=null;showScore(false);closeSheet('sResult');view().resync();hud();}}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.0';
+const APP_VER='2.1';
 const NEWS=[
+ ['2.1','Регистрация с порога',['При первом заходе на сервер сразу открывается окно регистрации (или входа, если регистрация закрыта). Если вы уже вошли, окна не будет','Кнопка «Позже» ведёт в главное меню: с ботом, вдвоём и в задачах можно играть и без аккаунта']],
  ['2.0','Доска 21×21, свои камни и бесконечные задачи',['Новая доска 21 × 21 — для партий с ботом, вдвоём и по сети','Свои камни: загрузите любые картинки (PNG, JPG, WebP) для чёрных и белых — они лягут на камни в 3D и в 2D (Настройки → Стол → Камни)','Тренировка: задачи без конца — захват (сети и лестницы), спасение камней, убить группу, жить. Три уровня сложности, у каждой задачи свой номер','Каждую задачу игра составляет и проверяет сама: верное начало одно, а без него соперник спасся бы. На неверный ход белые отвечают, после двух ошибок — подсказка','Задачи дня теперь тоже составляются заново каждый день']],
  ['1.9','Гости, повторы и зрители',['Гостевой режим: по сети можно играть без регистрации — достаточно ввести имя. Партии гостей не влияют на рейтинг, администратор может отключить гостей','Повтор любой сыгранной партии ход за ходом или автопросмотром: свои партии из статистики и из аккаунта, чужие открытые — из архива сервера','Список «Идут сейчас»: зайдите зрителем и смотрите чужую партию вживую. Рядом — архив недавних партий сервера','Переключатель «Разрешить другим смотреть»: если хоть один игрок против, партию не увидит никто. В аккаунте можно скрыть все свои партии, а прямо во время игры — закрыть партию от зрителей (в чате)']],
  ['1.8','Аккаунты',['Регистрация и вход на сервер: пароли хранятся только в виде стойкого хеша','Онлайн-партии привязаны к аккаунту — в свою партию можно вернуться с другого устройства','Рейтинг Эло, история партий на сервере с записью SGF, таблица лучших игроков','Администратор может закрыть регистрацию, выдавать приглашения или сделать сервер закрытым']],
@@ -2684,7 +2692,7 @@ let backTo=null;
 function seenVer(){try{return localStorage.getItem('jadego.seen');}catch(e){return null;}}
 function mainLabels(){$('mmAcc').hidden=!AUTH.ok;$('mmAccSub').textContent=authLabel();$('mmNet').classList.toggle('off',NET.ok===false);
   $('mmNetSub').textContent=NET.ok===false?'нужен сервер: python3 server/serve.py':'партия с другом по коду или ссылке, чужие партии вживую и в архиве';}
-function openMain(){endViewing();const playing=G.phase==='play'||(net()&&G.phase==='scoring'),ns=!playing&&netSaved(),saved=playing||ns?null:loadGame(),g=playing?G:saved;
+function openMain(){endViewing();accWelcome=false;const playing=G.phase==='play'||(net()&&G.phase==='scoring'),ns=!playing&&netSaved(),saved=playing||ns?null:loadGame(),g=playing?G:saved;
   $('mmContinue').hidden=!g&&!ns;
   if(g){const who=g.level===-1?'вдвоём':g.level===-2?'по сети с «'+(G.oppName||'соперником')+'»':'бот «'+LEVELS[g.level]+'»';$('mmContSub').textContent=`${g.N}×${g.N} · ${who} · ход ${g.moveNum+1}`;}
   else if(ns)$('mmContSub').textContent='по сети · комната '+ns.code;
@@ -3101,11 +3109,13 @@ function boot(){
   $('tNext').onclick=()=>{if(T.kind==='lesson')lessonNext();else if(T.kind==='puzzle')puzzleNext();};
   $('tHint').onclick=()=>{if(!T.solved)showHint();};
   G.phase='idle';hud();
-  Promise.all([netPing(),authLoad()]).then(mainLabels);
+  const ready=Promise.all([netPing(),authLoad()]);ready.then(mainLabels);
   const qs=new URLSearchParams(location.search),inv=(qs.get('room')||'').toUpperCase().replace(/[^A-Z0-9]/g,''),wq=(qs.get('watch')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(wq.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>startWatch(wq),isCoarse?250:120);}
   else if(inv.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>{openMain();const sv=netSaved();if(sv&&sv.code===inv){netConnect(sv.code,sv.token);return;}openNet(inv);setTimeout(()=>(AUTH.me?$('netJoin'):$('netLogin')||$('netJoin')).focus(),400);},isCoarse?250:120);}
-  else setTimeout(openMain,isCoarse?250:120);
+  else{/* signed in (or no server): the main menu; otherwise sign-up first. A slow server never keeps the page blank */
+    const wait=new Promise(r=>setTimeout(r,isCoarse?250:120)),late=new Promise(r=>setTimeout(()=>r('late'),2500));
+    Promise.race([Promise.all([ready,wait]),late]).then(v=>{if(anySheet()||G.phase!=='idle')return;if(v!=='late'&&AUTH.ok&&!AUTH.me)openWelcome();else openMain();});}
 }
 boot();
 })();
