@@ -846,10 +846,26 @@ function snowCanvas(){const c=mk(256,256),x=c.getContext('2d');x.fillStyle='#e9e
   for(let i=0;i<5200;i++){const v=Math.random();x.fillStyle=v<.45?'rgba(140,160,190,.09)':'rgba(255,255,255,.55)';x.fillRect(Math.random()*256,Math.random()*256,1+Math.random()*3,1+Math.random()*3);}return c;}
 function sandCanvas(){const c=mk(256,256),x=c.getContext('2d');x.fillStyle='#d3bb92';x.fillRect(0,0,256,256);noiseFill(x,256,256,9000,90,255);
   for(let y=4;y<256;y+=11){x.strokeStyle='rgba(120,95,60,.12)';x.lineWidth=2;x.beginPath();for(let X=0;X<=256;X+=8){const yy=y+Math.sin(X/256*Math.PI*4+y)*2.5;X?x.lineTo(X,yy):x.moveTo(X,yy);}x.stroke();}return c;}
-function mapleLeafCanvas(col){const c=mk(64,64),x=c.getContext('2d');x.translate(32,36);x.fillStyle=col||'#d8432a';x.beginPath();
-  for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?11:27;x.lineTo(Math.cos(a)*r,Math.sin(a)*r);}x.closePath();x.fill();
-  x.strokeStyle='rgba(90,20,10,.5)';x.lineWidth=1.2;for(let i=0;i<5;i++){const a=-Math.PI/2+i*Math.PI*2/5;x.beginPath();x.moveTo(0,0);x.lineTo(Math.cos(a)*22,Math.sin(a)*22);x.stroke();}
-  x.strokeStyle=col||'#d8432a';x.lineWidth=2;x.beginPath();x.moveTo(0,0);x.lineTo(3,22);x.stroke();return c;}
+/* a Japanese maple leaf (momiji): seven pointed, finely toothed lobes from one centre, a stalk and veins */
+function mapleLeafCanvas(col){const S=128,c=mk(S,S),x=c.getContext('2d'),base=col||'#d8432a',R=S*.43,lens=[.5,.76,.94,1,.94,.76,.5],spread=Math.PI*1.42;
+  x.translate(S/2,S*.58);
+  const dirs=lens.map((_,k)=>-Math.PI/2-spread/2+spread*k/(lens.length-1));
+  x.beginPath();
+  dirs.forEach((a,k)=>{const L=R*lens[k],ca=Math.cos(a),sa=Math.sin(a),P=(u,v)=>[u*ca-v*sa,u*sa+v*ca],steps=14,edge=[];
+    for(let i=0;i<=steps;i++){const t=i/steps,w=L*.26*Math.pow(Math.sin(Math.PI*Math.min(1,t*1.08)),.9)*(1-.35*t),tooth=i>2&&i<steps?(i%2?1.12:.9):1;edge.push([L*t,w*tooth]);}
+    const s0=P(L*.05,-L*.07);x.moveTo(s0[0],s0[1]);
+    for(const [u,v] of edge){const q=P(u,-v);x.lineTo(q[0],q[1]);}
+    for(let i=edge.length-1;i>=0;i--){const q=P(edge[i][0],edge[i][1]);x.lineTo(q[0],q[1]);}x.closePath();});
+  x.fillStyle=base;x.fill('nonzero');
+  /* colour: deeper towards the heart of the leaf, a little lighter at the tips */
+  x.globalCompositeOperation='source-atop';const g=x.createRadialGradient(0,0,2,0,0,R);g.addColorStop(0,'rgba(60,10,0,.35)');g.addColorStop(.55,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(255,230,160,.22)');
+  x.fillStyle=g;x.fillRect(-S,-S,2*S,2*S);
+  x.strokeStyle='rgba(70,15,5,.45)';x.lineCap='round';
+  dirs.forEach((a,k)=>{const L=R*lens[k]*.9;x.lineWidth=1.3;x.beginPath();x.moveTo(0,0);x.lineTo(Math.cos(a)*L,Math.sin(a)*L);x.stroke();
+    x.lineWidth=.7;for(const t of [.35,.6]){const px=Math.cos(a)*L*t,py=Math.sin(a)*L*t;for(const sd of [-1,1]){const b=a+sd*.55;x.beginPath();x.moveTo(px,py);x.lineTo(px+Math.cos(b)*L*.18,py+Math.sin(b)*L*.18);x.stroke();}}});
+  x.globalCompositeOperation='source-over';x.strokeStyle=base;x.lineWidth=2.4;x.beginPath();x.moveTo(0,2);x.quadraticCurveTo(3,S*.2,1,S*.36);x.stroke();
+  x.strokeStyle='rgba(70,15,5,.35)';x.lineWidth=1;x.stroke();
+  return c;}
 function leafLitterCanvas(){const c=mk(512,512),x=c.getContext('2d');x.fillStyle='#55602f';x.fillRect(0,0,512,512);noiseFill(x,512,512,12000,30,150);
   const cols=['#b8341f','#d8572a','#e28a2b','#c9a23a','#8e2a1c'];for(let i=0;i<1300;i++){x.save();x.translate(Math.random()*512,Math.random()*512);x.rotate(Math.random()*6.3);x.fillStyle=cols[i%cols.length];x.globalAlpha=.55+Math.random()*.45;
     x.beginPath();x.ellipse(0,0,2+Math.random()*4,1.5+Math.random()*2.5,0,0,7);x.fill();x.restore();}return c;}
@@ -887,9 +903,6 @@ function koiCanvas(seed){const c=mk(128,64),x=c.getContext('2d'),r=mulberry(seed
   const cols=['#e2531e','#d23a1a','#ef8a2a','#1a1714'];for(let k=0;k<6;k++){x.fillStyle=cols[(r()*(k<5?3:4))|0];x.beginPath();x.ellipse(r()*128,r()*64,10+r()*22,7+r()*14,r()*3,0,7);x.fill();}return c;}
 function wingCanvas(c1,c2,edge){const c=mk(64,64),x=c.getContext('2d');x.fillStyle=c1;x.beginPath();x.ellipse(30,22,24,18,-.35,0,7);x.fill();x.beginPath();x.ellipse(24,46,15,13,.45,0,7);x.fill();
   x.fillStyle=c2;x.beginPath();x.arc(38,18,5,0,7);x.fill();x.strokeStyle=edge||'rgba(30,20,10,.55)';x.lineWidth=2.5;x.beginPath();x.ellipse(30,22,24,18,-.35,0,7);x.stroke();return c;}
-function rayCanvas(){const c=mk(64,256),x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,256);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(.18,'rgba(255,255,255,.9)');g.addColorStop(1,'rgba(255,255,255,0)');
-  x.fillStyle=g;x.fillRect(0,0,64,256);const h=x.createLinearGradient(0,0,64,0);h.addColorStop(0,'rgba(0,0,0,1)');h.addColorStop(.5,'rgba(0,0,0,0)');h.addColorStop(1,'rgba(0,0,0,1)');
-  x.globalCompositeOperation='destination-out';x.fillStyle=h;x.fillRect(0,0,64,256);return c;}
 function inkLandscapeCanvas(){const c=mk(256,360),x=c.getContext('2d');x.fillStyle='#e9e0c8';x.fillRect(0,0,256,360);const nz=makeNoise(5);
   for(let L=0;L<4;L++){const base=150+L*55,a=.18+L*.18;x.fillStyle=`rgba(30,32,30,${a})`;x.beginPath();x.moveTo(0,360);for(let X=0;X<=256;X+=4)x.lineTo(X,base-90*nz.fbm(X*.012+L*3,L,.5,4)+L*6);x.lineTo(256,360);x.fill();}
   x.fillStyle='rgba(20,20,20,.75)';for(let k=0;k<3;k++){x.beginPath();x.arc(40+k*9,60+k*4,1.5,0,7);x.fill();}x.fillStyle='#b8352a';x.fillRect(214,300,14,18);
@@ -928,13 +941,13 @@ const TONES={
   yunzi:{f:[2700,4050,5700],q:45,mix:.55,crack:.36},
 };
 const ENVS={
-  garden:{name:'Сад в Киото',desc:'скамья с красным сукном, сакура, пруд с кои',thick:8,legs:0,exposure:.92,audio:{room:.35,wet:.1,bright:.75,amb:'garden',board:'table'},bg2:'#b9b6aa'},
+  garden:{name:'Сад в Киото',desc:'скамья с красным сукном, сакура, пруд с кои',thick:8,legs:0,exposure:.92,maxD:240,audio:{room:.35,wet:.1,bright:.75,amb:'garden',board:'table'},bg2:'#b9b6aa'},
   tearoom:{name:'Чайная комната',desc:'татами, сёдзи, гобан на ножках',thick:18,legs:10,exposure:1.0,audio:{room:.7,wet:.22,bright:.5,amb:'rain',board:'goban'},bg2:'#a9a06c',maxD:205},
   club:{name:'Игровой стол',desc:'орех, кожа, лампа и камин',thick:10,legs:0,exposure:1.12,audio:{room:1.1,wet:.24,bright:.45,amb:'fire',board:'table'},bg2:'#2a1d15'},
   night:{name:'Ночная терраса',desc:'фонари, луна, светлячки',thick:18,legs:10,exposure:1.2,audio:{room:.5,wet:.14,bright:.6,amb:'night',board:'goban'},bg2:'#1a2140'},
   onsen:{name:'Зимний онсэн',desc:'снег, пар над горячим источником',thick:18,legs:10,exposure:1.0,audio:{room:.45,wet:.09,bright:.7,amb:'onsen',board:'goban'},bg2:'#c9d2da'},
   autumn:{name:'Осенний храм',desc:'энгава, клёны момидзи, пагода',thick:18,legs:10,exposure:1.05,audio:{room:.9,wet:.15,bright:.55,amb:'autumn',board:'goban'},bg2:'#5a3a26'},
-  sea:{name:'Павильон у моря',desc:'закат, волны, тории в воде',thick:18,legs:10,exposure:1.1,audio:{room:.3,wet:.06,bright:.8,amb:'sea',board:'goban'},bg2:'#3a4a66'},
+  sea:{name:'Павильон у моря',desc:'закат, волны, тории в воде',thick:18,legs:10,exposure:1.1,maxD:200,audio:{room:.3,wet:.06,bright:.8,amb:'sea',board:'goban'},bg2:'#3a4a66'},
 };
 /* board styles. goban: thickness and legs come from the scene; the others are tabletop boards with cylindrical bowls and flat lids.
    T/LG body and feet height (1 unit ≈ 1 cm), pad extra margin outside the grid, rim a raised frame, rough base roughness (0–255) */
@@ -1698,7 +1711,8 @@ function create3D(){
     part(g,Box(16,16,16),std({color:0x7d7a70,emissive:0xffb060,emissiveIntensity:.3,roughness:.95}),0,68,0);
     part(g,new THREE.ConeGeometry(22,14,4),mat,0,83,0).rotation.y=Math.PI/4;part(g,Sph(3.5),mat,0,92,0);
     if(snow){part(g,new THREE.ConeGeometry(22.6,9,4),snow,0,86.6,0,false).rotation.y=Math.PI/4;part(g,Box(22.4,2.4,22.4),snow,0,61.2,0,false);}return g;}
-  /* zabuton: square cushion, puffed in the middle */
+  /* zabuton: square cushion, puffed in the middle. SEAT: its centre behind the board edge, clear of the bowls and lids (they reach bd/2+20) */
+  const SEAT=68;
   function zabuton(x,y,z,col,w,d){const g=new THREE.BoxGeometry(1,1,1,10,1,10),p=g.attributes.position;
     for(let i=0;i<p.count;i++){const X=p.getX(i),Z=p.getZ(i);if(p.getY(i)>0)p.setY(i,-.15+.65*(1-4*X*X)*(1-4*Z*Z));}g.computeVertexNormals();
     const m=M(g,std({color:new THREE.Color(col).convertSRGBToLinear(),roughness:.95}),x,y+3.6,z,true,true);m.scale.set(w*.86,7.2,d*.86);return m;}
@@ -1795,10 +1809,6 @@ function create3D(){
       const dx=Math.cos(st.a),dz=Math.sin(st.a),d=-900+st.t*26;g.position.set(dx*d-dz*st.off,st.y,-300+dz*d+dx*st.off);g.rotation.y=Math.atan2(dx,dz);
       for(const [l,r,p] of birds){const f=Math.sin(t*7+p)*.5;l.rotation.z=f;r.rotation.z=-f;}});}
   /* light shafts: soft additive planes that breathe */
-  function rays(x,y,z,w,h,n,rot,col,op){const tex=new THREE.CanvasTexture(rayCanvas()),list=[];for(let i=0;i<n;i++){const m=new THREE.Mesh(new THREE.PlaneGeometry(w*(.5+Math.random()*.7),h),new THREE.MeshBasicMaterial({map:tex,color:col,transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,fog:false}));
-      m.position.set(x+(Math.random()-.5)*w*2.2,y,z+(Math.random()-.5)*w*1.2);m.rotation.set(rot[0],rot[1]+(Math.random()-.5)*.5,rot[2]);envGroup.add(m);list.push([m,Math.random()*6]);}
-    envUpd.push((dt,t)=>{for(const [m,p] of list)m.material.opacity=op*(.55+.45*Math.sin(t*.35+p));});}
-
   function buildGarden(){
     const base=L.base,gy=base-45;
     scene.background=bgTex(['#78acd9','#b9d4ea','#efe5d4']);scene.fog=new THREE.Fog(0xe9e2d4,340,1400);
@@ -1815,6 +1825,9 @@ function create3D(){
     const px=-(ew/2+125),pz=-70;
     M(Cyl(1.4,1.7,250,10),std({color:0x7d5f35,roughness:.7}),px,gy+125,pz,true,false);
     const can=M(new THREE.ConeGeometry(150,46,48,1,true),std({map:ctex(parasolCanvas()),side:THREE.DoubleSide,roughness:.9,emissive:0x5a0a0a,emissiveIntensity:.6}),px,gy+227,pz,false,false);can.rotation.z=.1;
+    /* a camera drawn back and up would end up inside the canopy: under it, the parasol fades as the camera nears its rim */
+    {const cm=can.material,low=gy+227-23;cm.transparent=true;envUpd.push(()=>{const hx=camera.position.x-px,hz=camera.position.z-pz,inside=hx*hx+hz*hz<165*165;
+      const o=inside?1-smooth(low-45,low-8,camera.position.y):1;cm.opacity=o;can.visible=o>.02;cm.depthWrite=o>.98;});}
     [[-240,-270,1.3],[270,-320,1.4],[420,-90,1.2],[-460,-60,1.1],[60,-520,1.5],[-150,-30,1],[200,-170,.9]].forEach(([x,z,q])=>sakura(x,gy,z,q));
     const stn=std({color:0x8d8a80,roughness:.95}),tx=ew/2+70,tz=-70;toro(tx,gy,tz,1,stn);
     const rockM=std({color:0x77756c,roughness:1}),moss=std({color:0x5b7a3a,roughness:1});
@@ -1875,7 +1888,6 @@ function create3D(){
     const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(rp,3));const rain=new THREE.LineSegments(rg,new THREE.LineBasicMaterial({color:0xd6dee4,transparent:true,opacity:.42}));envGroup.add(rain);
     envUpd.push(dt=>{const a=rg.attributes.position.array;for(let i=0;i<RN;i++){let y=a[i*6+1]-dt*260;if(y<fy-34)y+=290;a[i*6+1]=y;a[i*6+4]=y-7;}rg.attributes.position.needsUpdate=true;});
     const cool=new THREE.PointLight(0xc9d6e6,.45,420,2);cool.position.set((opL+opR)/2,fy+110,-RZ+20);envGroup.add(cool);
-    rays((opL+opR)/2,fy+80,-RZ+75,26,190,3,[-1.0,0,0],0xc7d4e2,.045);
     const w2=M(new THREE.PlaneGeometry(2*RZ,CH),shM(2*RZ),-RX,fy+CH/2,0,false,true);w2.rotation.y=Math.PI/2;
     const pl=std({map:ctex(plasterCanvas(),3,3),roughness:1});
     M(new THREE.PlaneGeometry(150,CH),pl,RX-75,fy+CH/2,-RZ,false,true);
@@ -1890,7 +1902,7 @@ function create3D(){
     M(Cyl(5,7,18,20),std({color:0x2d3a3a,roughness:.3}),RX-40,fy+21,-RZ+30,true);
     const brM=lam({color:0x3d2b1f});for(let k=0;k<4;k++){const b=M(Cyl(.4,.6,40,5),brM,RX-40+(k-1.5)*5,fy+46,-RZ+30,true);b.rotation.z=(k-1.5)*.35;}
     for(let k=0;k<9;k++)M(Sph(1.6,8,6),lam({color:k%2?0xffffff:0xf2b7c4}),RX-40+(Math.random()-.5)*26,fy+52+Math.random()*18,-RZ+30+(Math.random()-.5)*8);
-        zabuton(0,fy,L.bd/2+48,0x2c3d6b,58,62);zabuton(0,fy,-(L.bd/2+48),0x2c3d6b,58,62);
+        zabuton(0,fy,L.bd/2+SEAT,0x2c3d6b,58,62);zabuton(0,fy,-(L.bd/2+SEAT),0x2c3d6b,58,62);
     const kx=-(L.bw/2+40),kz=-L.bd/2-6,iron=std({color:0x26231f,roughness:.55,metalness:.45});
     M(Cyl(13,11,16,24),std({color:0x5a4a3a,roughness:.85}),kx,fy+8,kz,true,true);const kama=M(Sph(12,24,16),iron,kx,fy+24,kz,true,true);kama.scale.y=.78;
     M(Cyl(6,6,1.6,20),iron,kx,fy+33,kz,true);M(Sph(1.4),iron,kx,fy+34.6,kz);for(const sx of [-1,1])M(new THREE.TorusGeometry(2.2,.5,6,12),iron,kx+sx*12,fy+27,kz,true).rotation.y=Math.PI/2;
@@ -2033,7 +2045,7 @@ function create3D(){
     const dk=std({color:0x3a2a1e,roughness:.8});
     M(new THREE.PlaneGeometry(260,230),std({map:ctex(planksCanvas([132,100,70],[74,52,36],17),3,3),roughness:.72}),0,fy,45,false,true).rotation.x=-Math.PI/2;M(Box(262,10,232),dk,0,fy-5.1,45,true,true);
     for(let i=0;i<12;i++)M(Sph(1,14,8),snowS,-125+Math.random()*250,gy+1,-72-Math.random()*6,false,true).scale.set(16+Math.random()*14,6+Math.random()*4,9+Math.random()*5);
-    zabuton(0,fy,L.bd/2+48,0x6a2a2e,58,62);zabuton(0,fy,-(L.bd/2+48),0x6a2a2e,58,62);
+    zabuton(0,fy,L.bd/2+SEAT,0x6a2a2e,58,62);zabuton(0,fy,-(L.bd/2+SEAT),0x6a2a2e,58,62);
     const ok=std({color:0xb08a5a,roughness:.6}),hoop=std({color:0x2a2a2a,metalness:.6,roughness:.4}),bx=L.bw/2+36,bz=-L.bd/2-4;
     M(Cyl(7,6,9,20),ok,bx,fy+4.5,bz,true,true);for(const y of [2,7])M(new THREE.TorusGeometry(6.75,.35,6,24),hoop,bx,fy+y,bz).rotation.x=Math.PI/2;
     fallers(Q(300,600),1.3,new THREE.CanvasTexture(glowCanvas('rgba(255,255,255,1)')),{r:220,top:fy+220,lo:gy,speed:[7,1.2],sway:2.5,floor:(x,z)=>Math.abs(x)<130&&z>-70&&z<160?fy+.3:gy});
@@ -2057,7 +2069,6 @@ function create3D(){
     for(let i=0;i<14;i++){const a=Math.random()*6.28,r=Math.random()*60,m=M(lfg,lfMat,-130+Math.cos(a)*r,gy-1.4,-290+Math.sin(a)*r);m.rotation.set(-Math.PI/2,0,Math.random()*6);fl.push([m,Math.random()*6]);}
     envUpd.push((dt,t)=>{for(const [m,p] of fl){m.position.x+=Math.sin(t*.2+p)*dt*.8;m.rotation.z+=dt*.05;}});
     tufts(Q(260,520),()=>{const a=Math.random()*6.28,r=80+Math.random()*60;return [-130+Math.cos(a)*r,gy,-290+Math.sin(a)*r];},['#5a6a30','#6f7d3a','#8a7a3a'],9);
-    rays(40,fy+110,-40,34,270,5,[0,0,-.55],0xffe0b0,.045);
     flutter(4,0,fy+20,-20,80,{wings:[['rgba(225,235,255,.6)','rgba(255,255,255,.25)','rgba(90,100,120,.5)']],size:3.6,four:true,body:0xb8321e,flap:28,speed:1.7,op:.9});
     flock(9,0x151515,gy+260,7);
     const reds=[0xb8321e,0xd04a26,0xe0782a,0xa8261a],gold=[0xe0a92e,0xd8952a,0xeec04a];
@@ -2072,7 +2083,7 @@ function create3D(){
     const lfMats=['#c8381f','#e07a2a','#d9a531'].map(c=>new THREE.MeshLambertMaterial({map:new THREE.CanvasTexture(mapleLeafCanvas(c)),transparent:true,alphaTest:.4,side:THREE.DoubleSide})),lg=new THREE.PlaneGeometry(3.4,3.4);
     for(let i=0;i<26;i++){let x,z;do{x=(Math.random()-.5)*(ew-20);z=ez+(Math.random()-.5)*(ed-20);}while(Math.abs(x)<L.bw/2+26&&Math.abs(z)<L.bd/2+26);M(lg,lfMats[i%3],x,fy+.08+i*.002,z,false,true).rotation.set(-Math.PI/2,0,Math.random()*6.28);}
     fallers(Q(90,160),3.2,new THREE.CanvasTexture(mapleLeafCanvas('#d4462a')),{r:170,cz:-40,top:fy+190,lo:fy,speed:[6,1.4],sway:7,drift:3,floor:(x,z)=>Math.abs(x)<ew/2&&Math.abs(z-ez)<ed/2?fy+.3:gy});
-    zabuton(0,fy,L.bd/2+48,0x4a2a4a,58,62);zabuton(0,fy,-(L.bd/2+48),0x4a2a4a,58,62);
+    zabuton(0,fy,L.bd/2+SEAT,0x4a2a4a,58,62);zabuton(0,fy,-(L.bd/2+SEAT),0x4a2a4a,58,62);
     const tray=std({color:0x2a0e0c,roughness:.3}),cup=std({color:0xe2dccb,roughness:.3}),trx=-(L.bw/2+36);M(Box(26,1.6,18),tray,trx,fy+.8,-4,true,true);for(const dx of [-6,6])M(Cyl(3.2,2.4,4.6,18),cup,trx+dx,fy+3.9,-4,true);
     envRT=buildEnvMap(['#9fbfe0','#ead9c0','#6b5038'],[{p:[50,60,30],w:30,h:30,c:'#ffe2b8',i:5}]);
   }
@@ -2085,7 +2096,10 @@ function create3D(){
     M(new THREE.PlaneGeometry(240,220),std({map:ctex(planksCanvas([146,108,72],[84,58,38],31),3,3),roughness:.55}),0,fy,dz,false,true).rotation.x=-Math.PI/2;M(Box(244,10,224),dk,0,fy-5.1,dz,true,true);
     for(const x of [-110,0,110])for(const z of [-80,dz,120])M(Cyl(4,4,fy-sy,8),dk,x,sy+(fy-sy)/2,z,true,true);
     [[-112,-82],[112,-82],[-112,122],[112,122]].forEach(([x,z])=>M(Cyl(4.5,4.5,236,12),ver,x,fy+118,z,true,true));
-    hipRoof(0,fy+236,dz,300,290,74,std({map:ctex(roofTileCanvas(),6,3),roughness:.7}));
+    const roof=hipRoof(0,fy+236,dz,300,290,74,std({map:ctex(roofTileCanvas(),6,3),roughness:.7}));
+    /* a camera drawn far back would pass through the roof: under it, the roof fades as the camera nears the eaves */
+    {const rm=roof.material,low=fy+236;rm.transparent=true;envUpd.push(()=>{const c=camera.position,inside=Math.abs(c.x)<160&&Math.abs(c.z-dz)<155;
+      const o=inside?1-smooth(low-50,low-10,c.y):1;rm.opacity=o;roof.visible=o>.02;rm.depthWrite=o>.98;});}
     M(Box(236,10,6),ver,0,fy+230,-82,true);M(Box(236,10,6),ver,0,fy+230,122,true);M(Box(6,10,206),ver,-112,fy+230,dz,true);M(Box(6,10,206),ver,112,fy+230,dz,true);
     for(const x of [-1,1])M(Box(4,4,204),ver,x*112,fy+30,dz,true);M(Box(80,4,4),ver,-72,fy+30,122,true);M(Box(80,4,4),ver,72,fy+30,122,true);
     const lanTex=ctex(lanternCanvas());[-98,98].forEach((x,i)=>{M(Cyl(.25,.25,26,4),dk,x,fy+213,-78);const b=M(Sph(1,18,12),std({map:lanTex,emissive:0xffa060,emissiveMap:lanTex,emissiveIntensity:1.2,roughness:.9}),x,fy+192,-78);b.scale.set(7,10,7);
@@ -2118,7 +2132,7 @@ function create3D(){
     for(let i=0;i<5;i++){const g=new THREE.Group(),l=new THREE.Mesh(wg,gm),r=new THREE.Mesh(wg,gm),bd=new THREE.Mesh(Sph(1.8,8,6),gm);r.scale.x=-1;bd.scale.z=2.6;g.add(l,r,bd);envGroup.add(g);
       gulls.push({g,l,r,R:120+Math.random()*220,h:sy+110+Math.random()*90,w:(.08+Math.random()*.08)*(Math.random()<.5?-1:1),ph:Math.random()*6.28,cx:(Math.random()-.5)*300,cz:-420-Math.random()*300});}
     envUpd.push((dt,t)=>{gulls.forEach(o=>{const a=o.ph+t*o.w;o.g.position.set(o.cx+Math.cos(a)*o.R,o.h+Math.sin(t*.5+o.ph)*8,o.cz+Math.sin(a)*o.R);o.g.rotation.y=-a+(o.w>0?0:Math.PI);const f=Math.sin(t*5+o.ph)*.45;o.l.rotation.z=f;o.r.rotation.z=-f;});});
-    zabuton(0,fy,L.bd/2+48,0x2a4a6a,58,62);zabuton(0,fy,-(L.bd/2+48),0x2a4a6a,58,62);
+    zabuton(0,fy,L.bd/2+SEAT,0x2a4a6a,58,62);zabuton(0,fy,-(L.bd/2+SEAT),0x2a4a6a,58,62);
     envRT=buildEnvMap(['#3a3f6e','#e48f63','#3d5468'],[{p:[-40,12,-90],w:24,h:16,c:'#ffc78a',i:6}]);
   }
   function buildEnv(){
@@ -2149,6 +2163,10 @@ function create3D(){
   }
   function resize(){renderer.setSize(window.innerWidth,window.innerHeight,false);if(zen){camera.aspect=window.innerWidth/window.innerHeight;applyShift();}else frame(camPreset,false);}
   /* the demo camera can be pushed sideways, so the table shows beside the menu rather than behind it */
+  /* the demo only has the part of the screen beside (or above) the menu, so the camera stands back accordingly */
+  function demoFit(){const W=window.innerWidth,H=window.innerHeight;
+    if(zenShift.x){const free=W-2*zenShift.x;return clamp(.62*W/Math.max(200,free),1,1.7);}
+    if(zenShift.y)return clamp(.5*H/Math.max(120,H-2*zenShift.y),1,1.6);return 1;}
   function applyShift(){const W=window.innerWidth,H=window.innerHeight;if(zenShift.x||zenShift.y)camera.setViewOffset(W,H,-zenShift.x,zenShift.y,W,H);else camera.clearViewOffset();camera.updateProjectionMatrix();}
 
   /* tweens */
@@ -2256,7 +2274,7 @@ function create3D(){
     [1,2].forEach(c=>{const r=bowlRings[c];if(!r)return;r.visible=c===G.human&&inPlayPhase()&&canHumanAct()&&!hand.held&&(!S.quick||pulse>0);ringMat.opacity=(pulse>0?.55:.22)+.18*Math.sin(time*(pulse>0?9:3));});
     markGroup.children.forEach(m=>{if(m.userData.pulse){const s=1+.12*Math.sin(time*4);m.scale.set(s,s,s);}});
     for(const m of stoneGroup.children){const b=m.userData.blob;if(b)b.visible=Math.abs(m.position.y-STONE_HY)<.06;}
-    if(zen){zt+=dt;const v=L.view,env=ENVS[S.env],th=zen0+zt*(zenDemo?.05:.045),el=zenDemo?.72+.08*Math.sin(zt*.06):.2+.14*Math.sin(zt*.06),d=Math.min(v.dist*(zenDemo?1.12+.08*Math.sin(zt*.041):1.45+.35*Math.sin(zt*.041)),env.maxD?env.maxD-10:1e9);
+    if(zen){zt+=dt;const v=L.view,env=ENVS[S.env],th=zen0+zt*(zenDemo?.05:.045),el=zenDemo?.72+.08*Math.sin(zt*.06):.2+.14*Math.sin(zt*.06),d=Math.min(v.dist*(zenDemo?(1.12+.08*Math.sin(zt*.041))*demoFit():1.45+.35*Math.sin(zt*.041)),env.maxD?env.maxD-10:1e9);
       camera.position.set(v.ctr.x+d*Math.cos(el)*Math.sin(th),v.ctr.y+d*Math.sin(el),v.ctr.z+d*Math.cos(el)*Math.cos(th));tgt.copy(v.ctr);tgt.y+=5*Math.sin(zt*.05);camera.lookAt(tgt);}
     else{controls.autoRotate=G.phase==='idle';controls.autoRotateSpeed=.35;controls.update();}renderer.render(scene,camera);}
   requestAnimationFrame(loop);
@@ -2903,8 +2921,9 @@ function attractStep(tok){if(tok!==ATT.tok||!demo()||G.phase!=='idle')return;
   if(is3D())V3D.placeBot(r.move,c,done);else setTimeout(done,250);}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.5';
+const APP_VER='2.6';
 const NEWS=[
+ ['2.6','Места стали аккуратнее',['Убраны светлые прямоугольники на полу в чайной и храме','Подушки отодвинуты — чаши и крышки больше не залезают на них','В осеннем саду падают настоящие кленовые листья, а не звёздочки','Камера больше не проваливается в зонтик в саду и в крышу павильона у моря','Заставка на главном экране держит доску в кадре на любой ширине окна']],
  ['2.5','Управление сервером',['Для администраторов — панель в браузере: главное меню или «Аккаунт» → «Управление сервером»','Игроки: поиск, смена логина, имени и пароля, правка рейтинга Эло, блокировка, выход на всех устройствах, права администратора, удаление','Партии: удаление выбранных, всех партий игрока или всей истории, пересчёт рейтинга по оставшимся партиям','Сервер: режим регистрации, гости, коды приглашения, объявление на главном экране, закрытие зависших комнат','Обзор: сколько игроков и партий, кто онлайн, размер базы — и журнал всех действий администраторов']],
  ['2.4','Смена логина',['В окне «Аккаунт» можно сменить логин — подтверждается текущим паролем','Рейтинг, история партий и входы на других устройствах остаются: они привязаны к аккаунту, а не к логину','Администратор может сменить логин игроку: accounts.py rename СТАРЫЙ НОВЫЙ']],
  ['2.3','Новый курс, качество графики, «только фон»',['Обучение переписано целиком: 22 урока в пяти главах — правила, тактика (двойное атари, лестница, гонка за дыхания), жизнь и смерть, стратегия и экзамен','Упражнения проверяет сама игра: на верный ход белые отвечают, на неверный — позиция возвращается, после двух ошибок — подсказка. Есть вопросы на понимание и отметка мёртвых камней','Список уроков с главами и прогрессом — можно открыть любой урок','Качество графики: авто, низкое, среднее, высокое или ультра (Настройки → Стол)','Если минуту ничего не трогать на главном экране, меню плавно уходит и остаётся живая заставка без затемнения. То же — кнопкой-глазом в углу меню']],
