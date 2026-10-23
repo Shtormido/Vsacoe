@@ -232,7 +232,8 @@ def main():
         sys.exit('Не найден %s/index.html — укажите папку игры через --dir' % site)
 
     handler = lambda *x, **k: Handler(*x, directory=site, **k)
-    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    # on Windows SO_REUSEADDR would let a second copy silently share the port, so only reuse it elsewhere
+    http.server.ThreadingHTTPServer.allow_reuse_address = os.name != 'nt'
     try:
         httpd = http.server.ThreadingHTTPServer((a.host, a.port), handler)
     except PermissionError:
