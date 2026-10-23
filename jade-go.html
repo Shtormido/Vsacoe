@@ -55,6 +55,7 @@ body.tut #status{top:calc(12px + env(safe-area-inset-top,0px))}
   padding:8px 8px 7px;min-width:58px;border-radius:13px;cursor:pointer;color:var(--kinari)}
 .tool svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .tool:hover{background:rgba(236,228,212,.08)}.tool:active{background:rgba(236,228,212,.15)}
+.tool i{font-style:normal}.tool .sm{display:none}
 .tool:disabled{opacity:.32;cursor:default;background:transparent}
 :focus-visible{outline:2px solid var(--jade);outline-offset:2px}
 /* sheets */
@@ -126,7 +127,16 @@ table.res{width:100%;border-collapse:collapse;margin-top:14px;font-variant-numer
 table.res th,table.res td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--hair);font-weight:400}
 table.res th:first-child,table.res td:first-child{text-align:left;color:var(--kinari-dim)}
 table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
+.res.plain tr:last-child td{font-weight:400;color:var(--kinari-dim)}.res.plain tr:last-child td:not(:first-child){color:var(--kinari)}
 .note{font-size:12px;color:var(--kinari-dim);margin-top:10px}
+.doc ul{margin:6px 0 0;padding-left:20px;color:var(--kinari-dim);line-height:1.5;max-width:62ch}.doc li{margin-top:4px}.doc b{color:var(--kinari);font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.stat{border:1px solid var(--hair);border-radius:14px;padding:10px 12px;min-width:0}.stat b{display:block;font-family:var(--f-display);font-weight:400;font-size:23px;line-height:1.1}
+.stat span{display:block;font-size:11.5px;color:var(--kinari-dim);margin-top:3px;line-height:1.25}
+.games{margin-top:6px}.game{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--hair)}.game .gi{flex:1;min-width:0}
+.game b{display:block;font-weight:600;font-size:14px}.game b.win{color:var(--jade)}.game b.loss{color:#f2a28e}.game span{display:block;font-size:12px;color:var(--kinari-dim);margin-top:2px}
+.game .btn{padding:7px 10px;font-size:12.5px;flex:none}
+@media (max-width:420px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .tabs{display:flex;gap:4px;margin:14px 0 4px;padding:4px;border-radius:14px;background:rgba(236,228,212,.06)}
 .tabs button{flex:1;border:0;background:none;padding:9px 6px;border-radius:10px;font:500 14px var(--f-body);cursor:pointer;color:var(--kinari-dim)}
 .tabs button[aria-selected="true"]{background:var(--jade);color:var(--jade-ink)}
@@ -152,7 +162,7 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
 .dots i.cur{background:var(--kinari)}
 #scorePanel .tot{display:flex;gap:16px;margin-top:8px;font-variant-numeric:tabular-nums;font-size:15px}
 #scorePanel .tot b{font-family:var(--f-display);font-weight:400;font-size:20px}
-@media (max-width:420px){.tool{min-width:52px;padding-left:5px;padding-right:5px}.player{padding-right:10px}.pname{font-size:14.5px}}
+@media (max-width:420px){.tools{width:100%}.tool{flex:1 1 0;min-width:0;padding-left:2px;padding-right:2px}.tool .lg{display:none}.tool .sm{display:inline}.tool span{font-size:10.5px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player{padding-right:10px}.pname{font-size:14.5px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -195,7 +205,8 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
     <button class="tool" id="bUndo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg><span>Назад</span></button>
     <button class="tool" id="bView"><svg viewBox="0 0 24 24" id="iView"></svg><span id="lView">2D</span></button>
     <button class="tool" id="bCam"><svg viewBox="0 0 24 24"><path d="M3 12s3.5-6.5 9-6.5S21 12 21 12s-3.5 6.5-9 6.5S3 12 3 12z"/><circle cx="12" cy="12" r="2.8"/></svg><span id="lCam">Камера</span></button>
-    <button class="tool" id="bMenu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span>Меню</span></button>
+    <button class="tool" id="bInfo"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><span><i class="lg">Сведения</i><i class="sm">Инфо</i></span></button>
+    <button class="tool" id="bMenu"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span><i class="lg">Настройки</i><i class="sm">Опции</i></span></button>
   </div>
 </nav>
 
@@ -226,6 +237,7 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
     <div class="field"><div class="label">Часы</div>
       <div class="seg" data-key="clock"><button data-v="off">Без часов</button><button data-v="5">5 мин<small>+ 3 × 30 с</small></button><button data-v="10">10 мин<small>+ 3 × 30 с</small></button><button data-v="20">20 мин<small>+ 3 × 30 с</small></button></div></div>
     <button class="btn primary" id="bStart" style="width:100%;margin-top:18px">Начать партию</button>
+    <div class="btnrow"><button class="btn" id="hmSet">Настройки</button><button class="btn" id="hmInfo">Правила, история, статистика</button></div>
   </div>
 </div>
 
@@ -277,6 +289,70 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
       <button class="btn danger" id="bResign">Сдаться</button>
       <button class="btn primary" id="bSetClose">Готово</button>
     </div>
+  </div>
+</div>
+
+<!-- Info -->
+<div class="sheet" id="sInfo" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="hInfo">
+    <div class="kicker">Сведения</div>
+    <h2 id="hInfo">Об игре го</h2>
+    <div class="tabs" role="tablist"><button role="tab" data-itab="rules">Правила</button><button role="tab" data-itab="history">История</button><button role="tab" data-itab="stats">Статистика</button></div>
+    <div class="ipane doc" data-ipane="rules">
+      <h3>Цель</h3>
+      <p>Двое игроков по очереди ставят камни на пересечения линий. Побеждает тот, кто к концу партии окружит больше пространства на доске.</p>
+      <h3>Доска и камни</h3>
+      <ul><li>Доски бывают 19 × 19 (основная), 13 × 13 и 9 × 9 — для быстрых партий и обучения.</li>
+        <li>Камни ставят на пересечения, а не в клетки. Поставленный камень больше не двигается.</li>
+        <li>Первыми ходят чёрные, затем ходы чередуются. Вместо хода можно спасовать.</li></ul>
+      <h3>Дыхания и захват</h3>
+      <ul><li><b>Дыхание</b> — свободный соседний пункт по линии (не по диагонали). У камня в центре их 4, на краю 3, в углу 2.</li>
+        <li>Камни одного цвета, соседние по линиям, образуют <b>группу</b> с общими дыханиями.</li>
+        <li>Если у группы не осталось дыханий, её снимают с доски — это <b>захват</b>. Снятые камни становятся пленными.</li>
+        <li><b>Атари</b> — у группы осталось одно дыхание, её могут захватить следующим ходом.</li></ul>
+      <h3>Запрещённые ходы</h3>
+      <ul><li><b>Самоубийство:</b> нельзя ставить камень туда, где у него (и его группы) сразу не останется дыханий — если только этот ход не захватывает камни соперника.</li>
+        <li><b>Ко:</b> нельзя сразу забрать камень обратно, если это повторит позицию на доске. Сначала нужно сыграть в другом месте («угроза ко»).</li></ul>
+      <h3>Жизнь и смерть</h3>
+      <ul><li><b>Глаз</b> — пустой пункт, полностью окружённый своей группой. Группа с двумя отдельными глазами жива навсегда: сыграть в оба глаза сразу нельзя.</li>
+        <li><b>Сэки</b> — взаимная жизнь: ни одна сторона не может напасть, не погубив себя. Такие группы остаются на доске.</li></ul>
+      <h3>Конец партии и подсчёт</h3>
+      <ul><li>Партия заканчивается, когда оба игрока подряд пасуют, один сдаётся или у одного кончилось время.</li>
+        <li>Игроки отмечают мёртвые камни — те, что неизбежно будут захвачены. Они уходят с доски как пленные.</li>
+        <li>Здесь используется подсчёт по площади (китайские правила): каждый свой камень на доске и каждый окружённый пустой пункт — одно очко.</li>
+        <li><b>Коми</b> — очки белым за то, что они ходят вторыми (обычно 6,5 или 7,5). Половинка исключает ничью.</li></ul>
+      <h3>Фора</h3>
+      <p>Более слабый игрок берёт чёрные и заранее ставит 2–9 камней на звёздные пункты (хоси). Белые ходят первыми, коми 0,5. Разница в один камень форы примерно равна разнице в один ранг.</p>
+      <h3>Время</h3>
+      <p>В партиях с часами у каждого есть основное время. Когда оно кончается, начинается <b>бёёми</b>: каждый ход нужно сделать за 30 секунд. Если не успеть — сгорает один из трёх периодов; когда сгорят все, партия проиграна по времени.</p>
+      <h3>Словарь</h3>
+      <ul><li><b>Хоси</b> — звёздные пункты, отмеченные точками; <b>тэнгэн</b> — центральный.</li>
+        <li><b>Сэнтэ</b> — ход, требующий ответа; <b>готэ</b> — ход, после которого инициатива переходит к сопернику.</li>
+        <li><b>Фусэки</b> — дебют; <b>дзёсэки</b> — устоявшиеся последовательности в углу; <b>ёсэ</b> — эндшпиль.</li>
+        <li><b>Кю и дан</b> — ранги: от 30 кю (новичок) до 1 кю, затем 1–9 дан.</li></ul>
+      <h3>Этикет</h3>
+      <p>Камень берут из чаши двумя пальцами — между указательным и средним — и ставят уверенно, не передвигая. Пленных кладут в крышку своей чаши. В начале партии игроки кланяются и говорят «онэгайсимас», в конце — «аригато годзаимасита».</p>
+    </div>
+    <div class="ipane doc" data-ipane="history" hidden>
+      <h3>Китай: вэйци</h3>
+      <p>Го — одна из старейших настольных игр, в которые играют до сих пор. В Китае её называют <b>вэйци</b> — «игра окружения». Легенды приписывают её создание императору Яо, а письменные упоминания встречаются уже в источниках середины I тысячелетия до н. э. Вэйци входила в «четыре искусства» образованного человека вместе с игрой на цине, каллиграфией и живописью.</p>
+      <h3>Корея: падук</h3>
+      <p>Из Китая игра пришла на Корейский полуостров, где её называют <b>падук</b>. Корея долго сохраняла собственный вариант с камнями, заранее расставленными на доске.</p>
+      <h3>Япония: го</h3>
+      <p>В Японию игра попала примерно в VII веке. В сокровищнице Сёсоин в Наре хранится доска VIII века. В начале XVII века сёгунат Токугава учредил должность главы го, а четыре школы — Хонъимбо, Иноуэ, Ясуи и Хаяси — веками соперничали за неё. Тогда же появились профессиональные игроки на содержании государства.</p>
+      <ul><li><b>Хонъимбо Досаку</b> (XVII век) заложил основы современного понимания игры и стратегии.</li>
+        <li><b>Хонъимбо Сюсаку</b> (XIX век) прославился непобедимостью в замковых партиях перед сёгуном и знаменитым «ходом, от которого покраснели уши» (1846).</li></ul>
+      <h3>XX век</h3>
+      <p>В 1924 году основана Японская ассоциация го — Нихон Киин. В 1930-х годах <b>У Цинъюань</b> (Го Сэйгэн) и <b>Китани Минору</b> создали «новый дебют» — синфусэки, сделав ставку на скорость и центр. Прощальная партия мастера Хонъимбо Сюсая 1938 года легла в основу романа Ясунари Кавабаты «Мастер игры в го». Во второй половине века к Японии присоединились сильнейшие школы Кореи и Китая; символом эпохи стал кореец <b>Ли Чхан Хо</b>.</p>
+      <h3>Эпоха ИИ</h3>
+      <p>Долгое время го считалось слишком сложным для компьютеров: число возможных позиций на доске 19 × 19 больше, чем атомов в наблюдаемой Вселенной. В марте 2016 года программа <b>AlphaGo</b> компании DeepMind выиграла у Ли Седоля со счётом 4 : 1, а в 2017 году — у Кэ Цзе 3 : 0. Сегодня профессионалы учатся у программ, а новые дебютные идеи ИИ изменили теорию игры.</p>
+      <h3>Го сегодня</h3>
+      <p>В го играют десятки миллионов людей по всему миру. Есть профессиональные лиги в Японии, Китае, Корее и Тайване, международные чемпионаты и любительские федерации во многих странах, включая Россию.</p>
+    </div>
+    <div class="ipane" data-ipane="stats" hidden>
+      <div id="statBody"></div>
+    </div>
+    <div class="btnrow"><button class="btn primary" id="bInfoClose">Готово</button></div>
   </div>
 </div>
 
@@ -520,7 +596,7 @@ const BOARDS={
 /* hotkeys: action, label, default key (KeyboardEvent.code, so bindings work in any keyboard layout) */
 const ACTIONS=[['pass','Пас','KeyP'],['undo','Ход назад','KeyU'],['view','2D / 3D','KeyV'],['cam','Сменить камеру','KeyC'],
   ['rotL','Повернуть стол влево','ArrowLeft'],['rotR','Повернуть стол вправо','ArrowRight'],['zoomIn','Приблизить','ArrowUp'],['zoomOut','Отдалить','ArrowDown'],
-  ['hint','Подсказка (уроки, задачи)','KeyH'],['next','Дальше (уроки, задачи)','Enter'],['menu','Настройки','KeyM'],['home','Главное меню','KeyN'],
+  ['hint','Подсказка (уроки, задачи)','KeyH'],['next','Дальше (уроки, задачи)','Enter'],['menu','Настройки','KeyM'],['info','Сведения: правила, история, статистика','KeyI'],['home','Главное меню','KeyN'],
   ['mute','Звук вкл / выкл','KeyS'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
 const DEFKEYS=Object.fromEntries(ACTIONS.map(a=>[a[0],a[2]]));
 const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,handicap:0,clock:'off',env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,mute:false,
@@ -1624,7 +1700,7 @@ function check(p,c){const b=G.board.slice(),r=ENG.play(b,p,c,G.ko);if(!r)return 
 function moveReason(p){if(G.board[p])return 'Пункт уже занят';if(p===G.ko)return 'Правило ко: сразу забрать обратно нельзя — сыграйте сначала в другом месте';return 'Сюда нельзя: у камня не останется дыханий (самоубийство)';}
 function commitMove(p,c,chk){
   if(G.phase==='over')return;clockTick();
-  G.hist.push(snap());G.board=chk.board;G.ko=chk.ko;G.caps[c]+=chk.cap;G.last=p;G.passes=0;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();
+  G.hist.push(snap());(G.moves=G.moves||[]).push(p);G.board=chk.board;G.ko=chk.ko;G.caps[c]+=chk.cap;G.last=p;G.passes=0;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();
   AU.place(c===G.human&&!hot()?1:.88+Math.random()*.14,panOf(p));if(chk.removed.length)AU.capture(chk.removed.length,panOf(chk.removed[0]),animF());
   try{navigator.vibrate&&navigator.vibrate(chk.removed.length?[8,40,8]:8);}catch(e){}
   view().onCommit(p,c,chk.removed);handover();if(G.phase==='play')saveGame();hud();
@@ -1641,7 +1717,7 @@ function afterHuman(p){if(G.phase==='play'){if(G.toPlay!==G.human)requestBot();}
 function scriptedReply(p,cb){G.busy=true;hud();setTimeout(()=>{const chk=check(p,2);if(!chk){G.busy=false;G.toPlay=1;hud();cb&&cb();return;}
   const done=()=>{G.busy=false;commitMove(p,2,chk);G.toPlay=1;hud();cb&&cb();};if(is3D())V3D.placeBot(p,2,done);else done();},450);}
 function doPass(c){
-  clockTick();if(G.phase!=='play')return;G.hist.push(snap());G.passes++;G.ko=-1;G.last=-1;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();handover();AU.pass();view().resync();saveGame();
+  clockTick();if(G.phase!=='play')return;G.hist.push(snap());(G.moves=G.moves||[]).push(-1);G.passes++;G.ko=-1;G.last=-1;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();handover();AU.pass();view().resync();saveGame();
   if(G.passes>=2){startScoring();return;}
   hud();if(hot())toast((c===1?'Чёрные':'Белые')+' спасовали. Если соперник тоже спасует, начнётся подсчёт',3400);else if(c!==G.human)toast('Бот пасует. Спасуйте тоже — и начнётся подсчёт очков',3600);
   if(G.toPlay!==G.human)requestBot();
@@ -1667,7 +1743,7 @@ function newGame(){
   closeAllTut();AI.reset();G.token++;G.N=S.size;ENG.setSize(G.N);G.board=new Int8Array(G.N*G.N);G.ko=-1;G.toPlay=1;G.caps={1:0,2:0};G.hist=[];G.last=-1;G.passes=0;G.moveNum=0;
   G.phase='play';G.level=S.opp==='human'?-1:S.level;G.komi=S.komi;G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.result=null;G.marks=[];
   G.human=G.level<0?1:S.color==='black'?1:S.color==='white'?2:(Math.random()<.5?1:2);G.near=G.human;G.flipView=false;
-  const hc=+S.handicap||0;if(hc>=2){handicapPts(G.N,hc).forEach(p=>G.board[p]=1);G.toPlay=2;G.komi=.5;if(hot()){G.human=2;G.flipView=!!S.flip;}}
+  const hc=+S.handicap||0;G.moves=[];G.startT=Date.now();G.hc=hc>=2?hc:0;G.hcPts=hc>=2?handicapPts(G.N,hc):[];if(hc>=2){G.hcPts.forEach(p=>G.board[p]=1);G.toPlay=2;G.komi=.5;if(hot()){G.human=2;G.flipView=!!S.flip;}}
   G.clock=makeClock();refreshAtari();
   rebuildViews();saveGame();hud();
   if(hc>=2)toast(`Фора ${hc} ${plural(hc,'камень','камня','камней')}: белые ходят первыми, коми 0,5`+(hot()?'':G.human===1?'. Камни форы ваши':'. Камни форы у бота'),4200);
@@ -1679,7 +1755,7 @@ function rebuildViews(){if(V3D)V3D.sync();if(V2D){V2D.relayout();V2D.resync();}}
 function undo(){
   if(G.phase!=='play'||!G.hist.length||G.busy||(!hot()&&!S.allowUndo))return;
   if(G.thinking){G.token++;AI.reset();G.thinking=false;}
-  restore(G.hist.pop());if(hot()){G.human=G.toPlay;G.flipView=S.flip&&G.toPlay===2;}else while(G.toPlay!==G.human&&G.hist.length)restore(G.hist.pop());
+  const back=()=>{restore(G.hist.pop());G.moves.pop();};back();if(hot()){G.human=G.toPlay;G.flipView=S.flip&&G.toPlay===2;}else while(G.toPlay!==G.human&&G.hist.length)back();
   refreshAtari();view().resync();if(hot()&&is3D())V3D.turnCam();saveGame();hud();AU.rummage(2);if(G.toPlay!==G.human)requestBot();
 }
 function startScoring(){
@@ -1704,17 +1780,59 @@ function endGame(r){
   $('hRes').textContent=hot()?'Победили '+(r.winner===1?'чёрные':'белые'):win?'Победа':'Поражение';$('pRes').textContent=r.text+(hot()?' Хорошая партия!':win?' Отличная партия!':' Попробуйте ещё раз — или загляните в задачи дня.');
   if(r.by==='score'&&G.score){const s=G.score;$('resTable').innerHTML=`<table class="res"><tr><th></th><th>Чёрные</th><th>Белые</th></tr><tr><td>Территория</td><td>${s.b.terr}</td><td>${s.w.terr}</td></tr><tr><td>Камни на доске</td><td>${s.b.stones}</td><td>${s.w.stones}</td></tr><tr><td>Коми</td><td>—</td><td>${fmt(s.w.komi)}</td></tr><tr><td>Итого</td><td>${fmt(s.b.total)}</td><td>${fmt(s.w.total)}</td></tr></table><p class="note">Подсчёт по площади (китайские правила): камень и окружённый пункт — по одному очку.</p>`;}
   else $('resTable').innerHTML='';
-  AU.bell();view().resync();hud();saveGame();setTimeout(()=>openSheet('sResult'),600);
+  recordGame(r);AU.bell();view().resync();hud();saveGame();setTimeout(()=>openSheet('sResult'),600);
 }
 function saveGame(){try{if(G.phase!=='play'){localStorage.removeItem('jadego.game');return;}
-  localStorage.setItem('jadego.game',JSON.stringify({N:G.N,board:Array.from(G.board).join(''),ko:G.ko,toPlay:G.toPlay,caps:G.caps,last:G.last,passes:G.passes,moveNum:G.moveNum,human:G.human,level:G.level,komi:G.komi,clock:G.clock?{1:G.clock[1],2:G.clock[2]}:null,
+  localStorage.setItem('jadego.game',JSON.stringify({N:G.N,board:Array.from(G.board).join(''),ko:G.ko,toPlay:G.toPlay,caps:G.caps,last:G.last,passes:G.passes,moveNum:G.moveNum,human:G.human,level:G.level,komi:G.komi,moves:G.moves,startT:G.startT,hc:G.hc,hcPts:G.hcPts,clock:G.clock?{1:G.clock[1],2:G.clock[2]}:null,
     hist:G.hist.slice(-300).map(h=>({board:Array.from(h.board).join(''),ko:h.ko,toPlay:h.toPlay,caps:h.caps,last:h.last,passes:h.passes,moveNum:h.moveNum}))}));}catch(e){}}
 function loadGame(){try{const s=JSON.parse(localStorage.getItem('jadego.game')||'null');return s&&s.moveNum?s:null;}catch(e){return null;}}
 function resumeSaved(s){closeAllTut();AI.reset();G.token++;G.N=s.N;ENG.setSize(G.N);const ar=str=>Int8Array.from(str.split('').map(Number));
   G.board=ar(s.board);G.ko=s.ko;G.toPlay=s.toPlay;G.caps={1:s.caps[1],2:s.caps[2]};G.last=s.last;G.passes=s.passes;G.moveNum=s.moveNum;G.human=s.human;G.level=s.level;G.komi=s.komi;G.near=G.level<0?1:G.human;if(G.level<0)G.human=G.toPlay;G.flipView=G.level<0&&S.flip&&G.toPlay===2;
   G.hist=s.hist.map(h=>({board:ar(h.board),ko:h.ko,toPlay:h.toPlay,caps:{1:h.caps[1],2:h.caps[2]},last:h.last,passes:h.passes,moveNum:h.moveNum}));
-  G.clock=s.clock?{1:s.clock[1],2:s.clock[2],t:performance.now()}:null;
+  G.clock=s.clock?{1:s.clock[1],2:s.clock[2],t:performance.now()}:null;G.moves=s.moves||[];G.startT=s.startT||Date.now();G.hc=s.hc||0;G.hcPts=s.hcPts||[];
   G.phase='play';G.dead=null;G.score=null;G.busy=false;G.thinking=false;refreshAtari();rebuildViews();hud();if(G.toPlay!==G.human)requestBot();}
+
+/* ---------- statistics and game records (kept in this browser) ---------- */
+function loadStats(){try{const l=JSON.parse(localStorage.getItem('jadego.stats')||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}}
+function recordGame(r){const l=loadStats();
+  l.unshift({d:Date.now(),N:G.N,lv:G.level,hc:G.hc||0,komi:G.komi,you:G.human,w:r.winner,by:r.by,m:r.margin||0,mv:G.moveNum,caps:[G.caps[1],G.caps[2]],t:Math.round((Date.now()-(G.startT||Date.now()))/1000),
+    moves:(G.moves||[]).join(','),ab:(G.hcPts||[]).join(',')});
+  try{localStorage.setItem('jadego.stats',JSON.stringify(l.slice(0,200)));}catch(e){}}
+function sgf(g){const A='abcdefghijklmnopqrs',c=p=>A[p%g.N]+A[(p/g.N)|0],bot='Бот · '+LEVELS[g.lv],names=g.lv<0?['Игрок 1','Игрок 2']:g.you===1?['Вы',bot]:[bot,'Вы'];
+  const re=(g.w===1?'B':'W')+'+'+(g.by==='score'?String(g.m):g.by==='time'?'T':'R');
+  let s=`(;GM[1]FF[4]CA[UTF-8]AP[Jade Go]SZ[${g.N}]KM[${g.komi}]RU[Chinese]DT[${new Date(g.d).toISOString().slice(0,10)}]PB[${names[0]}]PW[${names[1]}]RE[${re}]`;
+  if(g.hc>=2&&g.ab)s+=`HA[${g.hc}]AB`+g.ab.split(',').map(p=>`[${c(+p)}]`).join('');
+  let col=g.hc>=2?2:1;(g.moves?g.moves.split(','):[]).forEach(x=>{const p=+x;s+=`;${col===1?'B':'W'}[${p<0?'':c(p)}]`;col=3-col;});return s+')\n';}
+function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/x-go-sgf'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},800);}
+function durText(s){const h=(s/3600)|0,m=Math.round(s%3600/60);return h?`${h} ч ${m} мин`:`${m} мин`;}
+function gameLine(g){const win=g.lv<0?null:g.w===g.you,how=g.by==='score'?'+'+fmt(g.m):g.by==='time'?'по времени':g.lv<0?'сдались':win?'бот сдался':'вы сдались';
+  const head=g.lv<0?`${g.w===1?'Чёрные':'Белые'} ${how}`:`${win?'Победа':'Поражение'} · ${how}`;
+  const dt=new Date(g.d),when=String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0')+' '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');
+  const who=g.lv<0?'вдвоём':`бот «${LEVELS[g.lv]}», вы ${g.you===1?'чёрными':'белыми'}`;
+  return {cls:win===null?'':win?'win':'loss',head,sub:`${when} · ${g.N}×${g.N} · ${who}${g.hc?' · фора '+g.hc:''} · ${g.mv} ${plural(g.mv,'ход','хода','ходов')} · ${durText(g.t)}`};}
+let resetArm=false;
+function renderStats(){const l=loadStats(),bot=l.filter(g=>g.lv>=0),won=bot.filter(g=>g.w===g.you).length;
+  let streak=0;for(const g of bot){if(g.w===g.you)streak++;else break;}let best=0,cur=0;for(let i=bot.length-1;i>=0;i--){cur=bot[i].w===bot[i].you?cur+1:0;if(cur>best)best=cur;}
+  const caps=bot.reduce((a,g)=>a+g.caps[g.you-1],0),secs=l.reduce((a,g)=>a+g.t,0),mv=l.reduce((a,g)=>a+g.mv,0),ds=dailyState(),ld=lessonsDone();
+  const tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
+  let h=`<div class="stats">${tile(l.length,plural(l.length,'партия','партии','партий')+' всего')}${tile(won+' / '+bot.length,'побед над ботом')}${tile(bot.length?Math.round(won/bot.length*100)+'%':'—','доля побед')}`+
+    `${tile(streak,'побед подряд сейчас')}${tile(best,'лучшая серия')}${tile(caps,'камней взято у бота')}${tile(mv,'ходов сыграно')}${tile(secs?durText(secs):'—','за доской')}${tile(ld+' / '+LESSONS.length,'уроков пройдено')}</div>`;
+  if(ds.streak)h+=`<p class="note">Задачи дня: серия ${ds.streak} ${plural(ds.streak,'день','дня','дней')} подряд.</p>`;
+  if(bot.length){h+=`<h3>По силе бота</h3><table class="res plain"><tr><th></th><th>Партий</th><th>Побед</th><th>%</th></tr>`+LEVELS.map((n,i)=>{const g=bot.filter(x=>x.lv===i),w=g.filter(x=>x.w===x.you).length;return `<tr><td>${n}</td><td>${g.length}</td><td>${w}</td><td>${g.length?Math.round(w/g.length*100):'—'}</td></tr>`;}).join('')+`</table>`;
+    h+=`<table class="res plain"><tr><th>Доска</th><th>9×9</th><th>13×13</th><th>19×19</th></tr><tr><td>Партий</td>${[9,13,19].map(n=>`<td>${l.filter(g=>g.N===n).length}</td>`).join('')}</tr></table>`;}
+  h+=`<h3>История партий</h3>`;
+  if(!l.length)h+=`<p>Сыграйте первую партию — здесь появится её запись. Записи хранятся в этом браузере.</p>`;
+  else h+=`<div class="games">`+l.slice(0,30).map((g,i)=>{const x=gameLine(g);return `<div class="game"><div class="gi"><b class="${x.cls}">${x.head}</b><span>${x.sub}</span></div><button class="btn" data-sgf="${i}" title="Скачать запись партии в формате SGF">SGF</button></div>`;}).join('')+`</div>`+
+    `<p class="note">SGF — стандартная запись партии: её откроют программы для го (Sabaki, KaTrain) и сайты вроде OGS.</p><div class="btnrow"><button class="btn danger" id="bStatReset">${resetArm?'Точно стереть?':'Стереть статистику'}</button></div>`;
+  $('statBody').innerHTML=h;
+  $('statBody').querySelectorAll('[data-sgf]').forEach(b=>b.onclick=()=>{const g=l[+b.dataset.sgf],dt=new Date(g.d);download(`jade-go-${dt.toISOString().slice(0,10)}-${g.N}x${g.N}.sgf`,sgf(g));});
+  const rb=$('bStatReset');if(rb)rb.onclick=()=>{if(!resetArm){resetArm=true;renderStats();return;}resetArm=false;try{localStorage.removeItem('jadego.stats');}catch(e){}renderStats();toast('Статистика стёрта',1600);};}
+let infoTab='rules';
+function showITab(t){infoTab=t;resetArm=false;document.querySelectorAll('#sInfo [data-itab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.itab===t)));
+  document.querySelectorAll('#sInfo [data-ipane]').forEach(p=>p.hidden=p.dataset.ipane!==t);if(t==='stats')renderStats();$('sInfo').querySelector('.card').scrollTop=0;}
+function openInfo(t){openSheet('sInfo');showITab(t||infoTab);}
+/* closing a sheet from the start screen brings the start screen back */
+function closeBack(id){closeSheet(id);if(G.phase==='idle'&&!anySheet())openHome();}
 
 /* handicap stones on the star points, in the traditional order */
 function handicapPts(N,h){const e=N<13?2:3,m=(N-1)/2,a=e,b=N-1-e,P=(i,j)=>j*N+i,ur=P(b,a),ll=P(a,b),lr=P(b,b),ul=P(a,a),c=P(m,m),l=P(a,m),r=P(b,m),t=P(m,a),bo=P(m,b);
@@ -1809,7 +1927,7 @@ function lessonsDone(){try{return +(localStorage.getItem('jadego.lessons')||0);}
 function setLessonsDone(n){try{if(n>lessonsDone())localStorage.setItem('jadego.lessons',String(n));}catch(e){}}
 function setupPos(rows,targetsAsMarks){
   AI.reset();G.token++;const N=9;const changed=G.N!==N;G.N=N;ENG.setSize(N);G.board=new Int8Array(N*N);G.ko=-1;G.toPlay=1;G.human=1;G.caps={1:0,2:0};G.hist=[];G.last=-1;G.passes=0;G.moveNum=0;
-  G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.marks=[];G.clock=null;G.level=0;G.komi=6.5;G.near=1;G.flipView=false;
+  G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.marks=[];G.clock=null;G.moves=[];G.level=0;G.komi=6.5;G.near=1;G.flipView=false;
   const ok=[],chars={};
   rows.forEach((r,y)=>{for(let x=0;x<N;x++){const ch=r[x]||'.',p=y*N+x;
     if(ch==='X'||ch==='x')G.board[p]=1;else if(ch==='O'||ch==='o')G.board[p]=2;
@@ -1938,13 +2056,13 @@ function doAction(a){
   if(a==='pass')$('bPass').click();else if(a==='undo')undo();else if(a==='view'){if(V3D)$('bView').click();}else if(a==='cam')$('bCam').click();
   else if(a==='rotL'||a==='rotR'){if(is3D())V3D.orbit(a==='rotL'?-.09:.09);}else if(a==='zoomIn'||a==='zoomOut'){if(is3D())V3D.zoom(a==='zoomIn'?.93:1.075);}
   else if(a==='hint'){if(T.kind&&!T.solved)showHint();}else if(a==='next'){if(T.kind&&!$('tNext').disabled)$('tNext').click();}
-  else if(a==='menu')openSettings();else if(a==='home'){if(T.kind)closeAllTut();openHome();}
+  else if(a==='menu')openSettings();else if(a==='info')openInfo();else if(a==='home'){if(T.kind)closeAllTut();openHome();}
   else if(a==='mute'){S.mute=!S.mute;saveSettings();AU.setVol();toast(S.mute?'Звук выключен':'Звук включён',1400);}
   else if(a==='full')toggleFull();else if(a==='resign'){if(G.phase==='play')$('bResign').click();}}
 function onKey(e){AU.init();
   if(capKey&&!$('sSet').hidden){e.preventDefault();if(e.code==='Escape'){capKey=null;renderKeys();return;}if(e.code==='Backspace'||e.code==='Delete'){bindKey(capKey,'');return;}
     if(!e.code||/^(Shift|Control|Alt|Meta|Tab|CapsLock|OS|Fn)/.test(e.code))return;bindKey(capKey,e.code);return;}
-  if(e.key==='Escape'){['sSet','sConfirm','sResult'].forEach(closeSheet);return;}
+  if(e.key==='Escape'){if(!$('sHome').hidden)return;['sSet','sInfo','sConfirm','sResult'].forEach(closeSheet);if(G.phase==='idle')openHome();return;}
   if(anySheet()||e.target.tagName==='INPUT'||e.altKey||e.metaKey)return;
   if(e.ctrlKey){if(e.code==='KeyZ'){e.preventDefault();undo();}return;}
   if((e.code==='Enter'||e.code==='Space')&&e.target.tagName==='BUTTON')return;
@@ -1980,8 +2098,10 @@ function boot(){
   $('bUndo').onclick=undo;
   $('bView').onclick=()=>setView(S.view==='3d'?'2d':'3d');
   $('bCam').onclick=()=>{if(is3D()){const n=V3D.cycleCam();toast('Камера: '+n,1400);}};
-  $('bMenu').onclick=openSettings;
-  $('bSetClose').onclick=()=>closeSheet('sSet');
+  $('bMenu').onclick=openSettings;$('bInfo').onclick=()=>openInfo();
+  $('bSetClose').onclick=()=>closeBack('sSet');$('bInfoClose').onclick=()=>closeBack('sInfo');
+  $('hmSet').onclick=openSettings;$('hmInfo').onclick=()=>openInfo();
+  document.querySelectorAll('#sInfo [data-itab]').forEach(b=>b.onclick=()=>showITab(b.dataset.itab));
   $('bHome').onclick=()=>{closeSheet('sSet');if(T.kind)closeAllTut();openHome();};
   $('bResign').onclick=()=>{closeSheet('sSet');$('pConf').textContent=hot()?(G.toPlay===1?'Чёрные':'Белые')+' сдаются — партия закончится победой соперника.':'Партия закончится победой соперника.';openSheet('sConfirm');};
   $('cNo').onclick=()=>closeSheet('sConfirm');
