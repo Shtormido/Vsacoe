@@ -127,6 +127,13 @@ table.res th,table.res td{padding:8px 6px;text-align:right;border-bottom:1px sol
 table.res th:first-child,table.res td:first-child{text-align:left;color:var(--kinari-dim)}
 table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
 .note{font-size:12px;color:var(--kinari-dim);margin-top:10px}
+.tabs{display:flex;gap:4px;margin:14px 0 4px;padding:4px;border-radius:14px;background:rgba(236,228,212,.06)}
+.tabs button{flex:1;border:0;background:none;padding:9px 6px;border-radius:10px;font:500 14px var(--f-body);cursor:pointer;color:var(--kinari-dim)}
+.tabs button[aria-selected="true"]{background:var(--jade);color:var(--jade-ink)}
+.kbd{min-width:84px;padding:7px 10px;border-radius:9px;border:1px solid var(--hair);background:rgba(236,228,212,.06);font:600 13px var(--f-body);cursor:pointer;flex:none}
+.kbd.wait{border-color:var(--jade);color:var(--jade)}.kbd.none{color:var(--kinari-dim);font-weight:400}
+.pclk{flex:none;margin-left:2px;padding:3px 7px;border-radius:8px;background:rgba(236,228,212,.08);font:600 14px var(--f-body);font-variant-numeric:tabular-nums}
+.pclk.byo{color:#f2c98e}.pclk.low{color:#f2a28e;background:rgba(224,106,79,.2)}
 /* floating panels */
 .panel{position:fixed;left:50%;transform:translateX(-50%);z-index:20;width:min(560px,calc(100% - 32px));border-radius:18px;padding:14px 16px 14px;
   bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--glass-hi);box-shadow:0 16px 50px rgba(0,0,0,.45)}
@@ -155,8 +162,8 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
 <canvas id="c2d" hidden aria-label="Доска для го"></canvas>
 
 <header id="top" class="rail">
-  <div class="player glass" id="pB"><span class="sw" id="swB"></span><div class="pinfo"><div class="pname" id="nB">Вы</div><div class="pmeta" id="mB">Чёрные</div></div></div>
-  <div class="player glass" id="pW"><span class="sw" id="swW"></span><div class="pinfo"><div class="pname" id="nW">Бот</div><div class="pmeta" id="mW">Белые</div></div></div>
+  <div class="player glass" id="pB"><span class="sw" id="swB"></span><div class="pinfo"><div class="pname" id="nB">Вы</div><div class="pmeta" id="mB">Чёрные</div></div><span class="pclk" id="kB" hidden></span></div>
+  <div class="player glass" id="pW"><span class="sw" id="swW"></span><div class="pinfo"><div class="pname" id="nW">Бот</div><div class="pmeta" id="mW">Белые</div></div><span class="pclk" id="kW" hidden></span></div>
 </header>
 <div id="status" class="glass" role="status" aria-live="polite">Готовим доску…</div>
 <div id="toast" role="alert"></div>
@@ -214,6 +221,10 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
       <div class="seg" data-key="color"><button data-v="black">Чёрные<small>ход первым</small></button><button data-v="white">Белые<small>+ коми</small></button><button data-v="random">Жребий<small>нигири</small></button></div></div>
     <div class="field"><div class="label">Коми для белых</div>
       <div class="seg" data-key="komi"><button data-v="6.5">6,5</button><button data-v="7.5">7,5</button><button data-v="0.5">0,5</button></div></div>
+    <div class="field"><div class="label">Фора чёрным</div>
+      <div class="seg" data-key="handicap"><button data-v="0">Нет</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button><button data-v="6">6</button><button data-v="9">9</button></div></div>
+    <div class="field"><div class="label">Часы</div>
+      <div class="seg" data-key="clock"><button data-v="off">Без часов</button><button data-v="5">5 мин<small>+ 3 × 30 с</small></button><button data-v="10">10 мин<small>+ 3 × 30 с</small></button><button data-v="20">20 мин<small>+ 3 × 30 с</small></button></div></div>
     <button class="btn primary" id="bStart" style="width:100%;margin-top:18px">Начать партию</button>
   </div>
 </div>
@@ -222,21 +233,44 @@ table.res tr:last-child td{font-weight:600;border-bottom:0;color:var(--kinari)}
 <div class="sheet" id="sSet" hidden>
   <div class="card" role="dialog" aria-modal="true" aria-labelledby="hSet">
     <div class="kicker">Меню</div>
-    <h2 id="hSet">Настройки стола</h2>
-    <div class="field"><div class="label">Где играем</div><div class="envs" id="envList"></div></div>
-    <div class="field"><div class="label">Камни</div><div class="sets" id="setList"></div></div>
-    <div class="field"><div class="label">Доска</div><div class="sets" id="boardList"></div></div>
-    <div class="field"><div class="label">Сетка</div>
-      <div class="seg" data-key="grid"><button data-v="auto">Авто<small>магнитная — полоски, остальные — канавки</small></button><button data-v="grooves">Канавки<small>резная сетка</small></button><button data-v="lines">Полоски<small>нарисованные линии</small></button></div></div>
-    <div class="field"><div class="label">Вид</div>
-      <div class="seg" data-key="view"><button data-v="3d">3D-стол</button><button data-v="2d">2D-доска</button></div></div>
-    <div class="field">
-      <div class="row"><label for="vSfx">Звук камней</label><input type="range" id="vSfx" min="0" max="1" step="0.05"></div>
-      <div class="row"><label for="vAmb">Звуки вокруг</label><input type="range" id="vAmb" min="0" max="1" step="0.05"></div>
-      <div class="row"><label for="tQuick">Ставить сразу, без чаши</label><input type="checkbox" class="sw-t" id="tQuick"></div>
-      <div class="row"><label for="tLast">Отмечать последний ход</label><input type="checkbox" class="sw-t" id="tLast"></div>
-      <div class="row"><label for="tFlip">Игра вдвоём: поворачивать стол к тому, чей ход</label><input type="checkbox" class="sw-t" id="tFlip"></div>
-      <div class="row"><label for="tCoords">Координаты на 2D-доске</label><input type="checkbox" class="sw-t" id="tCoords"></div>
+    <h2 id="hSet">Настройки</h2>
+    <div class="tabs" role="tablist"><button role="tab" data-tab="table">Стол</button><button role="tab" data-tab="game">Игра</button><button role="tab" data-tab="keys">Клавиши</button></div>
+    <div class="pane" data-pane="table">
+      <div class="field"><div class="label">Где играем</div><div class="envs" id="envList"></div></div>
+      <div class="field"><div class="label">Камни</div><div class="sets" id="setList"></div></div>
+      <div class="field"><div class="label">Доска</div><div class="sets" id="boardList"></div></div>
+      <div class="field"><div class="label">Сетка</div>
+        <div class="seg" data-key="grid"><button data-v="auto">Авто<small>магнитная — полоски, остальные — канавки</small></button><button data-v="grooves">Канавки<small>резная сетка</small></button><button data-v="lines">Полоски<small>нарисованные линии</small></button></div></div>
+      <div class="field"><div class="label">Вид</div>
+        <div class="seg" data-key="view"><button data-v="3d">3D-стол</button><button data-v="2d">2D-доска</button></div></div>
+      <div class="field">
+        <div class="row"><label for="vSfx">Звук камней</label><input type="range" id="vSfx" min="0" max="1" step="0.05"></div>
+        <div class="row"><label for="vAmb">Звуки вокруг</label><input type="range" id="vAmb" min="0" max="1" step="0.05"></div>
+        <div class="row"><label for="tMute">Без звука</label><input type="checkbox" class="sw-t" id="tMute"></div>
+        <div class="row"><label for="tCoords">Координаты на 2D-доске</label><input type="checkbox" class="sw-t" id="tCoords"></div>
+      </div>
+    </div>
+    <div class="pane" data-pane="game" hidden>
+      <div class="field"><div class="label">Подтверждение хода</div>
+        <div class="seg" data-key="confirm"><button data-v="auto">Авто<small>на сенсоре — двойное касание</small></button><button data-v="always">Всегда<small>второй щелчок ставит</small></button><button data-v="never">Никогда<small>ставить сразу</small></button></div></div>
+      <div class="field"><div class="label">Скорость анимации</div>
+        <div class="seg" data-key="anim"><button data-v="slow">Медленно</button><button data-v="normal">Обычно</button><button data-v="fast">Быстро</button></div></div>
+      <div class="field">
+        <div class="row"><label for="tQuick">Ставить сразу, без чаши (3D)</label><input type="checkbox" class="sw-t" id="tQuick"></div>
+        <div class="row"><label for="tLast">Отмечать последний ход</label><input type="checkbox" class="sw-t" id="tLast"></div>
+        <div class="row"><label for="tAtari">Подсвечивать камни в атари</label><input type="checkbox" class="sw-t" id="tAtari"></div>
+        <div class="row"><label for="tUndo">Разрешить ход назад в партии с ботом</label><input type="checkbox" class="sw-t" id="tUndo"></div>
+        <div class="row"><label for="tBotResign">Бот сдаётся в безнадёжной позиции</label><input type="checkbox" class="sw-t" id="tBotResign"></div>
+        <div class="row"><label for="tClockPause">Часы на паузе, пока открыто меню</label><input type="checkbox" class="sw-t" id="tClockPause"></div>
+        <div class="row"><label for="tFlip">Игра вдвоём: поворачивать стол к тому, чей ход</label><input type="checkbox" class="sw-t" id="tFlip"></div>
+      </div>
+      <p class="note">Фора и часы выбираются при создании новой партии.</p>
+    </div>
+    <div class="pane" data-pane="keys" hidden>
+      <p>Нажмите на клавишу справа, затем новую. Backspace — убрать, Esc — отмена. Клавиши работают в любой раскладке.</p>
+      <div class="field" id="keyList"></div>
+      <p class="note">Всегда работают: Ctrl+Z — ход назад, Esc — закрыть окно.</p>
+      <div class="btnrow"><button class="btn" id="bKeysReset">Сбросить клавиши</button></div>
     </div>
     <div class="btnrow">
       <button class="btn" id="bHome">Главное меню</button>
@@ -483,9 +517,17 @@ const BOARDS={
 };
 
 /* ---------- settings ---------- */
-const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,lastMark:true,quick:false,coords:true};
+/* hotkeys: action, label, default key (KeyboardEvent.code, so bindings work in any keyboard layout) */
+const ACTIONS=[['pass','Пас','KeyP'],['undo','Ход назад','KeyU'],['view','2D / 3D','KeyV'],['cam','Сменить камеру','KeyC'],
+  ['rotL','Повернуть стол влево','ArrowLeft'],['rotR','Повернуть стол вправо','ArrowRight'],['zoomIn','Приблизить','ArrowUp'],['zoomOut','Отдалить','ArrowDown'],
+  ['hint','Подсказка (уроки, задачи)','KeyH'],['next','Дальше (уроки, задачи)','Enter'],['menu','Настройки','KeyM'],['home','Главное меню','KeyN'],
+  ['mute','Звук вкл / выкл','KeyS'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
+const DEFKEYS=Object.fromEntries(ACTIONS.map(a=>[a[0],a[2]]));
+const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,handicap:0,clock:'off',env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,mute:false,
+  lastMark:true,quick:false,coords:true,confirm:'auto',anim:'normal',atari:false,allowUndo:true,botResign:true,clockPause:true};
 let S=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem('jadego.settings')||'null');if(s)S=Object.assign(S,s);}catch(e){}
+S.keys=Object.assign({},DEFKEYS,S.keys||{});
 if(!ENVS[S.env])S.env='garden';if(!BOARDS[S.board])S.board='goban';if(!['auto','grooves','lines'].includes(S.grid))S.grid='auto';if(!SETS[S.stones])S.stones='jade';
 function saveSettings(){try{localStorage.setItem('jadego.settings',JSON.stringify(S));}catch(e){}}
 
@@ -622,7 +664,7 @@ function engineFactory(){
     }
     let bi=0;for(let i=1;i<n;i++)if(V[i]>V[bi]||(V[i]===V[bi]&&W[i]>W[bi]))bi=i;
     const wr=W[bi]/Math.max(1,V[bi]);
-    if(moveNum>NN*.45&&wr<.04&&total>200)return {move:-2,wr,sims:total};
+    if(!o.noResign&&moveNum>NN*.45&&wr<.04&&total>200)return {move:-2,wr,sims:total};
     return {move:cands[bi].p,wr,sims:total};
   };
   E.deadStones=function(b,komi,sims){
@@ -676,7 +718,7 @@ const AU=(function(){
     try{ctx=new AC();}catch(e){return;}
     const comp=ctx.createDynamicsCompressor();comp.threshold.value=-12;comp.ratio.value=4;comp.connect(ctx.destination);
     master=ctx.createGain();master.connect(comp);
-    sfx=ctx.createGain();sfx.gain.value=S.sfx;amb=ctx.createGain();amb.gain.value=S.amb;amb.connect(master);
+    sfx=ctx.createGain();sfx.gain.value=S.mute?0:S.sfx;amb=ctx.createGain();amb.gain.value=S.mute?0:S.amb;amb.connect(master);
     conv=ctx.createConvolver();wet=ctx.createGain();sfx.connect(master);sfx.connect(conv);amb.connect(conv);conv.connect(wet);wet.connect(master);
     bufs();if(envKey)applyEnv();
     document.addEventListener('visibilitychange',()=>{if(!ctx)return;if(document.hidden)ctx.suspend();else ctx.resume();});
@@ -758,8 +800,8 @@ const AU=(function(){
     burst(t,.09,.018,'bandpass',4200,.9,sfx);
     for(let i=0;i<cnt;i++){play(pickR(lib.bowl),t,.5*Math.pow(1-i/cnt,.6)*rnd(.25,1),pv,rnd(.94,1.06));t+=rnd(.008,.045)*(i<cnt*.6?1:1.8);}}
   /* captured stones: gathered clicking in the hand, then dropped one by one into the lid (times match the 3D flight) */
-  function capture(n,pv){if(!ok())return;ensureHits();const t0=ctx.currentTime,m=Math.min(n,14);
-    for(let i=0;i<m;i++){play(pickR(lib.bowl),t0+.12+i*.07+rnd(0,.02),.2,pv,rnd(.95,1.08));play(pickR(lib.lid),t0+.75+i*.07+rnd(0,.015),.5*rnd(.6,1),pv,rnd(.95,1.05));}}
+  function capture(n,pv,f){if(!ok())return;ensureHits();const t0=ctx.currentTime,m=Math.min(n,14);f=f||1;
+    for(let i=0;i<m;i++){play(pickR(lib.bowl),t0+(.12+i*.07)*f+rnd(0,.02),.2,pv,rnd(.95,1.08));play(pickR(lib.lid),t0+(.75+i*.07)*f+rnd(0,.015),.5*rnd(.6,1),pv,rnd(.95,1.05));}}
   function soft(pv){if(!ok())return;ensureHits();play(pickR(lib.bowl),ctx.currentTime+.005,.14,pv,rnd(.97,1.05));}
   function pass(){if(!ok())return;ensureHits();play(pickR(lib.knock),ctx.currentTime+.005,.6,0,rnd(.97,1.03));}
   function deny(){if(!ok())return;ensureHits();const t=ctx.currentTime+.005;play(pickR(lib.knock),t,.32,0,.9);play(pickR(lib.knock),t+.09,.22,0,.88);}
@@ -836,12 +878,12 @@ const AU=(function(){
   }
   return {init,place,rummage,capture,soft,pass,deny,bell,chime,hooks,
     setEnv(k){envKey=k;applyEnv();},
-    setVol(){if(!ctx)return;sfx.gain.value=S.sfx;amb.gain.value=S.amb;}};
+    setVol(){if(!ctx)return;sfx.gain.value=S.mute?0:S.sfx;amb.gain.value=S.mute?0:S.amb;}};
 })();
 
 /* ---------- game state ---------- */
 const G={N:9,board:new Int8Array(81),ko:-1,toPlay:1,caps:{1:0,2:0},hist:[],last:-1,passes:0,moveNum:0,phase:'idle',human:1,near:1,flipView:false,level:1,komi:6.5,
-  dead:null,score:null,busy:false,thinking:false,token:0,result:null,marks:[]};
+  dead:null,score:null,busy:false,thinking:false,token:0,result:null,marks:[],clock:null};
 ENG.setSize(9);
 let V3D=null,V2D=null;
 function is3D(){return S.view==='3d'&&!!V3D;}
@@ -854,6 +896,8 @@ function coordName(p){const N=G.N;return COLS[p%N]+(N-((p/N)|0));}
 function parseCoord(s){const N=G.N,x=COLS.indexOf(s[0]),row=parseInt(s.slice(1),10);return (N-row)*N+x;}
 /* stereo position of a board point / of a player's bowl, as heard from the near side of the table */
 function panOf(p){if(p==null||p<0)return 0;const N=G.N,x=((p%N)/(N-1)*2-1)*.45;return is3D()&&G.flipView?-x:x;}
+function needConfirm(mouse){return S.confirm==='always'||(S.confirm==='auto'&&!mouse);}
+function animF(){return {slow:1.6,normal:1,fast:.5}[S.anim]||1;}
 function bowlPan(c){return (c===G.near?.35:-.35)*(is3D()&&G.flipView?-1:1);}
 
 /* ---------- 3D view ---------- */
@@ -1347,8 +1391,8 @@ function create3D(){
   function settle(m){const y0=m.rotation.y;tween(.2,k=>{m.rotation.x=Math.sin(k*Math.PI*3)*(1-k)*.05;m.rotation.y=y0;});}
   function flyTo(m,p,o,done){const to=new V();pointWorld(p,to);to.x+=(Math.random()-.5)*.12;to.z+=(Math.random()-.5)*.12;to.y=STONE_HY;
     const from=m.position.clone(),r0=m.rotation.clone(),yaw=Math.random()*6.28;
-    tween(o.dur,k=>{const e=ease(k);m.position.x=from.x+(to.x-from.x)*e;m.position.z=from.z+(to.z-from.z)*e;m.position.y=from.y+(to.y-from.y)*k*k+o.arc*4*k*(1-k);m.rotation.x=r0.x*(1-k);m.rotation.z=r0.z*(1-k);},
-      ()=>{m.position.copy(to);m.rotation.set(0,yaw,0);stoneMeshes.set(p,m);settle(m);done();},o.delay||0);}
+    tween(o.dur*animF(),k=>{const e=ease(k);m.position.x=from.x+(to.x-from.x)*e;m.position.z=from.z+(to.z-from.z)*e;m.position.y=from.y+(to.y-from.y)*k*k+o.arc*4*k*(1-k);m.rotation.x=r0.x*(1-k);m.rotation.z=r0.z*(1-k);},
+      ()=>{m.position.copy(to);m.rotation.set(0,yaw,0);stoneMeshes.set(p,m);settle(m);done();},(o.delay||0)*animF());}
   function placeHuman(p,c,quick,done){
     let m=hand.held?hand.mesh:null;const fromHand=!!m;hand.held=false;hand.mesh=null;hand.preview=-1;
     if(!m){m=spawnFromBowl(c);AU.rummage(3,bowlPan(c));}
@@ -1363,7 +1407,7 @@ function create3D(){
     m.rotation.set((Math.random()-.5)*.5,Math.random()*6,(Math.random()-.5)*.5);stoneGroup.add(m);hand.mesh=m;hand.held=true;hand.preview=-1;AU.rummage(4,bowlPan(c));hud();}
   function onCommit(p,c,removed){
     removed.forEach((q,i)=>{const m=stoneMeshes.get(q);if(!m)return;stoneMeshes.delete(q);const slot=lidNext[c]++;const to=lidSlot(c,slot),from=m.position.clone();
-      tween(.6,k=>{m.position.lerpVectors(from,to,ease(k));m.position.y+=16*4*k*(1-k)*.5;m.rotation.x=k*.4;},()=>{stoneGroup.remove(m);if(slot<60)addLidStone(c,slot);},.15+i*.07,'flight');});
+      tween(.6*animF(),k=>{m.position.lerpVectors(from,to,ease(k));m.position.y+=16*4*k*(1-k)*.5;m.rotation.x=k*.4;},()=>{stoneGroup.remove(m);if(slot<60)addLidStone(c,slot);},(.15+i*.07)*animF(),'flight');});
     if(!stoneMeshes.has(p)&&G.board[p]){const m=stoneMesh(G.board[p]);placeAt(m,p);stoneGroup.add(m);stoneMeshes.set(p,m);}
     deco();
   }
@@ -1380,7 +1424,7 @@ function create3D(){
       G.marks.forEach(mm=>{const pos=pointWorld(mm.p,new V()),onStone=!!G.board[mm.p];let m;
         if(mm.k==='lib'){m=new THREE.Mesh(new THREE.CircleGeometry(.36,24),markMats.lib);m.rotation.x=-Math.PI/2;m.position.set(pos.x,.03,pos.z);}
         else if(mm.k==='hint'){m=new THREE.Mesh(new THREE.RingGeometry(.62,.82,32),markMats.hint);m.rotation.x=-Math.PI/2;m.position.set(pos.x,onStone?STONE_HY*2+.02:.04,pos.z);m.userData.pulse=true;}
-        else if(mm.k==='target'){if(!onStone)return;m=new THREE.Mesh(new THREE.RingGeometry(.34,.5,32),markMats.target);m.rotation.x=-Math.PI/2;m.position.set(pos.x,STONE_HY*2+.02,pos.z);}
+        else if(mm.k==='target'||mm.k==='atari'){if(!onStone)return;m=new THREE.Mesh(new THREE.RingGeometry(.34,.5,32),markMats.target);m.rotation.x=-Math.PI/2;m.position.set(pos.x,STONE_HY*2+.02,pos.z);}
         else if(mm.k==='x'){m=new THREE.Group();for(const r of [.785,-.785]){const b=new THREE.Mesh(new THREE.BoxGeometry(1.2,.06,.16),markMats.x);b.rotation.y=r;m.add(b);}m.position.set(pos.x,.04,pos.z);}
         if(m)markGroup.add(m);});}
   }
@@ -1416,8 +1460,8 @@ function create3D(){
     const pt=new V();if(!hitPlane(0,pt))return;const p=worldToPoint(pt.x,pt.z,lastPT==='mouse'?.55:.7);
     if(p<0){if(hand.held&&hand.preview>=0){hand.preview=-1;hud();}return;}
     if(!canHumanAct()){if(G.toPlay!==G.human)toast('Сейчас ход соперника');return;}
-    if(hand.held){if(lastPT==='mouse'||hand.preview===p){hand.preview=-1;humanTryPlace(p);}else{hand.preview=p;AU.soft(panOf(p));hud();}return;}
-    if(S.quick){humanTryPlace(p,true);return;}
+    if(hand.held){if(hand.preview===p||!needConfirm(lastPT==='mouse')){hand.preview=-1;humanTryPlace(p);}else{hand.preview=p;AU.soft(panOf(p));hud();}return;}
+    if(S.quick){if(needConfirm(lastPT==='mouse')){pick();hand.preview=p;AU.soft(panOf(p));hud();}else humanTryPlace(p,true);return;}
     toast(hot()?'Сначала возьмите камень из чаши '+cname(G.toPlay)+' — она подсвечена':'Сначала возьмите камень из своей чаши — она справа, ближе к вам');pulse=2.5;AU.deny();
   }
   let pulse=0;
@@ -1451,6 +1495,8 @@ function create3D(){
     handState(){return !hand.held?'empty':hand.preview>=0?'preview':'held';},
     dropHand(){if(hand.held)returnToBowl();},
     cycleCam(){frame((camPreset+1)%PRESETS.length,true);return PRESETS[camPreset].n;},
+    orbit(da){const off=camera.position.clone().sub(controls.target),sp=new THREE.Spherical().setFromVector3(off);sp.theta+=da;off.setFromSpherical(sp);camera.position.copy(controls.target).add(off);controls.update();},
+    zoom(f){const off=camera.position.clone().sub(controls.target);off.setLength(clamp(off.length()*f,controls.minDistance,controls.maxDistance));camera.position.copy(controls.target).add(off);controls.update();},
     camName(){return PRESETS[camPreset].n;},
     refit(){frame(camPreset,false);}
   };
@@ -1499,7 +1545,7 @@ function create2D(){
     if(S.lastMark&&G.last>=0&&G.board[G.last]&&!G.score&&G.phase==='play'){const [x,y]=pt(G.last);ctx.strokeStyle=G.board[G.last]===1?'#f2ead6':'#1a1a1a';ctx.lineWidth=Math.max(1.5,cell*.07);ctx.beginPath();ctx.arc(x,y,cell*.2,0,7);ctx.stroke();}
     G.marks.forEach(m=>{const [x,y]=pt(m.p);
       if(m.k==='lib'){ctx.fillStyle='#86cfae';ctx.beginPath();ctx.arc(x,y,cell*.17,0,7);ctx.fill();}
-      else if(m.k==='target'&&G.board[m.p]){ctx.strokeStyle='#e06a4f';ctx.lineWidth=Math.max(2,cell*.08);ctx.beginPath();ctx.arc(x,y,cell*.22,0,7);ctx.stroke();}
+      else if((m.k==='target'||m.k==='atari')&&G.board[m.p]){ctx.strokeStyle='#e06a4f';ctx.lineWidth=Math.max(2,cell*.08);ctx.beginPath();ctx.arc(x,y,cell*.22,0,7);ctx.stroke();}
       else if(m.k==='x'){ctx.strokeStyle='#e06a4f';ctx.lineWidth=Math.max(2,cell*.08);const s=cell*.24;ctx.beginPath();ctx.moveTo(x-s,y-s);ctx.lineTo(x+s,y+s);ctx.moveTo(x+s,y-s);ctx.lineTo(x-s,y+s);ctx.stroke();}
       else if(m.k==='hint'){ctx.strokeStyle='#86cfae';ctx.lineWidth=Math.max(2,cell*.07);ctx.globalAlpha=.6+.4*Math.sin(now/160);ctx.beginPath();ctx.arc(x,y,cell*.42,0,7);ctx.stroke();ctx.globalAlpha=1;}});
     if(canHumanAct()){const q=preview>=0?preview:hover;if(q>=0&&!G.board[q]){const [x,y]=pt(q);stone(x,y,cell*.485,G.human,preview>=0?.85:.5);
@@ -1513,7 +1559,7 @@ function create2D(){
     if(!(G.phase==='play'||G.phase==='lesson'||G.phase==='puzzle'))return;
     if(p<0){if(preview>=0){preview=-1;dirty=true;hud();}return;}
     if(!canHumanAct()){if(G.toPlay!==G.human)toast('Сейчас ход соперника');return;}
-    if(mouse||preview===p){preview=-1;humanTryPlace(p);}else{preview=p;dirty=true;AU.soft(panOf(p));hud();}});
+    if(preview===p||!needConfirm(mouse)){preview=-1;humanTryPlace(p);}else{preview=p;dirty=true;AU.soft(panOf(p));hud();}});
   function loop(now){requestAnimationFrame(loop);if(!active)return;if(dirty||fades.size||gone.length||G.marks.some(m=>m.k==='hint')){dirty=false;draw(now);}}
   requestAnimationFrame(loop);
   return {relayout,setEnv,setSprites,
@@ -1563,7 +1609,7 @@ function hud(){
   $('pB').classList.toggle('turn',G.phase==='play'&&G.toPlay===1);$('pW').classList.toggle('turn',G.phase==='play'&&G.toPlay===2);
   $('status').textContent=statusText();
   $('bPass').disabled=!(G.phase==='play'&&canHumanAct());
-  $('bUndo').disabled=!(G.phase==='play'&&G.hist.length&&!G.busy);
+  $('bUndo').disabled=!(G.phase==='play'&&G.hist.length&&!G.busy&&(hot()||S.allowUndo));clockHud();
   $('lView').textContent=S.view==='3d'?'2D':'3D';
   $('iView').innerHTML=S.view==='3d'?'<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16"/>':'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>';
   $('bView').disabled=!V3D;$('bCam').disabled=!is3D();
@@ -1577,8 +1623,9 @@ function restore(s){G.board=s.board.slice();G.ko=s.ko;G.toPlay=s.toPlay;G.caps={
 function check(p,c){const b=G.board.slice(),r=ENG.play(b,p,c,G.ko);if(!r)return null;return {board:b,ko:r.ko,cap:r.cap,removed:ENG.removed.slice()};}
 function moveReason(p){if(G.board[p])return 'Пункт уже занят';if(p===G.ko)return 'Правило ко: сразу забрать обратно нельзя — сыграйте сначала в другом месте';return 'Сюда нельзя: у камня не останется дыханий (самоубийство)';}
 function commitMove(p,c,chk){
-  G.hist.push(snap());G.board=chk.board;G.ko=chk.ko;G.caps[c]+=chk.cap;G.last=p;G.passes=0;G.moveNum++;G.toPlay=3-c;
-  AU.place(c===G.human&&!hot()?1:.88+Math.random()*.14,panOf(p));if(chk.removed.length)AU.capture(chk.removed.length,panOf(chk.removed[0]));
+  if(G.phase==='over')return;clockTick();
+  G.hist.push(snap());G.board=chk.board;G.ko=chk.ko;G.caps[c]+=chk.cap;G.last=p;G.passes=0;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();
+  AU.place(c===G.human&&!hot()?1:.88+Math.random()*.14,panOf(p));if(chk.removed.length)AU.capture(chk.removed.length,panOf(chk.removed[0]),animF());
   try{navigator.vibrate&&navigator.vibrate(chk.removed.length?[8,40,8]:8);}catch(e){}
   view().onCommit(p,c,chk.removed);handover();if(G.phase==='play')saveGame();hud();
 }
@@ -1594,7 +1641,7 @@ function afterHuman(p){if(G.phase==='play'){if(G.toPlay!==G.human)requestBot();}
 function scriptedReply(p,cb){G.busy=true;hud();setTimeout(()=>{const chk=check(p,2);if(!chk){G.busy=false;G.toPlay=1;hud();cb&&cb();return;}
   const done=()=>{G.busy=false;commitMove(p,2,chk);G.toPlay=1;hud();cb&&cb();};if(is3D())V3D.placeBot(p,2,done);else done();},450);}
 function doPass(c){
-  G.hist.push(snap());G.passes++;G.ko=-1;G.last=-1;G.moveNum++;G.toPlay=3-c;handover();AU.pass();view().resync();saveGame();
+  clockTick();if(G.phase!=='play')return;G.hist.push(snap());G.passes++;G.ko=-1;G.last=-1;G.moveNum++;G.toPlay=3-c;clockMoved(c);refreshAtari();handover();AU.pass();view().resync();saveGame();
   if(G.passes>=2){startScoring();return;}
   hud();if(hot())toast((c===1?'Чёрные':'Белые')+' спасовали. Если соперник тоже спасует, начнётся подсчёт',3400);else if(c!==G.human)toast('Бот пасует. Спасуйте тоже — и начнётся подсчёт очков',3600);
   if(G.toPlay!==G.human)requestBot();
@@ -1603,8 +1650,8 @@ function requestBot(){
   if(G.phase!=='play'||G.toPlay===G.human)return;
   const tok=++G.token,lv=G.level,N=G.N;G.thinking=true;hud();
   const time=[0,0,N<=9?1100:N<=13?1400:1700,N<=9?2600:N<=13?3100:3800][lv],t0=performance.now();
-  AI.ask({type:'move',N,board:Array.from(G.board),color:G.toPlay,ko:G.ko,last:G.last,level:lv,moveNum:G.moveNum,komi:G.komi,oppPassed:G.passes>0,time}).then(res=>{
-    if(tok!==G.token)return;const wait=Math.max(0,(lv<2?750:250)-(performance.now()-t0));
+  AI.ask({type:'move',N,board:Array.from(G.board),color:G.toPlay,ko:G.ko,last:G.last,level:lv,moveNum:G.moveNum,komi:G.komi,oppPassed:G.passes>0,time,noResign:!S.botResign}).then(res=>{
+    if(tok!==G.token)return;const wait=Math.max(0,(lv<2?750:250)*animF()-(performance.now()-t0));
     setTimeout(()=>{if(tok!==G.token)return;G.thinking=false;botAct(res);},wait);});
 }
 function botAct(res){
@@ -1620,20 +1667,23 @@ function newGame(){
   closeAllTut();AI.reset();G.token++;G.N=S.size;ENG.setSize(G.N);G.board=new Int8Array(G.N*G.N);G.ko=-1;G.toPlay=1;G.caps={1:0,2:0};G.hist=[];G.last=-1;G.passes=0;G.moveNum=0;
   G.phase='play';G.level=S.opp==='human'?-1:S.level;G.komi=S.komi;G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.result=null;G.marks=[];
   G.human=G.level<0?1:S.color==='black'?1:S.color==='white'?2:(Math.random()<.5?1:2);G.near=G.human;G.flipView=false;
+  const hc=+S.handicap||0;if(hc>=2){handicapPts(G.N,hc).forEach(p=>G.board[p]=1);G.toPlay=2;G.komi=.5;if(hot()){G.human=2;G.flipView=!!S.flip;}}
+  G.clock=makeClock();refreshAtari();
   rebuildViews();saveGame();hud();
-  if(hot())toast('Игра вдвоём: чёрные ходят первыми, потом передайте устройство другу',4200);
+  if(hc>=2)toast(`Фора ${hc} ${plural(hc,'камень','камня','камней')}: белые ходят первыми, коми 0,5`+(hot()?'':G.human===1?'. Камни форы ваши':'. Камни форы у бота'),4200);
+  else if(hot())toast('Игра вдвоём: чёрные ходят первыми, потом передайте устройство другу',4200);
   else if(S.color==='random')toast(G.human===1?'Жребий: вы играете чёрными и ходите первым':'Жребий: вы играете белыми, первым ходит бот');
   if(G.toPlay!==G.human)requestBot();
 }
 function rebuildViews(){if(V3D)V3D.sync();if(V2D){V2D.relayout();V2D.resync();}}
 function undo(){
-  if(G.phase!=='play'||!G.hist.length||G.busy)return;
+  if(G.phase!=='play'||!G.hist.length||G.busy||(!hot()&&!S.allowUndo))return;
   if(G.thinking){G.token++;AI.reset();G.thinking=false;}
   restore(G.hist.pop());if(hot()){G.human=G.toPlay;G.flipView=S.flip&&G.toPlay===2;}else while(G.toPlay!==G.human&&G.hist.length)restore(G.hist.pop());
-  view().resync();if(hot()&&is3D())V3D.turnCam();saveGame();hud();AU.rummage(2);if(G.toPlay!==G.human)requestBot();
+  refreshAtari();view().resync();if(hot()&&is3D())V3D.turnCam();saveGame();hud();AU.rummage(2);if(G.toPlay!==G.human)requestBot();
 }
 function startScoring(){
-  G.phase='scoring';G.dead=new Uint8Array(G.N*G.N);G.score=ENG.score(G.board,G.dead,G.komi);view().resync();showScore(true);hud();
+  G.phase='scoring';G.marks=[];G.dead=new Uint8Array(G.N*G.N);G.score=ENG.score(G.board,G.dead,G.komi);view().resync();showScore(true);hud();
   toast('Оба игрока спасовали. Ищу мёртвые камни…');
   const tok=++G.token;
   AI.ask({type:'dead',N:G.N,board:Array.from(G.board),komi:G.komi,sims:G.N<=9?400:G.N<=13?220:140}).then(r=>{if(tok!==G.token||G.phase!=='scoring')return;r.dead.forEach(p=>G.dead[p]=1);updScore();});
@@ -1643,12 +1693,13 @@ function toggleDead(p){if(G.phase!=='scoring'||!G.board[p])return;const c=G.boar
   while(st.length){const q=st.pop();G.dead[q]=val;const x=q%N,y=(q/N)|0;[[x-1,y],[x+1,y],[x,y-1],[x,y+1]].forEach(([a,b])=>{if(a<0||b<0||a>=N||b>=N)return;const n=b*N+a;if(G.board[n]===c&&!seen.has(n)){seen.add(n);st.push(n);}});}
   AU.soft(panOf(p));updScore();}
 function showScore(v){$('scorePanel').hidden=!v;if(v)updScore();onUIChange();}
-function resumePlay(){G.token++;G.phase='play';G.passes=0;G.dead=null;G.score=null;showScore(false);view().resync();hud();if(G.toPlay!==G.human)requestBot();}
+function resumePlay(){G.token++;G.phase='play';G.passes=0;G.dead=null;G.score=null;if(G.clock)G.clock.t=performance.now();refreshAtari();showScore(false);view().resync();hud();if(G.toPlay!==G.human)requestBot();}
 function fmt(v){return String(v).replace('.',',');}
 function endGame(r){
   G.phase='over';G.result=r;G.thinking=false;showScore(false);
   const wn=r.winner===1?'Чёрные':'Белые',ln=r.winner===1?'Белые':'Чёрные',win=r.winner===G.human;
   if(r.by==='score'){r.text=`${wn} побеждают на ${fmt(r.margin)} очка.`;r.short=`${wn} +${fmt(r.margin)}`;}
+  else if(r.by==='time'){r.text=`У ${ln==='Чёрные'?'чёрных':'белых'} вышло время — ${wn.toLowerCase()} побеждают.`;r.short=`${wn} победили по времени`;}
   else{r.text=`${ln} сдались — ${wn.toLowerCase()} побеждают.`;r.short=`${wn} победили, соперник сдался`;}
   $('hRes').textContent=hot()?'Победили '+(r.winner===1?'чёрные':'белые'):win?'Победа':'Поражение';$('pRes').textContent=r.text+(hot()?' Хорошая партия!':win?' Отличная партия!':' Попробуйте ещё раз — или загляните в задачи дня.');
   if(r.by==='score'&&G.score){const s=G.score;$('resTable').innerHTML=`<table class="res"><tr><th></th><th>Чёрные</th><th>Белые</th></tr><tr><td>Территория</td><td>${s.b.terr}</td><td>${s.w.terr}</td></tr><tr><td>Камни на доске</td><td>${s.b.stones}</td><td>${s.w.stones}</td></tr><tr><td>Коми</td><td>—</td><td>${fmt(s.w.komi)}</td></tr><tr><td>Итого</td><td>${fmt(s.b.total)}</td><td>${fmt(s.w.total)}</td></tr></table><p class="note">Подсчёт по площади (китайские правила): камень и окружённый пункт — по одному очку.</p>`;}
@@ -1656,13 +1707,37 @@ function endGame(r){
   AU.bell();view().resync();hud();saveGame();setTimeout(()=>openSheet('sResult'),600);
 }
 function saveGame(){try{if(G.phase!=='play'){localStorage.removeItem('jadego.game');return;}
-  localStorage.setItem('jadego.game',JSON.stringify({N:G.N,board:Array.from(G.board).join(''),ko:G.ko,toPlay:G.toPlay,caps:G.caps,last:G.last,passes:G.passes,moveNum:G.moveNum,human:G.human,level:G.level,komi:G.komi,
+  localStorage.setItem('jadego.game',JSON.stringify({N:G.N,board:Array.from(G.board).join(''),ko:G.ko,toPlay:G.toPlay,caps:G.caps,last:G.last,passes:G.passes,moveNum:G.moveNum,human:G.human,level:G.level,komi:G.komi,clock:G.clock?{1:G.clock[1],2:G.clock[2]}:null,
     hist:G.hist.slice(-300).map(h=>({board:Array.from(h.board).join(''),ko:h.ko,toPlay:h.toPlay,caps:h.caps,last:h.last,passes:h.passes,moveNum:h.moveNum}))}));}catch(e){}}
 function loadGame(){try{const s=JSON.parse(localStorage.getItem('jadego.game')||'null');return s&&s.moveNum?s:null;}catch(e){return null;}}
 function resumeSaved(s){closeAllTut();AI.reset();G.token++;G.N=s.N;ENG.setSize(G.N);const ar=str=>Int8Array.from(str.split('').map(Number));
   G.board=ar(s.board);G.ko=s.ko;G.toPlay=s.toPlay;G.caps={1:s.caps[1],2:s.caps[2]};G.last=s.last;G.passes=s.passes;G.moveNum=s.moveNum;G.human=s.human;G.level=s.level;G.komi=s.komi;G.near=G.level<0?1:G.human;if(G.level<0)G.human=G.toPlay;G.flipView=G.level<0&&S.flip&&G.toPlay===2;
   G.hist=s.hist.map(h=>({board:ar(h.board),ko:h.ko,toPlay:h.toPlay,caps:{1:h.caps[1],2:h.caps[2]},last:h.last,passes:h.passes,moveNum:h.moveNum}));
-  G.phase='play';G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.marks=[];rebuildViews();hud();if(G.toPlay!==G.human)requestBot();}
+  G.clock=s.clock?{1:s.clock[1],2:s.clock[2],t:performance.now()}:null;
+  G.phase='play';G.dead=null;G.score=null;G.busy=false;G.thinking=false;refreshAtari();rebuildViews();hud();if(G.toPlay!==G.human)requestBot();}
+
+/* handicap stones on the star points, in the traditional order */
+function handicapPts(N,h){const e=N<13?2:3,m=(N-1)/2,a=e,b=N-1-e,P=(i,j)=>j*N+i,ur=P(b,a),ll=P(a,b),lr=P(b,b),ul=P(a,a),c=P(m,m),l=P(a,m),r=P(b,m),t=P(m,a),bo=P(m,b);
+  return {2:[ur,ll],3:[ur,ll,lr],4:[ur,ll,lr,ul],5:[ur,ll,lr,ul,c],6:[ur,ll,lr,ul,l,r],7:[ur,ll,lr,ul,l,r,c],8:[ur,ll,lr,ul,l,r,t,bo],9:[ur,ll,lr,ul,l,r,t,bo,c]}[h]||[];}
+/* groups down to their last liberty */
+function atariList(){const N=G.N,b=G.board,seen=new Uint8Array(N*N),out=[];
+  for(let p=0;p<N*N;p++){if(!b[p]||seen[p])continue;const c=b[p],st=[p],g=[],libs=new Set();seen[p]=1;
+    while(st.length){const q=st.pop();g.push(q);const x=q%N,y=(q/N)|0;for(const [X,Y] of [[x-1,y],[x+1,y],[x,y-1],[x,y+1]]){if(X<0||Y<0||X>=N||Y>=N)continue;const n=Y*N+X;if(!b[n])libs.add(n);else if(b[n]===c&&!seen[n]){seen[n]=1;st.push(n);}}}
+    if(libs.size===1)g.forEach(q=>out.push({p:q,k:'atari'}));}return out;}
+function refreshAtari(){if(G.phase==='play')G.marks=S.atari?atariList():[];}
+/* game clock: main time, then Japanese byo-yomi — 3 periods of 30 s, a move made inside a period resets it */
+function makeClock(){if(!S.clock||S.clock==='off')return null;const m=+S.clock*60,pl=()=>({main:m,byo:30,per:3});return {1:pl(),2:pl(),t:performance.now()};}
+function clockStr(k){if(k.main>0){const s=Math.ceil(k.main);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}return Math.max(0,Math.ceil(k.byo))+' с ×'+k.per;}
+function clockTick(){const C=G.clock;if(!C)return;const now=performance.now(),dt=(now-C.t)/1000;C.t=now;
+  if(G.phase!=='play'||document.hidden||(S.clockPause&&anySheet()))return;
+  const c=G.toPlay,k=C[c];
+  if(k.main>0){k.main-=dt;if(k.main<=0){k.byo+=k.main;k.main=0;toast((c===1?'Чёрные':'Белые')+': основное время вышло — бёёми 30 секунд на ход',2600);}}
+  else{const b0=Math.ceil(k.byo);k.byo-=dt;const b1=Math.ceil(k.byo);if(b1<b0&&b1<=10&&b1>0)AU.soft();
+    if(k.byo<=0){k.per--;if(k.per<=0){k.per=0;k.byo=0;clockHud();G.token++;AI.reset();G.thinking=false;if(is3D())V3D.dropHand();endGame({winner:3-c,by:'time'});return;}k.byo+=30;AU.deny();}}
+  clockHud();}
+function clockMoved(c){const C=G.clock;if(!C)return;if(C[c].main<=0)C[c].byo=30;C.t=performance.now();}
+function clockHud(){[[1,'kB'],[2,'kW']].forEach(([c,id])=>{const e=$(id),C=G.clock;e.hidden=!C||!(G.phase==='play'||G.phase==='scoring'||(G.phase==='over'&&G.result&&G.result.by==='time'));if(e.hidden)return;
+  const k=C[c];e.textContent=clockStr(k);e.classList.toggle('byo',k.main<=0);e.classList.toggle('low',k.main>0?k.main<=10:k.byo<=10);});}
 
 /* ---------- tutorial & daily puzzles ---------- */
 const T={kind:null,li:0,si:0,tries:0,solved:false,start:null,node:null,pz:null,locked:false,list:[],idx:0};
@@ -1734,7 +1809,7 @@ function lessonsDone(){try{return +(localStorage.getItem('jadego.lessons')||0);}
 function setLessonsDone(n){try{if(n>lessonsDone())localStorage.setItem('jadego.lessons',String(n));}catch(e){}}
 function setupPos(rows,targetsAsMarks){
   AI.reset();G.token++;const N=9;const changed=G.N!==N;G.N=N;ENG.setSize(N);G.board=new Int8Array(N*N);G.ko=-1;G.toPlay=1;G.human=1;G.caps={1:0,2:0};G.hist=[];G.last=-1;G.passes=0;G.moveNum=0;
-  G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.marks=[];G.level=0;G.komi=6.5;G.near=1;G.flipView=false;
+  G.dead=null;G.score=null;G.busy=false;G.thinking=false;G.marks=[];G.clock=null;G.level=0;G.komi=6.5;G.near=1;G.flipView=false;
   const ok=[],chars={};
   rows.forEach((r,y)=>{for(let x=0;x<N;x++){const ch=r[x]||'.',p=y*N+x;
     if(ch==='X'||ch==='x')G.board[p]=1;else if(ch==='O'||ch==='o')G.board[p]=2;
@@ -1840,13 +1915,43 @@ function buildMenus(){
   $('boardList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(S.board===b.dataset.board)return;S.board=b.dataset.board;saveSettings();markBoard();
     if(V3D){$('status').textContent='Ставим доску…';setTimeout(()=>{V3D.setBoard();hud();AU.place(.8);},30);}else AU.place(.8);if(V2D)V2D.relayout();});
   $('setList').querySelectorAll('.set').forEach(b=>b.onclick=()=>{if(S.stones===b.dataset.set)return;S.stones=b.dataset.set;saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);AU.place(.8);});
-  document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi')v=+v;
+  document.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=seg.dataset.key;let v=b.dataset.v;if(k==='size'||k==='level'||k==='komi'||k==='handicap')v=+v;
     if(k==='view'){setView(v);}else{const ch=S[k]!==v;S[k]=v;saveSettings();if(k==='grid'&&ch){if(V3D)setTimeout(()=>V3D.setGrid(),20);if(V2D)V2D.relayout();}}syncSegs();}));
 }
 function markEnv(){document.querySelectorAll('.env').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.env===S.env)));}
 function markBoard(){document.querySelectorAll('[data-board]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.board===S.board)));}
 function markSet(){document.querySelectorAll('[data-set]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.set===S.stones)));}
+/* settings tabs and rebindable hotkeys */
+let setTab='table',capKey=null;
+function showTab(t){setTab=t;capKey=null;document.querySelectorAll('#sSet [data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===t)));
+  document.querySelectorAll('#sSet [data-pane]').forEach(p=>p.hidden=p.dataset.pane!==t);if(t==='keys')renderKeys();}
+function keyName(code){if(!code)return 'не задана';const m={ArrowLeft:'←',ArrowRight:'→',ArrowUp:'↑',ArrowDown:'↓',Space:'Пробел',Equal:'=',Minus:'−',Comma:',',Period:'.',Slash:'/',Semicolon:';',Quote:"'",
+  BracketLeft:'[',BracketRight:']',Backslash:'\\',Backquote:'`',PageUp:'PgUp',PageDown:'PgDn',Insert:'Ins',Delete:'Del'};
+  if(m[code])return m[code];if(/^Key/.test(code))return code.slice(3);if(/^Digit/.test(code))return code.slice(5);if(/^Numpad/.test(code))return 'Num '+code.slice(6);return code;}
+function renderKeys(){$('keyList').innerHTML=ACTIONS.map(([a,l])=>`<div class="row"><label>${l}</label><button class="kbd${capKey===a?' wait':S.keys[a]?'':' none'}" data-act="${a}">${capKey===a?'Нажмите клавишу…':keyName(S.keys[a])}</button></div>`).join('');
+  $('keyList').querySelectorAll('.kbd').forEach(b=>b.onclick=()=>{capKey=capKey===b.dataset.act?null:b.dataset.act;renderKeys();});}
+/* a key already used elsewhere swaps places with the old key of this action */
+function bindKey(a,code){if(code){const other=ACTIONS.map(x=>x[0]).find(k=>k!==a&&S.keys[k]===code);if(other){S.keys[other]=S.keys[a];toast(`«${ACTIONS.find(x=>x[0]===other)[1]}» теперь: ${keyName(S.keys[other])}`);}}
+  S.keys[a]=code;capKey=null;saveSettings();renderKeys();}
+function toggleFull(){try{if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen();}catch(e){}}
+function doAction(a){
+  if(a==='pass')$('bPass').click();else if(a==='undo')undo();else if(a==='view'){if(V3D)$('bView').click();}else if(a==='cam')$('bCam').click();
+  else if(a==='rotL'||a==='rotR'){if(is3D())V3D.orbit(a==='rotL'?-.09:.09);}else if(a==='zoomIn'||a==='zoomOut'){if(is3D())V3D.zoom(a==='zoomIn'?.93:1.075);}
+  else if(a==='hint'){if(T.kind&&!T.solved)showHint();}else if(a==='next'){if(T.kind&&!$('tNext').disabled)$('tNext').click();}
+  else if(a==='menu')openSettings();else if(a==='home'){if(T.kind)closeAllTut();openHome();}
+  else if(a==='mute'){S.mute=!S.mute;saveSettings();AU.setVol();toast(S.mute?'Звук выключен':'Звук включён',1400);}
+  else if(a==='full')toggleFull();else if(a==='resign'){if(G.phase==='play')$('bResign').click();}}
+function onKey(e){AU.init();
+  if(capKey&&!$('sSet').hidden){e.preventDefault();if(e.code==='Escape'){capKey=null;renderKeys();return;}if(e.code==='Backspace'||e.code==='Delete'){bindKey(capKey,'');return;}
+    if(!e.code||/^(Shift|Control|Alt|Meta|Tab|CapsLock|OS|Fn)/.test(e.code))return;bindKey(capKey,e.code);return;}
+  if(e.key==='Escape'){['sSet','sConfirm','sResult'].forEach(closeSheet);return;}
+  if(anySheet()||e.target.tagName==='INPUT'||e.altKey||e.metaKey)return;
+  if(e.ctrlKey){if(e.code==='KeyZ'){e.preventDefault();undo();}return;}
+  if((e.code==='Enter'||e.code==='Space')&&e.target.tagName==='BUTTON')return;
+  const a=ACTIONS.map(x=>x[0]).find(k=>S.keys[k]&&S.keys[k]===e.code);if(!a)return;
+  if(e.repeat&&!/^(rot|zoom)/.test(a))return;e.preventDefault();doAction(a);}
 function openSettings(){markEnv();markSet();markBoard();syncSegs();
+  $('tMute').checked=S.mute;$('tAtari').checked=S.atari;$('tUndo').checked=S.allowUndo;$('tBotResign').checked=S.botResign;$('tClockPause').checked=S.clockPause;showTab(setTab);
   document.querySelectorAll('[data-set]').forEach(b=>{const [a,c]=swatch(b.dataset.set);const is=b.querySelectorAll('.pair i');is[0].style.backgroundImage=`url(${a})`;is[1].style.backgroundImage=`url(${c})`;});
   $('vSfx').value=S.sfx;$('vAmb').value=S.amb;$('tQuick').checked=S.quick;$('tLast').checked=S.lastMark;$('tFlip').checked=S.flip;$('tCoords').checked=S.coords;hud();openSheet('sSet');}
 function setView(v){if(v==='3d'&&!V3D){toast('3D недоступно в этом браузере — открыта 2D-доска');v='2d';}
@@ -1865,16 +1970,12 @@ function boot(){
   setView(S.view);AU.setEnv(S.env);hud();
   window.addEventListener('resize',()=>{if(V3D)V3D.resize();V2D.relayout();});
   if('ResizeObserver' in window){const ro=new ResizeObserver(onUIChange);['tutPanel','scorePanel','top','status'].forEach(id=>ro.observe($(id)));}
-  document.addEventListener('pointerdown',()=>AU.init(),{capture:true});document.addEventListener('keydown',e=>{AU.init();if(e.key==='Escape'){['sSet','sConfirm','sResult'].forEach(closeSheet);return;}
-    if(anySheet()||e.target.tagName==='INPUT'||e.altKey||e.metaKey)return;const k=e.key.toLowerCase();
-    if((e.ctrlKey&&k==='z')||(!e.ctrlKey&&(k==='u'||k==='г'))){e.preventDefault();undo();}
-    else if(e.ctrlKey)return;
-    else if(k==='p'||k==='з')$('bPass').click();
-    else if(k==='v'||k==='м')$('bView').click();
-    else if(k==='c'||k==='с')$('bCam').click();
-    else if(k==='h'||k==='р'){if(T.kind&&!T.solved)showHint();}
-    else if(k==='enter'&&T.kind&&!$('tNext').disabled)$('tNext').click();});
-  if(!isCoarse){try{if(!localStorage.getItem('jadego.keys')){localStorage.setItem('jadego.keys','1');setTimeout(()=>toast('Клавиши: P — пас, Ctrl+Z — ход назад, V — 2D/3D, C — камера. Мышь: вращать — перетаскивание, масштаб — колесо',6000),2500);}}catch(er){}}
+  document.addEventListener('pointerdown',()=>AU.init(),{capture:true});document.addEventListener('keydown',onKey);
+  setInterval(clockTick,200);document.addEventListener('visibilitychange',clockTick);
+  document.querySelectorAll('#sSet [data-tab]').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+  $('bKeysReset').onclick=()=>{S.keys=Object.assign({},DEFKEYS);capKey=null;saveSettings();renderKeys();toast('Клавиши сброшены',1400);};
+  if(!isCoarse){try{if(!localStorage.getItem('jadego.keys')){localStorage.setItem('jadego.keys','1');
+    setTimeout(()=>toast('Клавиши: '+[['pass','пас'],['undo','ход назад'],['view','2D/3D'],['cam','камера']].map(([a,l])=>keyName(S.keys[a])+' — '+l).join(', ')+'. Настроить: Меню → Клавиши',6000),2500);}}catch(er){}}
   $('bPass').onclick=()=>{if(!(G.phase==='play'&&canHumanAct()))return;if(is3D())V3D.dropHand();doPass(G.human);};
   $('bUndo').onclick=undo;
   $('bView').onclick=()=>setView(S.view==='3d'?'2d':'3d');
@@ -1897,6 +1998,11 @@ function boot(){
   $('tLast').onchange=e=>{S.lastMark=e.target.checked;saveSettings();view().resync();};
   $('tFlip').onchange=e=>{S.flip=e.target.checked;saveSettings();if(G.phase==='play'&&hot()){G.flipView=S.flip&&G.toPlay===2;if(is3D())V3D.turnCam();}};
   $('tCoords').onchange=e=>{S.coords=e.target.checked;saveSettings();V2D.relayout();};
+  $('tMute').onchange=e=>{S.mute=e.target.checked;saveSettings();AU.setVol();};
+  $('tAtari').onchange=e=>{S.atari=e.target.checked;saveSettings();refreshAtari();view().resync();};
+  $('tUndo').onchange=e=>{S.allowUndo=e.target.checked;saveSettings();hud();};
+  $('tBotResign').onchange=e=>{S.botResign=e.target.checked;saveSettings();};
+  $('tClockPause').onchange=e=>{S.clockPause=e.target.checked;saveSettings();};
   $('tClose').onclick=exitTut;
   $('tPrev').onclick=()=>{if(T.kind==='lesson')lessonPrev();else if(T.kind==='puzzle')loadPuzzle();};
   $('tNext').onclick=()=>{if(T.kind==='lesson')lessonNext();else if(T.kind==='puzzle')puzzleNext();};
