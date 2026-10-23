@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход · Нефритовое Го</title>
+<link href="vendor/fonts.css" rel="stylesheet">
+<style>
+:root{--lacquer:#121829;--glass-hi:rgba(26,33,56,.96);--hair:rgba(236,228,212,.15);--kinari:#ece4d4;--kinari-dim:#aab0a8;--jade:#86cfae;--jade-ink:#0d3628;--shu:#e06a4f;color-scheme:dark}
+html,body{height:100%}
+body{margin:0;display:grid;place-items:center;padding:24px 16px;box-sizing:border-box;color:var(--kinari);font:14px "Golos Text",system-ui,sans-serif;
+  background:radial-gradient(90% 70% at 50% 0%,#24304f 0,var(--lacquer) 70%)}
+.card{width:100%;max-width:400px;background:var(--glass-hi);border:1px solid var(--hair);border-radius:22px;padding:24px 22px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--jade)}
+h1{font:400 30px "Prata",Georgia,serif;margin:6px 0 4px}
+p{margin:6px 0 0;line-height:1.5;color:var(--kinari-dim)}
+.tabs{display:flex;gap:4px;margin:16px 0 4px;padding:4px;border-radius:14px;background:rgba(236,228,212,.06)}
+.tabs button{flex:1;border:0;background:none;padding:9px 6px;border-radius:10px;font-size:14px;font-weight:500;font-family:inherit;color:var(--kinari-dim);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--jade);color:var(--jade-ink)}
+label{display:block;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--kinari-dim);margin:14px 0 6px}
+input{width:100%;box-sizing:border-box;border:1px solid var(--hair);background:rgba(236,228,212,.06);color:var(--kinari);border-radius:12px;padding:11px 12px;font-size:15px;font-weight:500;font-family:inherit}
+input:focus{outline:none;border-color:var(--jade)}
+.btn{width:100%;margin-top:18px;border:1px solid var(--jade);background:var(--jade);color:var(--jade-ink);border-radius:14px;padding:12px 16px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}
+.btn:disabled{opacity:.5}
+.err{color:#f2a28e;min-height:1.4em;margin-top:10px;font-size:13.5px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="kicker">Нефритовое Го · 碁</div>
+  <h1>Вход на сервер</h1>
+  <p id="lead">Этот сервер открыт только для игроков с аккаунтом.</p>
+  <div class="tabs" role="tablist"><button role="tab" data-t="login" aria-selected="true">Вход</button><button role="tab" data-t="register" id="tReg">Регистрация</button></div>
+  <form id="f" autocomplete="on">
+    <label for="login">Логин</label><input id="login" name="username" autocomplete="username" maxlength="20" required>
+    <div id="regOnly" hidden>
+      <label for="name">Имя в игре</label><input id="name" maxlength="20" autocomplete="nickname" placeholder="как вас видят соперники">
+      <div id="invRow" hidden><label for="invite">Код приглашения</label><input id="invite" maxlength="12" autocomplete="off" style="text-transform:uppercase;letter-spacing:.12em"></div>
+    </div>
+    <label for="pw">Пароль</label><input id="pw" type="password" autocomplete="current-password" maxlength="128" required>
+    <div id="pw2Row" hidden><label for="pw2">Пароль ещё раз</label><input id="pw2" type="password" autocomplete="new-password" maxlength="128"></div>
+    <button class="btn" id="go">Войти</button>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+</main>
+<script>
+(function(){
+  'use strict';
+  const $=id=>document.getElementById(id);let mode='login',signup='open';
+  const api=(path,body)=>fetch('api/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'})
+    .then(r=>r.json().catch(()=>({})).then(j=>{if(!r.ok||j.error)throw new Error(j.error||'Ошибка '+r.status);return j;}));
+  function setMode(m){mode=m;document.querySelectorAll('[data-t]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.t===m)));
+    $('regOnly').hidden=$('pw2Row').hidden=m!=='register';$('invRow').hidden=!(m==='register'&&signup==='invite');
+    $('pw').autocomplete=m==='register'?'new-password':'current-password';$('go').textContent=m==='register'?'Создать аккаунт':'Войти';$('err').textContent='';}
+  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>setMode(b.dataset.t));
+  api('auth/me').then(r=>{if(r.user){location.replace('./');return;}signup=r.signup;
+    if(signup==='closed'){$('tReg').hidden=true;$('lead').textContent='Этот сервер открыт только для игроков с аккаунтом. Аккаунт выдаёт администратор.';}
+    else if(signup==='invite')$('lead').textContent='Этот сервер открыт только для игроков с аккаунтом. Зарегистрироваться можно по коду приглашения.';setMode(mode);}).catch(()=>{});
+  $('f').onsubmit=e=>{e.preventDefault();$('err').textContent='';
+    if(mode==='register'&&$('pw').value!==$('pw2').value){$('err').textContent='Пароли не совпадают';return;}
+    $('go').disabled=true;
+    const body=mode==='register'?{login:$('login').value.trim(),password:$('pw').value,name:$('name').value.trim(),invite:$('invite').value.trim()}:{login:$('login').value.trim(),password:$('pw').value};
+    api('auth/'+mode,body).then(()=>location.replace('./'),er=>{$('err').textContent=er.message;$('go').disabled=false;});};
+})();
+</script>
+</body>
+</html>

@@ -3,7 +3,9 @@
 #
 #   sudo ./deploy/install.sh               # порт 8080
 #   sudo ./deploy/install.sh --port 80     # обычный веб-порт
-#   sudo ./deploy/install.sh --uninstall   # удалить сервис и файлы
+#   sudo ./deploy/install.sh --signup invite   # регистрация только по приглашениям (open | invite | closed)
+#   sudo ./deploy/install.sh --private         # без входа в аккаунт игра не откроется
+#   sudo ./deploy/install.sh --uninstall   # удалить сервис и файлы (база аккаунтов остаётся в /var/lib/jade-go)
 #
 # Ставит игру в /opt/jade-go, запускает её от отдельного пользователя без прав (jadego)
 # через systemd: автозапуск при загрузке, перезапуск при сбое, логи в journalctl.
@@ -15,12 +17,17 @@ USER_NAME=jadego
 UNIT=/etc/systemd/system/$APP.service
 PORT=8080
 HOST=0.0.0.0
+SIGNUP=open
+PRIVATE=0
+DATA=/var/lib/$APP
 MODE=install
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;
     --host) HOST="$2"; shift 2 ;;
+    --signup) SIGNUP="$2"; shift 2 ;;
+    --private) PRIVATE=1; shift ;;
     --uninstall) MODE=uninstall; shift ;;
     -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     *) echo "Неизвестный параметр: $1" >&2; exit 1 ;;
@@ -29,6 +36,7 @@ done
 
 if [ "$(id -u)" -ne 0 ]; then echo "Запустите через sudo: sudo $0 $*" >&2; exit 1; fi
 case "$PORT" in ''|*[!0-9]*) echo "Порт должен быть числом" >&2; exit 1 ;; esac
+case "$SIGNUP" in open|invite|closed) ;; *) echo "--signup: open, invite или closed" >&2; exit 1 ;; esac
 
 if [ "$MODE" = uninstall ]; then
   systemctl disable --now "$APP" 2>/dev/null || true
@@ -69,7 +77,13 @@ Group=$USER_NAME
 Environment=JADEGO_HOST=$HOST
 Environment=JADEGO_PORT=$PORT
 Environment=JADEGO_DIR=$DEST/site
+Environment=JADEGO_DATA=$DATA
+Environment=JADEGO_SIGNUP=$SIGNUP
+Environment=JADEGO_PRIVATE=$PRIVATE
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+StateDirectory=$APP
+StateDirectoryMode=0700
 ExecStart=/usr/bin/env python3 $DEST/server/serve.py
 Restart=on-failure
 RestartSec=2
@@ -108,6 +122,8 @@ if systemctl is-active --quiet "$APP"; then
   for ip in $(hostname -I 2>/dev/null); do case "$ip" in *:*) ;; *) echo "  В локальной сети:    http://$ip:$PORT/";; esac; done
   echo
   echo "Управление:  systemctl status|restart|stop $APP     Логи:  journalctl -u $APP -f"
+  echo "Аккаунты:    регистрация $SIGNUP$( [ "$PRIVATE" = 1 ] && echo ', сервер закрытый'). Первый зарегистрированный станет администратором."
+  echo "             sudo -u $USER_NAME python3 $DEST/server/accounts.py --data $DATA list   (add, passwd, del, invite, admin)"
 else
   echo "Сервис не запустился. Смотрите:  journalctl -u $APP -n 50" >&2
   exit 1

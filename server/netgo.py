@@ -22,6 +22,7 @@ OVER_TTL = 2 * 3600          # a finished game nobody is watching
 
 LOCK = threading.RLock()
 ROOMS = {}
+ON_FINISH = None             # set by the server: called with (room, result) when a game ends
 _created = {}                # ip -> recent room creation times
 
 
@@ -191,6 +192,11 @@ class Room:
     # game flow
     def finish(self, result):
         self.phase, self.result, self.undo_req = 'over', result, None
+        if ON_FINISH and self.seats[1] and self.seats[2]:
+            try:
+                ON_FINISH(self, result)
+            except Exception as e:  # a storage problem must not break the game itself
+                print('jadego: could not record game:', e)
 
     def snapshot(self):
         return (self.board[:], self.ko, self.to_play, dict(self.caps), self.passes)
@@ -324,7 +330,7 @@ def _room(code):
     return r
 
 
-def create(d, ip):
+def create(d, ip, user=None):
     with LOCK:
         now = time.time()
         recent = [t for t in _created.get(ip, []) if now - t < 3600]
@@ -343,7 +349,7 @@ def create(d, ip):
         colour = d.get('color')
         colour = 1 if colour == 'black' else 2 if colour == 'white' else secrets.choice((1, 2))
         token = secrets.token_urlsafe(18)
-        room.seats[colour] = {'name': clean_name(d.get('name')), 'token': token}
+        room.seats[colour] = {'name': user['name'] if user else clean_name(d.get('name')), 'token': token, 'uid': user['id'] if user else None}
         ROOMS[code] = room
         return {'code': code, 'token': token, 'color': colour}
 
@@ -356,14 +362,18 @@ def info(code):
                 'free': [c for c in (1, 2) if not r.seats[c]]}
 
 
-def join(code, d):
+def join(code, d, user=None):
     with LOCK:
         r = _room(code)
+        if user:   # already seated (another device, cleared browser): hand back that seat
+            for c, s in r.seats.items():
+                if s and s.get('uid') == user['id']:
+                    return {'code': r.code, 'token': s['token'], 'color': c}
         free = [c for c in (1, 2) if not r.seats[c]]
         if not free:
             raise ApiError('В комнате уже два игрока', 409)
         token = secrets.token_urlsafe(18)
-        r.seats[free[0]] = {'name': clean_name(d.get('name')), 'token': token}
+        r.seats[free[0]] = {'name': user['name'] if user else clean_name(d.get('name')), 'token': token, 'uid': user['id'] if user else None}
         r.phase = 'play'
         r.turn_t = time.monotonic()
         r.broadcast()

@@ -157,6 +157,8 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
 .msg b{display:block;font-size:11px;font-weight:600;color:var(--jade);margin-bottom:2px}.msg span{word-break:break-word}
 .tool.new{position:relative}.tool.new::after{content:"";position:absolute;top:6px;right:14px;width:8px;height:8px;border-radius:50%;background:var(--shu)}
 .mi.off{opacity:.55}
+.dim{opacity:.4;pointer-events:none}
+.who{margin-top:14px;padding:12px 14px;border:1px solid var(--hair);border-radius:14px;line-height:1.4}.who b{font-weight:600}.who .btn{margin-top:10px;width:100%}
 .tabs{display:flex;gap:4px;margin:14px 0 4px;padding:4px;border-radius:14px;background:rgba(236,228,212,.06)}
 .tabs button{flex:1;border:0;background:none;padding:9px 6px;border-radius:10px;font:500 14px var(--f-body);cursor:pointer;color:var(--kinari-dim)}
 .tabs button[aria-selected="true"]{background:var(--jade);color:var(--jade-ink)}
@@ -248,11 +250,47 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
       <button class="mi" id="mmPlay"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="4"/><circle cx="16" cy="15" r="4"/></svg><div class="mt"><b>Игра</b><span>партия с ботом или другом, обучение, задачи дня</span></div></button>
       <button class="mi" id="mmNet"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/><path d="M12 4v3M12 17v3" opacity=".5"/></svg><div class="mt"><b>Игра по сети</b><span id="mmNetSub">партия с другом на другом устройстве — по коду или ссылке</span></div></button>
       <button class="mi" id="mmZen"><svg viewBox="0 0 24 24"><path d="M3 15c3-5 6-5 9 0s6 5 9 0"/><path d="M3 9c3-3 6-3 9 0s6 3 9 0" opacity=".55"/></svg><div class="mt"><b>Созерцание</b><span>просто побыть здесь: камера медленно облетает место под музыку</span></div></button>
+      <button class="mi" id="mmAcc" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/></svg><div class="mt"><b>Аккаунт</b><span id="mmAccSub">войти или зарегистрироваться</span></div></button>
       <button class="mi" id="mmSet"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><div class="mt"><b>Настройки</b><span>место, доска, камни, правила партии, клавиши</span></div></button>
       <button class="mi" id="mmInfo"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><div class="mt"><b>Сведения</b><span>правила, история го, статистика и история партий</span></div></button>
       <button class="mi" id="mmNews"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.4 5.6.6-4.2 3.9 1.2 5.6L12 15.7 7 18.5l1.2-5.6L4 9l5.6-.6z"/></svg><div class="mt"><b>Что нового</b><span id="mmNewsSub"></span></div><i class="tag" id="mmNewsTag" hidden>Новое</i></button>
     </div>
     <p class="note" id="mmVer"></p>
+  </div>
+</div>
+
+<!-- Account -->
+<div class="sheet" id="sAcc" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="hAcc">
+    <button class="back" id="aBack">← Назад</button>
+    <div class="kicker">Аккаунт</div>
+    <h2 id="hAcc">Вход</h2>
+    <div id="accOut">
+      <p id="accLead"></p>
+      <div class="tabs" role="tablist"><button role="tab" data-atab="login">Вход</button><button role="tab" data-atab="register" id="aRegTab">Регистрация</button></div>
+      <form id="accForm" autocomplete="on">
+        <div class="field"><div class="label">Логин</div><input class="inp" id="aLogin" maxlength="20" autocomplete="username" spellcheck="false" placeholder="латиница, цифры, . - _"></div>
+        <div id="aReg" hidden>
+          <div class="field"><div class="label">Имя в игре</div><input class="inp" id="aName" maxlength="20" autocomplete="nickname" placeholder="как вас видят соперники"></div>
+          <div class="field" id="aInvRow" hidden><div class="label">Код приглашения</div><input class="inp code" id="aInv" maxlength="12" autocomplete="off"></div>
+        </div>
+        <div class="field"><div class="label">Пароль</div><input class="inp" id="aPw" type="password" maxlength="128" autocomplete="current-password"></div>
+        <div class="field" id="aPw2Row" hidden><div class="label">Пароль ещё раз</div><input class="inp" id="aPw2" type="password" maxlength="128" autocomplete="new-password"></div>
+        <button class="btn primary" id="aGo" style="width:100%;margin-top:16px">Войти</button>
+      </form>
+    </div>
+    <div id="accIn" hidden>
+      <div class="stats" id="accStats"></div>
+      <h3>Имя в игре</h3>
+      <div class="joinrow"><input class="inp" id="aNewName" maxlength="20" autocomplete="nickname"><button class="btn" id="aSaveName">Сохранить</button></div>
+      <h3>Партии по сети</h3><div class="games" id="accGames"></div>
+      <h3>Лучшие игроки сервера</h3><div id="accTop"></div>
+      <h3>Сменить пароль</h3>
+      <div class="field"><input class="inp" id="aOld" type="password" maxlength="128" placeholder="Текущий пароль" autocomplete="current-password"></div>
+      <div class="field"><input class="inp" id="aNew" type="password" maxlength="128" placeholder="Новый пароль, от 6 символов" autocomplete="new-password"></div>
+      <div class="btnrow"><button class="btn" id="aChPw">Сменить пароль</button><button class="btn danger" id="aLogout">Выйти из аккаунта</button></div>
+    </div>
+    <div class="btnrow"><button class="btn primary" id="aClose">Готово</button></div>
   </div>
 </div>
 
@@ -265,7 +303,7 @@ body.zen #top,body.zen #bottom,body.zen #status,body.zen .panel{display:none!imp
     <p>Создайте комнату и отправьте другу код или ссылку. Он откроет её в браузере на своём устройстве — и вы играете.</p>
     <p class="note" id="netOff" hidden>Онлайн-игра работает, когда игра открыта через сервер (python3 server/serve.py). Сейчас страница открыта как файл или сервер недоступен.</p>
     <div id="netForms">
-      <div class="field"><div class="label">Ваше имя</div><input class="inp" id="netName" maxlength="20" placeholder="Игрок" autocomplete="nickname"></div>
+      <div class="who" id="netWho"></div>
       <h3>Создать комнату</h3>
       <div class="field"><div class="label">Доска</div>
         <div class="seg" data-key="size"><button data-v="9">9 × 9</button><button data-v="13">13 × 13</button><button data-v="19">19 × 19</button></div></div>
@@ -723,7 +761,7 @@ const BOARDS={
 /* hotkeys: action, label, default key (KeyboardEvent.code, so bindings work in any keyboard layout) */
 const ACTIONS=[['pass','Пас','KeyP'],['undo','Ход назад','KeyU'],['view','2D / 3D','KeyV'],['cam','Сменить камеру','KeyC'],
   ['rotL','Повернуть стол влево','ArrowLeft'],['rotR','Повернуть стол вправо','ArrowRight'],['zoomIn','Приблизить','ArrowUp'],['zoomOut','Отдалить','ArrowDown'],
-  ['hint','Подсказка (уроки, задачи)','KeyH'],['next','Дальше (уроки, задачи)','Enter'],['menu','Настройки','KeyM'],['info','Сведения: правила, история, статистика','KeyI'],['zen','Созерцание','KeyZ'],['chat','Чат (игра по сети)','KeyT'],['home','Главное меню','KeyN'],
+  ['hint','Подсказка (уроки, задачи)','KeyH'],['next','Дальше (уроки, задачи)','Enter'],['menu','Настройки','KeyM'],['info','Сведения: правила, история, статистика','KeyI'],['zen','Созерцание','KeyZ'],['chat','Чат (игра по сети)','KeyT'],['account','Аккаунт','KeyA'],['home','Главное меню','KeyN'],
   ['mute','Звук вкл / выкл','KeyS'],['music','Музыка вкл / выкл','KeyK'],['full','Полный экран','KeyF'],['resign','Сдаться','']];
 const DEFKEYS=Object.fromEntries(ACTIONS.map(a=>[a[0],a[2]]));
 const DEF={board:'goban',grid:'auto',opp:'bot',flip:true,size:9,level:1,color:'black',komi:6.5,handicap:0,clock:'off',env:'garden',stones:'jade',view:'3d',sfx:.8,amb:.5,mute:false,
@@ -2108,6 +2146,43 @@ function resumeSaved(s){closeAllTut();AI.reset();G.token++;G.N=s.N;ENG.setSize(G
 
 let CONF={};
 function ask(title,text,yes,no,onYes,onNo){$('hConf').textContent=title;$('pConf').textContent=text;$('cYes').textContent=yes;$('cNo').textContent=no;CONF={yes:onYes,no:onNo};openSheet('sConfirm');}
+/* ---------- accounts (server side: players, ratings, game history) ---------- */
+const AUTH={ok:false,me:null,signup:'open',private:false};let accTab='login';
+function authLoad(){if(location.protocol==='file:')return Promise.resolve();return netApi('auth/me').then(r=>{AUTH.ok=true;AUTH.me=r.user;AUTH.signup=r.signup;AUTH.private=r.private;},()=>{AUTH.ok=false;});}
+function authLabel(){return AUTH.me?`${AUTH.me.name} · рейтинг ${AUTH.me.rating}`:AUTH.signup==='closed'?'войти':'войти или зарегистрироваться';}
+function openAcc(t){backTo=fromSheet();if(t)accTab=t;renderAcc();openSheet('sAcc');if(AUTH.me)authLoad().then(()=>{if(!$('sAcc').hidden&&AUTH.me)renderAcc();mainLabels();});}
+function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=!me;
+  if(!me){if(AUTH.signup==='closed')accTab='login';const reg=accTab==='register';$('hAcc').textContent=reg?'Регистрация':'Вход';$('aRegTab').hidden=AUTH.signup==='closed';
+    document.querySelectorAll('[data-atab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.atab===accTab)));
+    $('aReg').hidden=$('aPw2Row').hidden=!reg;$('aInvRow').hidden=!(reg&&AUTH.signup==='invite');$('aGo').textContent=reg?'Создать аккаунт':'Войти';$('aPw').autocomplete=reg?'new-password':'current-password';
+    $('accLead').textContent='Аккаунт нужен для игры по сети: соперники видят ваше имя, а сервер ведёт рейтинг и историю партий.'+
+      (AUTH.signup==='closed'?' Регистрация на этом сервере закрыта — аккаунт выдаёт администратор.':AUTH.signup==='invite'?' Зарегистрироваться можно по коду приглашения от администратора.':'');return;}
+  $('hAcc').textContent=me.name;$('aNewName').value=me.name;
+  const tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
+  $('accStats').innerHTML=tile(me.rating,'рейтинг')+tile(me.games,plural(me.games,'партия','партии','партий')+' по сети')+tile(me.games?Math.round(me.wins/me.games*100)+'%':'—','побед')+
+    `<div class="stat" style="grid-column:1/-1"><b style="font-size:16px">${esc(me.login)}</b><span>логин${me.role==='admin'?' · администратор сервера':''}</span></div>`;
+  $('accGames').innerHTML='<p>Загружаю…</p>';$('accTop').innerHTML='';
+  netApi('me/games').then(r=>{const list=r.games||[];
+    $('accGames').innerHTML=list.length?list.map((g,i)=>{const win=g.w===g.you,how=g.by==='score'?'+'+fmt(g.m):g.by==='time'?'по времени':win?'соперник сдался':'вы сдались',dt=new Date(g.d);
+      const when=String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0')+' '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');
+      const n=g.moves?g.moves.split(',').length:0,dl=g.delta?` · ${g.delta>0?'+':'−'}${Math.abs(g.delta)} к рейтингу`:'';
+      return `<div class="game"><div class="gi"><b class="${win?'win':'loss'}">${win?'Победа':'Поражение'} · ${how}</b><span>${when} · ${g.n}×${g.n} · с «${esc(g.opp)}», вы ${g.you===1?'чёрными':'белыми'} · ${n} ${plural(n,'ход','хода','ходов')}${dl}</span></div><button class="btn" data-ssgf="${i}">SGF</button></div>`;}).join('')
+      :'<p>Здесь появятся ваши партии по сети.</p>';
+    $('accGames').querySelectorAll('[data-ssgf]').forEach(b=>b.onclick=()=>{const g=list[+b.dataset.ssgf];download(`jade-go-${new Date(g.d).toISOString().slice(0,10)}-${g.n}x${g.n}.sgf`,sgf({N:g.n,lv:-2,opp:g.opp,komi:g.komi,you:g.you,w:g.w,by:g.by,m:g.m,moves:g.moves,hc:0,ab:'',d:g.d}));});},
+    e=>{$('accGames').innerHTML=`<p>${esc(e.message)}</p>`;});
+  netApi('leaderboard').then(r=>{const t=r.top||[];$('accTop').innerHTML=t.length?`<table class="res plain"><tr><th></th><th>Игрок</th><th>Рейтинг</th><th>Партий</th></tr>`+
+    t.map((u,i)=>`<tr><td>${i+1}</td><td style="text-align:left">${esc(u.name)}</td><td>${u.rating}</td><td>${u.games}</td></tr>`).join('')+'</table>':'<p>Пока никто не сыграл партию по сети.</p>';},()=>{});}
+function accSubmit(e){e.preventDefault();const reg=accTab==='register';
+  if(reg&&$('aPw').value!==$('aPw2').value){toast('Пароли не совпадают',2200);return;}
+  const body=reg?{login:$('aLogin').value.trim(),password:$('aPw').value,name:$('aName').value.trim(),invite:$('aInv').value.trim()}:{login:$('aLogin').value.trim(),password:$('aPw').value};
+  $('aGo').disabled=true;netApi('auth/'+(reg?'register':'login'),body).then(r=>{AUTH.me=r.user;$('aPw').value=$('aPw2').value='';toast((reg?'Аккаунт создан. ':'')+'Вы вошли как '+r.user.name,2600);
+    if(r.user.role==='admin'&&reg)setTimeout(()=>toast('Вы первый на этом сервере — вы его администратор',3200),2700);
+    renderAcc();if(backTo==='net'){closeBack('sAcc');return;}},e=>toast(e.message,3200)).finally(()=>{$('aGo').disabled=false;});}
+function netWho(){const w=$('netWho');if(!AUTH.ok){w.innerHTML='';w.hidden=true;return;}w.hidden=false;
+  if(AUTH.me){w.innerHTML=`Вы играете как <b>${esc(AUTH.me.name)}</b> · рейтинг ${AUTH.me.rating}`;}
+  else{w.innerHTML='Чтобы играть по сети, войдите в аккаунт.<button class="btn primary" id="netLogin">Войти или зарегистрироваться</button>';$('netLogin').onclick=()=>{backTo='net';accTab='login';renderAcc();openSheet('sAcc');};}
+  $('netForms').querySelectorAll('h3,.field,#netCreate,.joinrow').forEach(e=>e.classList.toggle('dim',!AUTH.me));}
+
 /* ---------- online play: rooms on our server, state pushed over Server-Sent Events ----------
    The server holds the move list and checks every move; this page replays the same moves with its own engine.
    A state that extends what we show by one opponent move is animated; anything else is rebuilt from scratch. */
@@ -2127,7 +2202,6 @@ function netConnect(code,token){netClose(true);NET.code=code;NET.token=token;NET
     if(!NET.lost){NET.lost=true;if(net())$('status').textContent='Связь потеряна — переподключаюсь…';}};}
 function netClose(keep){if(NET.es){NET.es.close();NET.es=null;}if(!keep){NET.code=NET.token=null;NET.st=null;}}
 function netEnd(){netClose();netSave(null);closeChat();$('bChat').hidden=true;}
-function netName(){const v=($('netName').value||'').trim().slice(0,20);S.netName=v;saveSettings();return v||'Игрок';}
 /* incoming state */
 function netState(st){if(G.busy){NET.later=st;return;}NET.later=null;netApply(st,false);}
 function netApply(st,force){const prev=NET.st;NET.st=st;
@@ -2175,14 +2249,14 @@ function netMeta(st,prev){const opp=3-st.you,on=st.online[opp];
 /* waiting room */
 function netShowWait(st){if($('sNet').hidden)openSheet('sNet');$('netForms').hidden=true;$('netWait').hidden=false;$('netCodeShow').textContent=st.code;}
 function netLink(code){const u=new URL(location.href);u.search='?room='+code;u.hash='';return u.toString();}
-function openNet(code){backTo=fromSheet();openSheet('sNet');$('netName').value=S.netName||'';$('netWait').hidden=true;$('netForms').hidden=false;
+function openNet(code){if(fromSheet()!==null||!backTo)backTo=fromSheet();openSheet('sNet');netWho();$('netWait').hidden=true;$('netForms').hidden=false;
   if(code)$('netCode').value=code;$('netOff').hidden=NET.ok!==false;$('netForms').classList.toggle('off',NET.ok===false);syncSegs();
   if(NET.ok===null)netPing().then(()=>{$('netOff').hidden=NET.ok!==false;$('netForms').classList.toggle('off',NET.ok===false);});}
 function netCreate(){if(NET.ok===false){toast('Онлайн-игра работает, когда игра открыта через сервер',3200);return;}const b=$('netCreate');b.disabled=true;
-  netApi('rooms',{name:netName(),n:S.size,komi:S.komi,color:S.color,clock:S.clock==='off'?null:+S.clock}).then(r=>{netConnect(r.code,r.token);},e=>toast(e.message,3200)).finally(()=>b.disabled=false);}
+  if(!AUTH.me){toast('Сначала войдите в аккаунт',2400);return;}netApi('rooms',{n:S.size,komi:S.komi,color:S.color,clock:S.clock==='off'?null:+S.clock}).then(r=>{netConnect(r.code,r.token);},e=>toast(e.message,3200)).finally(()=>b.disabled=false);}
 function netJoin(){const code=($('netCode').value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(code.length!==6){toast('Код — 6 букв и цифр',2400);return;}
   const sv=netSaved();if(sv&&sv.code===code){netConnect(sv.code,sv.token);return;}
-  netApi('rooms/'+code+'/join',{name:netName()}).then(r=>netConnect(r.code,r.token),e=>toast(e.message,3200));}
+  if(!AUTH.me){toast('Сначала войдите в аккаунт',2400);return;}netApi('rooms/'+code+'/join',{}).then(r=>netConnect(r.code,r.token),e=>toast(e.message,3200));}
 /* chat */
 function netChat(st){const list=st.chat||[],box=$('chatList');if(list.length<NET.chatSeen)NET.chatSeen=0;
   for(let i=NET.chatSeen;i<list.length;i++){const m=list[i],row=document.createElement('div');row.className='msg'+(m.c===st.you?' me':'');
@@ -2230,8 +2304,9 @@ function renderStats(){const l=loadStats(),bot=l.filter(g=>g.lv>=0),won=bot.filt
   $('statBody').querySelectorAll('[data-sgf]').forEach(b=>b.onclick=()=>{const g=l[+b.dataset.sgf],dt=new Date(g.d);download(`jade-go-${dt.toISOString().slice(0,10)}-${g.N}x${g.N}.sgf`,sgf(g));});
   const rb=$('bStatReset');if(rb)rb.onclick=()=>{if(!resetArm){resetArm=true;renderStats();return;}resetArm=false;try{localStorage.removeItem('jadego.stats');}catch(e){}renderStats();toast('Статистика стёрта',1600);};}
 /* ---------- main menu and changelog ---------- */
-const APP_VER='1.7';
+const APP_VER='1.8';
 const NEWS=[
+ ['1.8','Аккаунты',['Регистрация и вход на сервер: пароли хранятся только в виде стойкого хеша','Онлайн-партии привязаны к аккаунту — в свою партию можно вернуться с другого устройства','Рейтинг Эло, история партий на сервере с записью SGF, таблица лучших игроков','Администратор может закрыть регистрацию, выдавать приглашения или сделать сервер закрытым']],
  ['1.7','Игра по сети',['Партия с другом на другом устройстве: создайте комнату и отправьте код или ссылку','Сервер проверяет каждый ход и ведёт часы — разойтись в позиции невозможно','Чат, просьба вернуть ход, совместный подсчёт очков, реванш со сменой цветов','После обновления страницы или обрыва связи партия продолжается с того же места']],
  ['1.6','Живое окружение и созерцание',['Режим «Созерцание»: без интерфейса, камера медленно облетает место под музыку (клавиша Z)','Пышные деревья, которые качаются на ветру: сакура, клёны, сосны, бамбук','Небо с плывущими облаками, вода с бликами и рябью','Карпы кои в прудах, бабочки, стрекозы, стаи птиц, лучи света','В саду — пруд с красным мостиком; в чайной — открытая сёдзи с видом на сад под дождём','Ночью — лотосы на пруду, в онсэне снег осыпается с веток']],
  ['1.5','Спокойная музыка и мягче звук',['Генеративная музыка, которая не повторяется: кото и сякухати, гуцинь или эмбиент','Отдельная громкость музыки, клавиша K — включить или выключить','Стук камня суше и короче, как на настоящей доске','Фоновые звуки тише и без шипения']],
@@ -2242,23 +2317,25 @@ const NEWS=[
  ['1.0','Первая версия',['3D-стол и 2D-доска, бот четырёх уровней','12 уроков и ежедневные задачи']]];
 let backTo=null;
 function seenVer(){try{return localStorage.getItem('jadego.seen');}catch(e){return null;}}
+function mainLabels(){$('mmAcc').hidden=!AUTH.ok;$('mmAccSub').textContent=authLabel();$('mmNet').classList.toggle('off',NET.ok===false);
+  $('mmNetSub').textContent=NET.ok===false?'нужен сервер: python3 server/serve.py':'партия с другом на другом устройстве — по коду или ссылке';}
 function openMain(){const playing=G.phase==='play'||(net()&&G.phase==='scoring'),ns=!playing&&netSaved(),saved=playing||ns?null:loadGame(),g=playing?G:saved;
   $('mmContinue').hidden=!g&&!ns;
   if(g){const who=g.level===-1?'вдвоём':g.level===-2?'по сети с «'+(G.oppName||'соперником')+'»':'бот «'+LEVELS[g.level]+'»';$('mmContSub').textContent=`${g.N}×${g.N} · ${who} · ход ${g.moveNum+1}`;}
   else if(ns)$('mmContSub').textContent='по сети · комната '+ns.code;
-  $('mmNet').classList.toggle('off',NET.ok===false);$('mmNetSub').textContent=NET.ok===false?'нужен сервер: python3 server/serve.py':'партия с другом на другом устройстве — по коду или ссылке';
+  mainLabels();
   $('mmNewsSub').textContent=`Версия ${NEWS[0][0]}: ${NEWS[0][1].toLowerCase()}`;$('mmNewsTag').hidden=seenVer()===APP_VER;$('mmVer').textContent=`Нефритовое Го · версия ${APP_VER}`;
   backTo=null;openSheet('sMain');if(G.phase==='idle'&&is3D())V3D.showcase();}
 function openNews(){backTo=!$('sMain').hidden?'main':null;
   $('newsList').innerHTML=NEWS.map(([v,t,items])=>`<div class="ver"><div class="vk">Версия ${v}</div><h3>${t}</h3><ul>${items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
   try{localStorage.setItem('jadego.seen',APP_VER);}catch(e){}openSheet('sNews');$('sNews').querySelector('.card').scrollTop=0;}
-function fromSheet(){return !$('sMain').hidden?'main':!$('sHome').hidden?'home':null;}
+function fromSheet(){return !$('sMain').hidden?'main':!$('sHome').hidden?'home':!$('sNet').hidden?'net':null;}
 let infoTab='rules';
 function showITab(t){infoTab=t;resetArm=false;document.querySelectorAll('#sInfo [data-itab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.itab===t)));
   document.querySelectorAll('#sInfo [data-ipane]').forEach(p=>p.hidden=p.dataset.ipane!==t);if(t==='stats')renderStats();$('sInfo').querySelector('.card').scrollTop=0;}
 function openInfo(t){backTo=fromSheet();openSheet('sInfo');showITab(t||infoTab);}
 /* closing a sheet from the start screen brings the start screen back */
-function closeBack(id){closeSheet(id);const b=backTo;backTo=null;if(b==='home')openHome();else if(b==='main'||(G.phase==='idle'&&!anySheet()))openMain();}
+function closeBack(id){closeSheet(id);mainLabels();const b=backTo;backTo=null;if(b==='net'){openNet();return;}if(b==='home')openHome();else if(b==='main'||(G.phase==='idle'&&!anySheet()))openMain();}
 
 /* handicap stones on the star points, in the traditional order */
 function handicapPts(N,h){const e=N<13?2:3,m=(N-1)/2,a=e,b=N-1-e,P=(i,j)=>j*N+i,ur=P(b,a),ll=P(a,b),lr=P(b,b),ul=P(a,a),c=P(m,m),l=P(a,m),r=P(b,m),t=P(m,a),bo=P(m,b);
@@ -2487,7 +2564,7 @@ function doAction(a){
   if(a==='pass')$('bPass').click();else if(a==='undo')undo();else if(a==='view'){if(V3D)$('bView').click();}else if(a==='cam')$('bCam').click();
   else if(a==='rotL'||a==='rotR'){if(is3D())V3D.orbit(a==='rotL'?-.09:.09);}else if(a==='zoomIn'||a==='zoomOut'){if(is3D())V3D.zoom(a==='zoomIn'?.93:1.075);}
   else if(a==='hint'){if(T.kind&&!T.solved)showHint();}else if(a==='next'){if(T.kind&&!$('tNext').disabled)$('tNext').click();}
-  else if(a==='zen')setZen(true);else if(a==='chat'){if(net())openChat();}else if(a==='menu')openSettings();else if(a==='info')openInfo();else if(a==='home'){if(T.kind){closeAllTut();G.phase='idle';}openMain();}
+  else if(a==='zen')setZen(true);else if(a==='chat'){if(net())openChat();}else if(a==='account'){if(AUTH.ok)openAcc();}else if(a==='menu')openSettings();else if(a==='info')openInfo();else if(a==='home'){if(T.kind){closeAllTut();G.phase='idle';}openMain();}
   else if(a==='mute'){S.mute=!S.mute;saveSettings();AU.setVol();toast(S.mute?'Звук выключен':'Звук включён',1400);}
   else if(a==='music'){if(S.musicStyle==='off'){S.musicStyle=S.lastMusic||'koto';}else{S.lastMusic=S.musicStyle;S.musicStyle='off';}saveSettings();syncSegs();AU.setVol();toast(S.musicStyle==='off'?'Музыка выключена':'Музыка включена',1400);}
   else if(a==='full')toggleFull();else if(a==='resign'){if(G.phase==='play')$('bResign').click();}}
@@ -2541,7 +2618,12 @@ function boot(){
   $('mmPlay').onclick=openHome;$('mmZen').onclick=()=>setZen(true);$('mmSet').onclick=openSettings;$('mmInfo').onclick=()=>openInfo();$('mmNews').onclick=openNews;$('bNewsClose').onclick=()=>closeBack('sNews');
   $('mmContinue').onclick=()=>{if(G.phase==='play'||(net()&&G.phase==='scoring')){closeSheet('sMain');return;}const ns=netSaved();closeSheet('sMain');
     if(ns){netApi('rooms/'+ns.code).then(()=>netConnect(ns.code,ns.token),()=>{netSave(null);toast('Эта комната уже закрыта',2600);openMain();});return;}const sv=loadGame();if(sv)resumeSaved(sv);};
-  $('mmNet').onclick=()=>openNet();$('nBack').onclick=()=>closeBack('sNet');$('netCreate').onclick=netCreate;$('netJoin').onclick=netJoin;
+  $('mmNet').onclick=()=>openNet();$('nBack').onclick=()=>closeBack('sNet');$('mmAcc').onclick=()=>openAcc();
+  $('aBack').onclick=$('aClose').onclick=()=>closeBack('sAcc');$('accForm').onsubmit=accSubmit;
+  document.querySelectorAll('[data-atab]').forEach(b=>b.onclick=()=>{accTab=b.dataset.atab;renderAcc();});
+  $('aSaveName').onclick=()=>netApi('auth/name',{name:$('aNewName').value}).then(r=>{AUTH.me=r.user;renderAcc();toast('Имя сохранено',1600);},e=>toast(e.message,2600));
+  $('aChPw').onclick=()=>netApi('auth/password',{old:$('aOld').value,new:$('aNew').value}).then(()=>{$('aOld').value=$('aNew').value='';toast('Пароль изменён. На других устройствах нужно войти заново',3200);},e=>toast(e.message,2800));
+  $('aLogout').onclick=()=>netApi('auth/logout',{}).then(()=>{AUTH.me=null;if(AUTH.private){location.href='login.html';return;}renderAcc();toast('Вы вышли из аккаунта',1800);},e=>toast(e.message,2600));$('netCreate').onclick=netCreate;$('netJoin').onclick=netJoin;
   $('netCode').addEventListener('keydown',e=>{if(e.key==='Enter')netJoin();});
   $('netCopy').onclick=()=>{const u=netLink(NET.code);(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast('Ссылка скопирована',1600),()=>{prompt('Ссылка на комнату:',u);});};
   $('netCancel').onclick=()=>{netAct('leave');netEnd();closeSheet('sNet');openMain();};
@@ -2576,9 +2658,9 @@ function boot(){
   $('tNext').onclick=()=>{if(T.kind==='lesson')lessonNext();else if(T.kind==='puzzle')puzzleNext();};
   $('tHint').onclick=()=>{if(!T.solved)showHint();};
   G.phase='idle';hud();
-  netPing().then(()=>{if(!$('sMain').hidden)openMain();});
+  Promise.all([netPing(),authLoad()]).then(mainLabels);
   const inv=(new URLSearchParams(location.search).get('room')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  if(inv.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>{openMain();const sv=netSaved();if(sv&&sv.code===inv){netConnect(sv.code,sv.token);return;}openNet(inv);setTimeout(()=>$('netName').focus(),50);},isCoarse?250:120);}
+  if(inv.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>{openMain();const sv=netSaved();if(sv&&sv.code===inv){netConnect(sv.code,sv.token);return;}openNet(inv);setTimeout(()=>(AUTH.me?$('netJoin'):$('netLogin')||$('netJoin')).focus(),400);},isCoarse?250:120);}
   else setTimeout(openMain,isCoarse?250:120);
 }
 boot();
