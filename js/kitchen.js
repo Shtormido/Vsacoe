@@ -1,0 +1,430 @@
+// Дневная фаза: закусочная 8:00–00:00
+const CUSTOMER_TYPES = {
+  traveler: { name: 'Проезжий',      patience: 55, tip: 0.05, attention: 0.15 },
+  regular:  { name: 'Постоянный',    patience: 70, tip: 0.25, attention: 0.45 },
+  referral: { name: 'По рекомендации', patience: 60, tip: 0.15, attention: 0.3 },
+  rich:     { name: 'Богач',         patience: 50, tip: 0.4,  attention: 0.35 },
+  ghost:    { name: '???',           patience: 20, tip: 0,    attention: 0 }
+};
+const TALK = {
+  traveler: ['Долго ещё до города?', 'Пахнет у вас вкусно.', 'Я тут проездом, завтра уже дальше.', 'Мотель у вас свободен?'],
+  regular:  ['Как обычно, шеф!', 'Слыхал, у вас постоялец пропал? Шучу.', 'Бургеры у тебя лучше, чем в городе.', 'Жена говорит, я тут живу.'],
+  referral: ['Мне вас Хэнк посоветовал.', 'Говорят, у вас особенная шаурма.', 'Посмотрим, правда ли всё так хорошо.'],
+  rich:     ['Я слышал о вашем фирменном блюде.', 'Деньги не проблема. Удивите меня.', 'Надеюсь, тут чисто.'],
+  ghost:    ['…', 'Ты помнишь меня?', 'Номер семь. Ночью. Помнишь?', 'Холодно здесь…']
+};
+
+const Kitchen = {
+  player: { x: 160, y: 60, dir: 'down', frame: 0, anim: 0 },
+  tray: [],
+  customers: [],
+  stations: {},
+  spawnT: 0,
+  helperT: 0,
+  eventT: [],
+  bg: null,
+
+  startDay() {
+    this.bg = this.bg || buildDinerBG();
+    this.player = { x: 160, y: 60, dir: 'down', frame: 0, anim: 0 };
+    this.tray = []; this.customers = []; this.spawnT = 3; this.helperT = 6;
+    const g = G.upgrades.grill, f = G.upgrades.fryer;
+    this.stations = {
+      grill:  { slots: Array(2 + g).fill(null), broken: G.equip.grill <= 0 },
+      spit:   { slots: Array(1 + g).fill(null), broken: G.equip.spit <= 0 },
+      fryer:  { slots: Array(2 + f).fill(null), broken: G.equip.fryer <= 0 },
+      drinks: { slots: [], broken: G.equip.drinks <= 0 }
+    };
+    // случайные события дня
+    this.eventT = [];
+    if (G.cleanliness < 60 || chance(0.15)) this.eventT.push({ at: rint(10, 20) * 60, type: 'sanitary' });
+    if (G.suspicion > 30 && chance(0.25 + G.suspicion / 200)) this.eventT.push({ at: rint(9, 22) * 60, type: 'sheriff' });
+    if (G.rumors > 20 && chance(0.3)) this.eventT.push({ at: rint(11, 22) * 60, type: 'knower' });
+    G.dayLog = { earned: 0, served: 0, angry: 0, special: 0 };
+  },
+
+  speedMul() { return 0.6 + G.stamina / 250; },
+  cookMul(st) {
+    const lvl = st === 'fryer' ? G.upgrades.fryer : G.upgrades.grill;
+    const helper = hasStaff('helper') ? 0.85 : 1;
+    return (1 + (100 - G.stamina) / 120) * (1 - lvl * 0.12) * helper;
+  },
+  errorChance() { return (100 - G.stamina) / 500 + G.stress / 400 + (G.conscience < 30 ? 0.05 : 0); },
+
+  update(dt) {
+    const p = this.player;
+    // движение
+    let dx = (Keys.right ? 1 : 0) - (Keys.left ? 1 : 0), dy = (Keys.down ? 1 : 0) - (Keys.up ? 1 : 0);
+    if (dx || dy) {
+      const l = Math.hypot(dx, dy), sp = 70 * this.speedMul();
+      p.x = clamp(p.x + dx / l * sp * dt, DINER.bounds.x1, DINER.bounds.x2);
+      p.y = clamp(p.y + dy / l * sp * dt, DINER.bounds.y1, DINER.bounds.y2);
+      p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      p.anim += dt; if (p.anim > 0.15) { p.anim = 0; p.frame++; }
+    } else p.frame = 0;
+
+    this.updateStations(dt);
+    this.updateCustomers(dt);
+    this.updateHelper(dt);
+
+    // спавн клиентов
+    this.spawnT -= dt;
+    if (this.spawnT <= 0 && G.time < CLOSE_TIME - 30) {
+      const h = G.time / 60, peak = (h >= 12 && h < 14) || (h >= 18 && h < 20) ? 0.6 : 1;
+      this.spawnT = (9 - G.rep / 20) * peak * rnd(0.7, 1.3);
+      this.spawnCustomer();
+    }
+
+    // события
+    this.eventT.forEach(ev => { if (!ev.done && G.time >= ev.at) { ev.done = true; Events[ev.type](); } });
+
+    // взаимодействие
+    const target = this.nearest();
+    prompt(target ? target.hint : '');
+    if (consumeAct() && target) target.fn();
+  },
+
+  // ---------- станции ----------
+  updateStations(dt) {
+    ['grill', 'spit', 'fryer'].forEach(id => {
+      this.stations[id].slots.forEach((s, i, arr) => {
+        if (!s) return;
+        if (!s.done) { s.t += dt; if (s.t >= s.total) { s.done = true; s.over = 0; } }
+        else if (!s.burnt) { s.over += dt; if (s.over > 10) { s.burnt = true; toast(DISHES[s.dish].name + ' сгорел!', 'bad'); } }
+      });
+    });
+  },
+  freeSlot(id) { return this.stations[id].slots.findIndex(s => !s); },
+  readySlot(id) { return this.stations[id].slots.findIndex(s => s && s.done); },
+
+  canCook(dish, meat) {
+    const d = DISHES[dish], need = Object.assign({}, d.need || {});
+    if (d.meat) need[meat] = (need[meat] || 0) + (d.special || 1);
+    return Object.entries(need).every(([k, v]) => G.stock[k] >= v) ? need : null;
+  },
+  startCook(stId, dish, meat, auto) {
+    const i = this.freeSlot(stId);
+    if (i < 0) return false;
+    const need = this.canCook(dish, meat);
+    if (!need) { if (!auto) toast('Не хватает продуктов!', 'bad'); return false; }
+    Object.entries(need).forEach(([k, v]) => G.stock[k] -= v);
+    const total = DISHES[dish].time * this.cookMul(stId) * (auto ? 1.2 : 1);
+    const burnt = !auto && chance(this.errorChance());
+    this.stations[stId].slots[i] = { dish, meat: DISHES[dish].meat ? meat : null, t: 0, total, done: false, burnt: false, over: 0, preBurnt: burnt };
+    G.equip[stId] = Math.max(0, G.equip[stId] - 0.5);
+    if (G.equip[stId] <= 0) { this.stations[stId].broken = true; toast(DINER.stations.find(s => s.id === stId).label + ' сломался! Почините утром.', 'bad'); }
+    if (meat === 'special' && hasStaff('helper')) staffWitness('helper', 1);
+    if (burnt) toast('Руки дрожат… что-то пошло не так.', 'bad');
+    return true;
+  },
+  takeFrom(stId) {
+    const i = this.readySlot(stId);
+    if (i < 0) return;
+    if (this.tray.length >= trayMax()) { toast('Поднос полон', 'bad'); return; }
+    const s = this.stations[stId].slots[i];
+    this.stations[stId].slots[i] = null;
+    this.tray.push({ dish: s.dish, meat: s.meat, burnt: s.burnt || s.preBurnt });
+  },
+
+  cookMenu(stId) {
+    const dishes = stId === 'grill' ? ['burger'].concat(G.upgrades.signature ? ['signature'] : []) : stId === 'spit' ? ['shawarma'] : ['nuggets', 'fries'];
+    const buttons = [];
+    dishes.forEach(dish => {
+      const d = DISHES[dish];
+      if (dish === 'signature') {
+        buttons.push({ t: `${d.icon} ${d.name} (особый ×2)`, dis: !this.canCook(dish, 'special'), fn: () => this.startCook(stId, dish, 'special') });
+      } else if (d.meat) {
+        Object.keys(MEATS).forEach(m => buttons.push({ t: `${d.icon} ${d.name}: ${MEATS[m].name} [${G.stock[m]}]`, dis: !this.canCook(dish, m), fn: () => this.startCook(stId, dish, m) }));
+      } else buttons.push({ t: `${d.icon} ${d.name}`, dis: !this.canCook(dish), fn: () => this.startCook(stId, dish) });
+    });
+    buttons.push({ t: 'Отмена', cls: 'danger' });
+    UI.choice(DINER.stations.find(s => s.id === stId).label, `<p class="muted">Свободно мест: ${this.stations[stId].slots.filter(s => !s).length}. Ты сам решаешь, из чего готовить и кому подать.</p>`, buttons, { closable: true });
+  },
+  drinksMenu() {
+    if (this.tray.length >= trayMax()) { toast('Поднос полон', 'bad'); return; }
+    UI.choice('Напитки', '<p class="muted">Самые обычные напитки.</p>',
+      DRINKS.map(k => ({ t: DISHES[k].icon + ' ' + DISHES[k].name, fn: () => { this.tray.push({ dish: k }); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2); } }))
+        .concat([{ t: 'Отмена', cls: 'danger' }]), { closable: true });
+  },
+  fridgeInfo() {
+    const s = G.stock;
+    UI.choice('Холодильник', `<div class="stats">
+      <div>🥩 Обычное мясо: <b>${s.meat}</b></div><div>🐾 Мясо животных: <b>${s.pet}</b></div>
+      <div>🩸 Особый ресурс: <b>${s.special}</b></div><div>🍞 Булочки: <b>${s.buns}</b></div>
+      <div>🥬 Овощи: <b>${s.veg}</b></div><div>🥫 Соусы: <b>${s.sauce}</b></div>
+      <div>🍗 Курица: <b>${s.chicken}</b></div><div>🥔 Картофель: <b>${s.potato}</b></div></div>
+      <p class="muted">Докупить продукты можно утром.</p>`, [{ t: 'Закрыть' }], { closable: true });
+  },
+  boardInfo() {
+    const list = this.customers.filter(c => c.state === 'wait').map(c => {
+      const t = CUSTOMER_TYPES[c.type];
+      return `<div class="card"><h4>${c.name} — ${t.name}</h4>
+        <div class="row">Заказ: ${c.order.map(o => (o.done ? '✅' : '') + DISHES[o.dish].icon + DISHES[o.dish].name).join(', ')}</div>
+        <div class="row">Внимательность: ${'●'.repeat(Math.round(c.attention * 5))}${'○'.repeat(5 - Math.round(c.attention * 5))} · терпение ${Math.round(c.patience)}</div></div>`;
+    }).join('') || '<p class="muted">Заказов нет.</p>';
+    const helper = hasStaff('helper');
+    const hm = helper ? `<h3>Повар-помощник (${helper.name})</h3><p class="muted">Из чего ему готовить мясные блюда:</p>
+      <div class="btns">${Object.keys(MEATS).map(m => `<button class="b ${G.helperMeat === m ? 'primary' : ''}" data-a="hm" data-v="${m}">${MEATS[m].name}</button>`).join('')}</div>` : '';
+    UI.open(`<h2>Доска заказов</h2><div class="cards">${list}</div>${hm}<div class="btns"><button class="b" data-a="x">Закрыть</button></div>`,
+      { x: () => UI.close(), hm: v => { G.helperMeat = v; UI.close(); this.boardInfo(); } }, { closable: true });
+  },
+
+  // ---------- клиенты ----------
+  spawnCustomer() {
+    const free = DINER.seats.map((x, i) => i).filter(i => !this.customers.some(c => c.seat === i));
+    if (!free.length) return;
+    const seat = pick(free);
+    let type = 'traveler';
+    const r = Math.random();
+    if (G.upgrades.signature && r < 0.08 + G.rep / 500) type = 'rich';
+    else if (G.regulars.length && r < 0.35 + G.rep / 300) type = 'regular';
+    else if (r < 0.5 && G.rep > 15) type = 'referral';
+    if (G.conscience < 35 && chance(0.12)) type = 'ghost';
+    let person, look;
+    if (type === 'regular') { const reg = pick(G.regulars); person = { name: reg.name }; look = reg.look; }
+    else { person = randomPerson(); look = randomLook(); }
+    const t = CUSTOMER_TYPES[type];
+    const order = [];
+    if (type === 'rich') order.push({ dish: 'signature' });
+    else if (type !== 'ghost') {
+      if (chance(0.85)) order.push({ dish: pick(MAINS) });
+      if (chance(0.55) || !order.length) order.push({ dish: pick(SIDES) });
+    }
+    if (type !== 'ghost' && chance(0.75)) order.push({ dish: pick(DRINKS) });
+    if (type === 'ghost') order.push({ dish: pick(MAINS) });
+    this.customers.push({
+      id: uid(), type, name: person.name, look, seat, order, state: 'walk',
+      x: DINER.door.x, y: DINER.door.y, tx: DINER.seats[seat], ty: 104,
+      patience: t.patience, maxPatience: t.patience, attention: clamp(t.attention + rnd(-0.1, 0.15) + G.rumors / 400, 0, 1),
+      eatT: 0, frame: 0, anim: 0, pay: 0, quality: 0, bubble: null, bubbleT: 0, served: []
+    });
+  },
+
+  updateCustomers(dt) {
+    this.customers.forEach(c => {
+      if (c.bubbleT > 0) c.bubbleT -= dt;
+      if (c.state === 'walk' || c.state === 'leave') {
+        const dx = c.tx - c.x, dy = c.ty - c.y, l = Math.hypot(dx, dy);
+        if (l < 2) {
+          if (c.state === 'walk') c.state = 'wait';
+          else c.gone = true;
+        } else {
+          // сначала по вертикали в зал, потом к месту
+          const sp = 50 * dt;
+          if (Math.abs(dx) > 2 && c.y > 120) { c.x += Math.sign(dx) * Math.min(sp, Math.abs(dx)); c.dir = dx > 0 ? 'right' : 'left'; }
+          else { c.x += dx / l * sp; c.y += dy / l * sp; c.dir = dy < 0 ? 'up' : 'down'; }
+          c.anim += dt; if (c.anim > 0.15) { c.anim = 0; c.frame++; }
+        }
+      } else if (c.state === 'wait') {
+        c.dir = 'up'; c.frame = 0;
+        c.patience -= dt * (G.time > 22 * 60 ? 1.3 : 1);
+        if (c.type === 'ghost' && c.patience <= 0) { c.gone = true; toast('…клиент исчез. Был ли он вообще?', 'night'); G.stress = clamp(G.stress + 10, 0, 100); return; }
+        if (c.patience <= 0) {
+          c.state = 'leave'; c.tx = DINER.door.x; c.ty = DINER.door.y + 4; c.bubble = '😠'; c.bubbleT = 3;
+          addRep(-1.5); G.dayLog.angry++; G.stats.angry++;
+          toast(c.name + ' ушёл, не дождавшись заказа', 'bad');
+        }
+      } else if (c.state === 'eat') {
+        c.eatT -= dt;
+        if (c.eatT <= 0) this.finishCustomer(c);
+      }
+    });
+    this.customers = this.customers.filter(c => !c.gone);
+  },
+
+  serve(c) {
+    if (c.type === 'ghost') {
+      c.bubble = '👻'; c.bubbleT = 2; c.gone = true;
+      toast('Ты протягиваешь тарелку… место пустое.', 'night'); addConscience(-1); G.stress = clamp(G.stress + 8, 0, 100);
+      return;
+    }
+    let gave = 0;
+    c.order.forEach(o => {
+      if (o.done) return;
+      const i = this.tray.findIndex(it => it.dish === o.dish);
+      if (i < 0) return;
+      const it = this.tray.splice(i, 1)[0];
+      o.done = true; o.item = it; gave++;
+    });
+    if (!gave) {
+      c.bubble = '💬'; c.bubbleT = 3;
+      toast(`${c.name}: «${pick(TALK[c.type])}»`);
+      return;
+    }
+    if (c.order.every(o => o.done)) { c.state = 'eat'; c.eatT = 4; }
+  },
+
+  finishCustomer(c) {
+    const t = CUSTOMER_TYPES[c.type];
+    let sum = 0, q = 0, n = 0, suspicious = false;
+    c.order.forEach(o => {
+      const d = DISHES[o.dish], it = o.item;
+      let quality = it.burnt ? 0.3 : 1;
+      if (it.meat) quality *= MEATS[it.meat].quality;
+      quality *= 1 + G.upgrades.recipes * 0.1;
+      q += quality; n++;
+      sum += d.price;
+      if (it.meat === 'special') {
+        G.stats.specialServed++; G.dayLog.special++;
+        // клиент может что-то заподозрить
+        const p = 0.04 + c.attention * 0.18 + G.rumors / 500 + (o.dish === 'signature' ? 0.03 : 0);
+        if (chance(p)) suspicious = true;
+      }
+      if (it.meat === 'pet' && chance(c.attention * 0.05)) suspicious = 'pet';
+    });
+    q /= n;
+    const tip = sum * t.tip * q * (G.cleanliness > 60 ? 1.1 : 0.9);
+    const total = Math.round(sum * (q >= 1 ? 1 : 0.7) + tip);
+    G.money += total; G.dayLog.earned += total; G.stats.earned += total;
+    G.dayLog.served++; G.stats.served++;
+    addRep((q - 0.8) * (c.type === 'regular' ? 1.2 : 0.7));
+    c.bubble = q >= 1.4 ? '😍' : q >= 0.9 ? '🙂' : '🤢'; c.bubbleT = 3;
+    if (suspicious === true) {
+      c.bubble = '🤨';
+      const lines = ['Странный вкус… что это за мясо?', 'Слишком вкусно для такой дыры. Подозрительно.', 'Мясо какое-то… сладковатое.'];
+      toast(`${c.name}: «${pick(lines)}»`, 'bad');
+      addRumors(c.type === 'regular' ? 6 : 4); addSuspicion(c.type === 'rich' ? 4 : 2);
+      if (c.type === 'regular') { const r = G.regulars.find(r => r.name === c.name); if (r) r.doubt = (r.doubt || 0) + 1; }
+    } else if (suspicious === 'pet') {
+      toast(`${c.name}: «Это точно говядина?»`, 'bad'); addRumors(2);
+    }
+    if (q >= 1 && !suspicious && c.type !== 'regular' && chance(0.25) && G.regulars.length < 10) {
+      G.regulars.push({ name: c.name, look: c.look });
+      toast(c.name + ' стал постоянным клиентом!', 'good');
+    }
+    toast(`+$${total} от ${c.name}`, 'good');
+    c.state = 'leave'; c.tx = DINER.door.x; c.ty = DINER.door.y + 4;
+  },
+
+  updateHelper(dt) {
+    if (!hasStaff('helper')) return;
+    this.helperT -= dt;
+    if (this.helperT > 0) return;
+    this.helperT = 5;
+    // помощник готовит первое невыполненное блюдо из заказов, которого ещё нет в работе
+    const pending = [];
+    this.customers.filter(c => c.state === 'wait' && c.type !== 'ghost').forEach(c => c.order.forEach(o => { if (!o.done && DISHES[o.dish].station !== 'drinks') pending.push(o.dish); }));
+    const inWork = [];
+    ['grill', 'spit', 'fryer'].forEach(id => this.stations[id].slots.forEach(s => s && inWork.push(s.dish)));
+    this.tray.forEach(t => inWork.push(t.dish));
+    for (const dish of pending) {
+      const k = inWork.indexOf(dish);
+      if (k >= 0) { inWork.splice(k, 1); continue; }
+      const st = DISHES[dish].station;
+      if (this.stations[st].broken) continue;
+      const meat = dish === 'signature' ? 'special' : G.helperMeat;
+      if (this.startCook(st, dish, meat, true)) return;
+    }
+  },
+
+  // ---------- взаимодействие ----------
+  nearest() {
+    const p = this.player, opts = [];
+    if (p.y < 54) DINER.stations.forEach(st => {
+      const cx = st.x + st.w / 2;
+      if (Math.abs(p.x - cx) > st.w / 2 + 6) return;
+      opts.push({ d: Math.abs(p.x - cx), ...this.stationAction(st) });
+    });
+    if (p.y > 70) this.customers.forEach(c => {
+      if (c.state !== 'wait' && c.state !== 'eat') return;
+      const d = Math.abs(p.x - c.x);
+      if (d > 14) return;
+      const t = CUSTOMER_TYPES[c.type];
+      opts.push({ d, hint: c.state === 'eat' ? `${c.name} ест…` : `E — обслужить: ${c.name} (${t.name})`, fn: () => c.state === 'wait' && this.serve(c) });
+    });
+    opts.sort((a, b) => a.d - b.d);
+    return opts[0];
+  },
+  stationAction(st) {
+    const s = this.stations[st.id];
+    switch (st.id) {
+      case 'fridge': return { hint: 'E — запасы', fn: () => this.fridgeInfo() };
+      case 'trash': return { hint: 'E — выбросить поднос', fn: () => { if (this.tray.length) { this.tray = []; toast('Поднос очищен'); } } };
+      case 'board': return { hint: 'E — заказы', fn: () => this.boardInfo() };
+      case 'backdoor': return { hint: 'E — чёрный ход (закрыть пораньше)', fn: () => UI.choice('Закрыть закусочную?', '<p>Закончить смену раньше и пойти спать? Оставшиеся клиенты уйдут.</p>', [{ t: 'Закрыть', cls: 'primary', fn: () => Game.endDay() }, { t: 'Работать дальше' }], { closable: true }) };
+      case 'drinks': return s.broken ? { hint: 'Автомат сломан', fn: () => {} } : { hint: 'E — налить напиток', fn: () => this.drinksMenu() };
+      default:
+        if (s.broken) return { hint: st.label + ' сломан', fn: () => {} };
+        if (this.readySlot(st.id) >= 0) return { hint: 'E — забрать готовое', fn: () => this.takeFrom(st.id) };
+        if (this.freeSlot(st.id) >= 0) return { hint: 'E — готовить: ' + st.label, fn: () => this.cookMenu(st.id) };
+        return { hint: st.label + ': все места заняты', fn: () => {} };
+    }
+  },
+
+  // ---------- отрисовка ----------
+  draw(ctx, t) {
+    ctx.drawImage(this.bg, 0, 0);
+    // окна в зале
+    const sk = sky(G.time);
+    [[0, 112], [312, 112]].forEach(([wx, wy]) => { R(ctx, wx, wy - 14, 8, 30, '#3a2a1a'); R(ctx, wx + 1, wy - 13, 6, 28, sk); });
+    // часы на стене
+    R(ctx, 236, 4, 6, 6, '#fff'); R(ctx, 238, 5, 1, 3, '#000');
+    DINER.stations.forEach(st => drawStation(ctx, st, this.stations[st.id] || { slots: [] }, t));
+    const p = this.player;
+    drawChar(ctx, p.x, p.y, { skin: '#f1c27d', hair: '#3a2a1a', shirt: '#eee', pants: '#333', apron: true, chefHat: true }, p.dir, p.frame);
+    // поднос в руках
+    this.tray.forEach((it, i) => R(ctx, p.x - 5 + i * 4, p.y - 26, 3, 3, it.meat === 'special' ? '#c33' : '#e8a33d'));
+    // клиенты (за стойкой видны сверху)
+    this.customers.slice().sort((a, b) => a.y - b.y).forEach(c => {
+      const ghost = c.type === 'ghost';
+      drawChar(ctx, c.x, c.y, c.look, c.dir || 'up', c.frame, { alpha: ghost ? 0.45 + Math.sin(t * 6) * 0.15 : 1 });
+      if (c.state === 'wait') {
+        // пузырь заказа
+        const items = c.order.filter(o => !o.done);
+        const bw = items.length * 7 + 3;
+        R(ctx, c.x - bw / 2, c.y - 36, bw, 9, '#fff'); R(ctx, c.x - 1, c.y - 27, 2, 2, '#fff');
+        items.forEach((o, i) => R(ctx, c.x - bw / 2 + 2 + i * 7, c.y - 34, 5, 5, dishColor(o.dish)));
+        // терпение
+        const pr = c.patience / c.maxPatience;
+        R(ctx, c.x - 6, c.y - 24, 12, 2, '#000'); R(ctx, c.x - 6, c.y - 24, 12 * pr, 2, pr > 0.5 ? '#6fbf5a' : pr > 0.25 ? '#e8a33d' : '#d6453d');
+        if (c.type === 'rich') R(ctx, c.x - 1, c.y - 40, 3, 3, '#ffd700');
+        if (c.type === 'regular') R(ctx, c.x - 1, c.y - 40, 3, 3, '#6fbf5a');
+      }
+    });
+    // вечер/ночь за окном: лёгкое затемнение
+    const h = G.time / 60;
+    if (h >= 20) { ctx.fillStyle = `rgba(20,10,40,${Math.min(0.35, (h - 20) / 10)})`; ctx.fillRect(0, 0, W, H); }
+    // галлюцинации
+    if (G.conscience < 40 && Math.sin(t * 0.7) > 0.97) { ctx.fillStyle = 'rgba(140,0,0,.25)'; ctx.fillRect(0, 0, W, H); }
+  }
+};
+
+function dishColor(d) {
+  return { burger: '#c0703a', shawarma: '#e0c080', signature: '#ffd700', nuggets: '#d4a017', fries: '#f5d742', cola: '#3a1a0a', fanta: '#e8761c', water: '#8fc4e8', tea: '#9c6b30', coffee: '#4a2a14' }[d];
+}
+
+// Случайные дневные события
+const Events = {
+  sanitary() {
+    const bad = G.cleanliness < 50;
+    UI.choice('Санэпидемстанция!', `<p>В закусочную заходит инспектор с планшетом. ${bad ? '<span class="bad">Мотель в запущенном состоянии.</span>' : 'Вроде бы всё в порядке.'}</p>`, [
+      { t: 'Показать кухню', fn: () => {
+        if (bad || chance(0.15)) { G.money -= 80; addSuspicion(5); addRep(-3); toast('Штраф $80, инспектор что-то записал', 'bad'); }
+        else { addRep(3); toast('Инспекция пройдена!', 'good'); }
+      } },
+      { t: 'Сунуть $60', dis: G.money < 60, fn: () => { G.money -= 60; if (chance(0.8)) toast('Инспектор «ничего не заметил»', 'good'); else { addSuspicion(8); toast('Инспектор оскорбился!', 'bad'); } } }
+    ]);
+  },
+  sheriff() {
+    const tails = G.tails.length, badJ = G.tails.filter(t => t.bad).length;
+    UI.choice('Визит шерифа', `<p>Шериф Коулман заказывает кофе и как бы между делом спрашивает про постояльцев.</p>
+      <p class="muted">Незакрытых «хвостов»: ${tails}. Подозрения: ${Math.round(G.suspicion)}.</p>`, [
+      { t: 'Угостить за счёт заведения', fn: () => this.sheriffCheck(0) },
+      { t: 'Показать журнал регистрации', fn: () => this.sheriffCheck(badJ ? 0.25 : -0.15) },
+      { t: 'Подкуп $150', dis: G.money < 150, fn: () => { G.money -= 150; if (chance(0.6)) { addSuspicion(-10); toast('Шериф довольно хмыкнул', 'good'); } else { addSuspicion(15); toast('Шериф: «Ты меня за кого держишь?»', 'bad'); } } }
+    ]);
+  },
+  sheriffCheck(mod) {
+    const p = G.suspicion / 220 + G.tails.length * 0.05 + mod;
+    if (G.suspicion > 85 && chance(p)) { Game.ending('prison', 'Шериф нашёл несостыковки в журнале. Наручники щёлкнули прямо у стойки.'); return; }
+    if (chance(p)) { addSuspicion(8); toast('Шериф ушёл задумчивым…', 'bad'); }
+    else { addSuspicion(-4); toast('Шериф доел и уехал', 'good'); }
+  },
+  knower() {
+    UI.choice('Клиент, который слишком много знает', `<p>Тощий тип у стойки наклоняется: «Я видел, что ты таскал ночью из седьмого номера. Двести баксов — и я ничего не видел».</p>`, [
+      { t: 'Заплатить $200', dis: G.money < 200, fn: () => { G.money -= 200; toast('Он ухмыльнулся и ушёл', 'night'); } },
+      { t: 'Послать его', fn: () => { addRumors(10); addSuspicion(10); toast('Он пообещал «поговорить с кем надо»', 'bad'); } },
+      { t: 'Пригласить в мотель «поговорить»', fn: () => { G.flags.knowerGuest = true; addConscience(-3); toast('Он заселится сегодня. Ночь покажет.', 'night'); } }
+    ]);
+  }
+};
