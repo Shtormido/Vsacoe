@@ -433,3 +433,43 @@ button.sact b { display: block; font-size: 13px; } button.sact em { font-size: 1
 .ticket .stamp { top: auto; bottom: 10px; right: 10px; }
 .ef-name .stamp { transform: rotate(-4deg); }
 .ending .end-title { margin: 14px 0 12px; } .ending .end-title .stamp { font-size: 11px; transform: rotate(-3deg); }
+
+/* ===== пиксельный шрифт: Tiny5 для текста, Press Start 2P для заголовков ===== */
+:root { --px-font: "Tiny5", "PT Mono", monospace; --px-head: "Press Start 2P", monospace; }
+body, #modal-box, #modal-box button.b, button.tile, button.action, button.sact, button.ftab, .toast, #hud-tray, .chip, .kv, .meter, .paper-news, .receipt, .masthead span {
+  font-family: var(--px-font) !important; -webkit-font-smoothing: none; font-smooth: never;
+}
+#modal-box { font-size: 20px; line-height: 1.25; letter-spacing: .3px; }
+#modal-box p { margin: 6px 0; }
+#modal-box h2, .mh-t h2, .lh-mid h2 { font-family: var(--px-head) !important; font-size: 14px !important; line-height: 1.6; }
+#modal-box h3, .paper-news h3 { font-family: var(--px-head) !important; font-size: 10px !important; letter-spacing: 1px; margin: 14px 0 8px; }
+#modal-box button.b { font-size: 18px !important; padding: 6px 12px; line-height: 1.1; }
+button.b.big { font-size: 20px !important; }
+#modal-box .small, .mh-sub, .tnote, .mods-src, .why, .scale .why, .rs-body p, button.sact em, button.action em, .ds-trait, .weather span, .rc-foot, .role, .tk-type, .ds-name span { font-size: 16px !important; font-style: normal !important; }
+.chip { font-size: 16px; padding: 1px 6px; }
+.kv { font-size: 18px; } .meter { font-size: 16px; } .meter .mr { font-size: 18px; }
+.ing, .can-item { font-size: 18px; } .slot .sname { font-size: 14px; } .slot .cnt { font-size: 10px; }
+.recipe-head > b, .ef-name b, .rs-body > b, .ds-name b, .tk-head b, .pr-body b, .mc-body b, .bp-head, .tile-top b { font-size: 20px; }
+button.sact b { font-size: 16px; } .ar-name { font-size: 17px; } .bp-eff { font-size: 16px; }
+.speech { font-size: 24px !important; line-height: 1.35; }
+.nameplate { font-size: 8px; line-height: 1.5; }
+.headline { font-family: var(--px-head) !important; font-size: 18px; line-height: 1.5; font-weight: normal; }
+.subhead { font-style: normal; font-size: 18px; } .masthead { font-size: 16px; }
+.end-stats .kv, .rc-line, .rc-head { font-size: 18px; } .rc-total { font-size: 22px; }
+.report p { font-size: 18px; } .ending .lead { font-size: 22px; font-style: normal; }
+.toast { font-size: 18px; }
+#hud-tray { font-size: 18px; }
+.stamp { font-family: var(--px-head) !important; }
+.logo .l3 { font-family: var(--px-font); font-size: 20px; } .cy span { font-size: 16px; } .controls { font-size: 18px; } .keycap { font-size: 16px; }
+.sound-hint { font-size: 16px; }
+
+/* ===== мини-игры ===== */
+#modal-box.m-mini { max-width: 720px; }
+.mg-stage { position: relative; display: flex; justify-content: center; margin: 6px 0; }
+#mg-cv { width: 640px; max-width: 100%; aspect-ratio: 2 / 1; image-rendering: pixelated; border: 4px solid var(--c-bar); box-shadow: 0 0 0 2px var(--c-bd), 0 6px 0 rgba(0,0,0,.35); background: #000; cursor: crosshair; touch-action: none; }
+.mg-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: var(--px-head); font-size: 16px; color: #fff; padding: 12px 18px; background: rgba(20,10,20,.85); border: 3px solid #ffb05a; pointer-events: none; text-shadow: 2px 2px 0 #000; white-space: nowrap; }
+.mg-msg.hide { display: none; } .mg-msg.ok { border-color: #5ad05a; color: #c8ffb8; } .mg-msg.fail { border-color: #d0402a; color: #ffb8a8; }
+.mg-hud { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 18px; }
+.mg-keys { color: var(--c-mut); }
+.mg-ico { font-size: 26px; }
+.mg-tag { font-style: normal; margin-right: 4px; }

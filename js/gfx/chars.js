@@ -7,8 +7,8 @@ const SHIRTS = ['#3f6fb0', '#b03a3a', '#4f9a44', '#7e56b0', '#d0a030', '#4a4a56'
 const PANTS = ['#2e3e64', '#4a3424', '#3a3a44', '#55557a', '#6a5a3a', '#2a2a30', '#3a4a6a'];
 const SHOES = ['#3a2418', '#1e1a1e', '#6a4a30', '#e8e4dc', '#8a2a2a'];
 
-function randomLook(kind) {
-  const female = chance(0.45), old = chance(0.18);
+function randomLook(kind, fem) {
+  const female = fem ?? chance(0.45), old = chance(0.18);
   let style = female ? pick(['long', 'long', 'pony', 'bun', 'curly', 'short']) : pick(['short', 'short', 'bald', 'mohawk', 'curly', 'cap', 'cap', 'cowboy']);
   if (old && (style === 'mohawk' || style === 'curly')) style = female ? 'bun' : 'bald';
   const L = {

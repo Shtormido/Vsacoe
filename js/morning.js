@@ -7,24 +7,24 @@ const TAIL_INFO = {
 };
 const TAIL_ACTIONS = {
   journal: [
-    { id: 'forge',  name: 'Подделать запись о раннем выезде', time: 30, need: { blanks: 1 }, p: () => 0.55 + G.forgery * 0.08, skill: true },
-    { id: 'erase',  name: 'Оформить, будто не заселялся',     time: 45, need: { blanks: 2 }, p: () => 0.45 + G.forgery * 0.1, skill: true },
+    { id: 'forge',  name: 'Подделать запись о раннем выезде', time: 30, need: { blanks: 1 }, p: () => 0.55 + G.forgery * 0.08, skill: true, game: { id: 'rhythm', n: 8 } },
+    { id: 'erase',  name: 'Оформить, будто не заселялся',     time: 45, need: { blanks: 2 }, p: () => 0.45 + G.forgery * 0.1, skill: true, game: { id: 'rhythm', n: 11, fast: true, title: 'Чистая страница' } },
     { id: 'bribe',  name: 'Регистратор «потеряет» страницу',  time: 10, money: 120, p: () => 0.9 },
     { id: 'legend', name: 'Легенда: «сбежал без оплаты»',      time: 20, p: () => 0.8, after: () => { addRumors(3); addSuspicion(1); } }
   ],
   items: [
-    { id: 'hide',  name: 'Спрятать',                 time: 20, p: () => 0.7 },
-    { id: 'burn',  name: 'Сжечь',                    time: 40, p: () => 0.95, after: () => addClean(-3) },
-    { id: 'plant', name: 'Подбросить в чужой номер', time: 15, p: () => 0.6, failRemoves: true },
-    { id: 'haul',  name: 'Вывезти за город',         time: 70, p: () => 1, stamina: 8 }
+    { id: 'hide',  name: 'Спрятать',                 time: 20, p: () => 0.7, game: { id: 'redlight', theme: 'hide' } },
+    { id: 'burn',  name: 'Сжечь',                    time: 40, p: () => 0.8, after: () => addClean(-3), game: { id: 'bellows' } },
+    { id: 'plant', name: 'Подбросить в чужой номер', time: 15, p: () => 0.6, failRemoves: true, game: { id: 'redlight', theme: 'plant' } },
+    { id: 'haul',  name: 'Вывезти за город',         time: 70, p: () => 0.9, stamina: 8, game: { id: 'drive', title: 'Вывезти за город', color: '#5a4a3a' } }
   ],
   car: [
-    { id: 'move',  name: 'Перегнать подальше',          time: 40, p: () => 0.75 },
-    { id: 'steal', name: '«Угнать» от имени владельца', time: 30, p: () => 0.6, gain: 80 },
-    { id: 'parts', name: 'Разобрать на запчасти',       time: 90, p: () => 0.85, gain: 150, stamina: 10 }
+    { id: 'move',  name: 'Перегнать подальше',          time: 40, p: () => 0.75, game: { id: 'drive', title: 'Перегнать машину' } },
+    { id: 'steal', name: '«Угнать» от имени владельца', time: 30, p: () => 0.6, gain: 80, game: { id: 'lockpick' } },
+    { id: 'parts', name: 'Разобрать на запчасти',       time: 90, p: () => 0.85, gain: 150, stamina: 10, game: { id: 'mash' } }
   ],
   blood: [
-    { id: 'clean', name: 'Отмыть номер', time: 45, p: () => 0.9, need: {}, after: () => addClean(12), stamina: 6 }
+    { id: 'clean', name: 'Отмыть номер', time: 45, p: () => 0.8, need: {}, after: () => addClean(12), stamina: 6, game: { id: 'scrub' } }
   ]
 };
 
@@ -171,7 +171,7 @@ const Morning = {
           const p = clamp(a.p() - (this.haste ? 0.2 : 0) - (G.stamina < 30 ? 0.1 : 0), 0.05, 1);
           const ok = this.canDo(a, time);
           return `<div class="act-row">
-            <div class="ar-name">${a.name}<span>${chip('⏱ ' + time + 'м')}${a.money ? chip('$' + a.money, 'gold') : ''}${a.need && a.need.blanks ? chip(icon('ing', 'blanks', 12) + '×' + a.need.blanks) : ''}${a.gain ? chip('+$' + a.gain, 'good') : ''}</span></div>
+            <div class="ar-name">${a.game ? '<i class="mg-tag">🎮</i>' : ''}${a.name}<span>${chip('⏱ ' + time + 'м')}${a.money ? chip('$' + a.money, 'gold') : ''}${a.need && a.need.blanks ? chip(icon('ing', 'blanks', 12) + '×' + a.need.blanks) : ''}${a.gain ? chip('+$' + a.gain, 'good') : ''}</span></div>
             ${meter(p * 100, 100, goodCls(p * 100), '', pct(p))}
             <button class="b" data-a="tail" data-v="${t.id}:${a.id}" ${ok ? '' : 'disabled'}>▶</button></div>`;
         }).join('');
@@ -179,7 +179,7 @@ const Morning = {
         return `<div class="folder f-${t.type}"><div class="f-tab">${info.icon} ${info.name}</div>
           <div class="f-body"><div class="f-who">Дело: <b>${t.guest}</b>${t.bad ? stamp('НЕСОСТЫКОВКА', 'bad') : ''}</div>${acts}${haul}</div></div>`;
       }).join('')}</div>
-      ${tip('Каждый незакрытый хвост к открытию: подозрения +3 (несостыковка +6), следы крови −5 чистоты.')}`;
+      ${tip('🎮 — действие с мини-игрой: показан базовый шанс, итог = база ± твоя игра (до +45% / −45%). Каждый незакрытый хвост к открытию: подозрения +3 (несостыковка +6), следы крови −5 чистоты.')}`;
   },
 
   canDo(a, time) {
@@ -189,7 +189,7 @@ const Morning = {
     return true;
   },
 
-  doTail(tid, aid) {
+  async doTail(tid, aid) {
     const t = G.tails.find(x => x.id == tid);
     const a = TAIL_ACTIONS[t.type].find(x => x.id === aid);
     const time = Math.ceil(a.time * (this.haste ? 0.5 : 1));
@@ -199,7 +199,12 @@ const Morning = {
     if (a.need) for (const k in a.need) G.stock[k] -= a.need[k];
     if (a.stamina) G.stamina = clamp(G.stamina - a.stamina, 0, 100);
     if (a.skill) G.forgery = Math.min(5, G.forgery + 0.5);
-    const p = clamp(a.p() - (this.haste ? 0.2 : 0) - (G.stamina < 30 ? 0.1 : 0), 0.05, 1);
+    let p = clamp(a.p() - (this.haste ? 0.2 : 0) - (G.stamina < 30 ? 0.1 : 0), 0.05, 1);
+    if (a.game) {
+      const score = await MiniGame.play(a.game.id, Object.assign({ haste: this.haste, skill: G.forgery }, a.game, t.color ? { color: t.color } : {}));
+      p = MiniGame.chance(p, score);
+      toast(`Мини-игра ${pct(score)} → шанс успеха ${pct(p)}`);
+    }
     Sound.sfx('paper');
     if (chance(p)) {
       G.tails = G.tails.filter(x => x !== t);
@@ -266,10 +271,10 @@ const Morning = {
       repair: k => { const cost = Math.ceil((100 - G.equip[k]) * 1.2); if (G.money >= cost) { G.money -= cost; G.equip[k] = 100; this.spend(20); toast('Починено', 'good'); } this.render(); },
       upgrade: k => { const u = UPGRADES[k], cost = u.cost(G.upgrades[k]); if (G.money >= cost && G.upgrades[k] < u.max) { G.money -= cost; G.upgrades[k]++; toast(u.name + ' улучшено!', 'good'); } this.render(); },
       act: v => {
-        if (v === 'deputy' && G.money >= 180) { G.money -= 180; if (chance(0.8)) { addSuspicion(-12); toast('Помощник шерифа теперь «твой человек»', 'good'); } else { addSuspicion(6); toast('Он взял деньги и всё равно доложил', 'bad'); } }
+        if (v === 'deputy' && G.money >= 180) { G.money -= 180; MiniGame.play('haggle', { title: 'Разговор с помощником шерифа' }).then(score => { const p = MiniGame.chance(0.8, score); if (chance(p)) { addSuspicion(-12); toast('Помощник шерифа теперь «твой человек»', 'good'); } else { addSuspicion(6); toast('Он взял деньги и всё равно доложил', 'bad'); } this.render(); }); return; }
         if (v === 'bar' && G.money >= 60) { G.money -= 60; this.spend(30); addRumors(-10); toast('Ты угостил весь бар. Слухи притихли.', 'good'); }
         if (v === 'nap') { this.spend(40); G.stamina = clamp(G.stamina + 12, 0, 100); }
-        if (v === 'tidy') { this.spend(30); addClean(8); G.stamina = clamp(G.stamina - 3, 0, 100); }
+        if (v === 'tidy') { this.spend(30); G.stamina = clamp(G.stamina - 3, 0, 100); MiniGame.play('scrub', { light: true, title: 'Прибраться в мотеле', help: 'Грязь, пыль и следы ботинок. Отмой, сколько успеешь: чистота растёт по результату.' }).then(score => { addClean(Math.round(4 + score * 8)); toast('Чистота +' + Math.round(4 + score * 8), 'good'); this.render(); }); return; }
         this.render();
       },
       end: v => {

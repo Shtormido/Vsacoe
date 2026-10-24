@@ -12,7 +12,7 @@ function makeCandidates() {
   return Object.keys(ROLES).map(role => {
     const p = randomPerson(), r = ROLES[role];
     return {
-      id: uid(), role, name: p.name, look: randomLook(),
+      id: uid(), role, name: p.name, look: randomLook(null, p.female),
       wage: rint(r.wage[0], r.wage[1]), loyalty: rint(45, 75), susp: rint(0, 15), skill: rint(0, 2),
       hidden: pick([null, null, 'greedy', 'snitch', 'loyal', 'curious']), days: 0
     };

@@ -91,7 +91,11 @@ const Kitchen = {
     ['grill', 'spit', 'fryer'].forEach(id => {
       this.stations[id].slots.forEach((s, i, arr) => {
         if (!s) return;
-        if (!s.done) { s.t += dt; if (s.t >= s.total) { s.done = true; s.over = 0; } }
+        if (!s.done) {
+          s.t += dt;
+          if (!s.auto && !s.flip && s.t / s.total >= s.flipAt) { s.fw += dt; if (s.fw > 2.4) { s.flip = 'miss'; } }
+          if (s.t >= s.total) { s.done = true; s.over = 0; if (!s.flip && !s.auto) s.flip = 'miss'; }
+        }
         else if (!s.burnt) { s.over += dt; if (s.over > 10) { s.burnt = true; Sound.sfx('burnt'); toast(DISHES[s.dish].name + ' сгорел!', 'bad'); } }
       });
     });
@@ -113,20 +117,27 @@ const Kitchen = {
     const total = DISHES[dish].time * this.cookMul(stId) * (auto ? 1.2 : 1);
     const burnt = !auto && chance(this.errorChance());
     if (!auto) Sound.sfx('cook');
-    this.stations[stId].slots[i] = { dish, meat: DISHES[dish].meat ? meat : null, t: 0, total, done: false, burnt: false, over: 0, preBurnt: burnt };
+    this.stations[stId].slots[i] = { auto: !!auto, flipAt: rnd(0.4, 0.6), flip: null, fw: 0, dish, meat: DISHES[dish].meat ? meat : null, t: 0, total, done: false, burnt: false, over: 0, preBurnt: burnt };
     G.equip[stId] = Math.max(0, G.equip[stId] - 0.5);
     if (G.equip[stId] <= 0) { this.stations[stId].broken = true; toast(DINER.stations.find(s => s.id === stId).label + ' сломался! Почините утром.', 'bad'); }
     if (meat === 'special' && hasStaff('helper')) staffWitness('helper', 1);
     if (burnt) toast('Руки дрожат… что-то пошло не так.', 'bad');
     return true;
   },
+  flipSlot(st, s) {
+    s.flip = s.fw < 0.9 ? 'perfect' : 'ok';
+    Sound.sfx('flip');
+    Particles.sparkle(st.x + st.w / 2, 22, s.flip === 'perfect' ? '#fff6a0' : '#ffd0a0');
+    if (s.flip === 'perfect') Particles.text(st.x + st.w / 2, 14, '+20%', '#ffe070');
+  },
+
   takeFrom(stId) {
     const i = this.readySlot(stId);
     if (i < 0) return;
     if (this.tray.length >= trayMax()) { toast('Поднос полон', 'bad'); return; }
     const s = this.stations[stId].slots[i];
     this.stations[stId].slots[i] = null;
-    this.tray.push({ dish: s.dish, meat: s.meat, burnt: s.burnt || s.preBurnt });
+    this.tray.push({ dish: s.dish, meat: s.meat, burnt: s.burnt || s.preBurnt, bonus: { perfect: 0.2, ok: 0.1, miss: -0.05 }[s.flip] || 0 });
     Sound.sfx('pickup');
   },
 
@@ -183,7 +194,15 @@ const Kitchen = {
     if (this.tray.length >= trayMax()) { toast('Поднос полон', 'bad'); return; }
     const h = { x: () => UI.close() };
     const tiles = DRINKS.map(k => {
-      h['d_' + k] = () => { UI.close(); this.tray.push({ dish: k }); Sound.sfx('pour'); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2); };
+      h['d_' + k] = () => {
+        UI.close(); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2);
+        MiniGame.play('pour', { drink: k }).then(score => {
+          const bonus = score >= 0.85 ? 0.15 : score >= 0.5 ? 0.05 : score === 0 ? -0.3 : -0.1;
+          this.tray.push({ dish: k, bonus });
+          if (score === 0) toast('Перелил — стакан липкий, клиент не обрадуется', 'bad');
+          else if (bonus >= 0.15) toast('Идеальный стакан ★', 'good');
+        });
+      };
       return `<button class="tile drink" data-a="d_${k}">${icon('dish', k, 48)}<b>${DISHES[k].name}</b>${chip('$' + DISHES[k].price, 'gold')}</button>`;
     }).join('');
     UI.open(`${this.stationHead('drinks')}
@@ -247,7 +266,7 @@ const Kitchen = {
     if (G.conscience < 35 && chance(0.12)) type = 'ghost';
     let person, look;
     if (type === 'regular') { const reg = pick(G.regulars); person = { name: reg.name }; look = reg.look; }
-    else { person = randomPerson(); look = randomLook(type); }
+    else { person = randomPerson(); look = randomLook(type, person.female); }
     const t = CUSTOMER_TYPES[type];
     const order = [];
     if (type === 'rich') order.push({ dish: 'signature' });
@@ -329,7 +348,7 @@ const Kitchen = {
     let sum = 0, q = 0, n = 0, suspicious = false;
     c.order.forEach(o => {
       const d = DISHES[o.dish], it = o.item;
-      let quality = it.burnt ? 0.3 : 1;
+      let quality = (it.burnt ? 0.3 : 1) * (1 + (it.bonus || 0));
       if (it.meat) quality *= MEATS[it.meat].quality;
       quality *= 1 + G.upgrades.recipes * 0.1;
       q += quality; n++;
@@ -418,6 +437,8 @@ const Kitchen = {
       case 'drinks': return s.broken ? { hint: 'Автомат сломан', fn: () => {} } : { hint: 'E — налить напиток', fn: () => this.drinksMenu() };
       default:
         if (s.broken) return { hint: st.label + ' сломан', fn: () => {} };
+        { const fs = s.slots.find(x => x && x.fw > 0 && !x.flip && !x.done);
+          if (fs) return { hint: 'E — ' + { grill: 'перевернуть котлету!', spit: 'подрезать мясо!', fryer: 'встряхнуть корзину!' }[st.id], fn: () => this.flipSlot(st, fs) }; }
         if (this.readySlot(st.id) >= 0) return { hint: 'E — забрать готовое', fn: () => this.takeFrom(st.id) };
         if (this.freeSlot(st.id) >= 0) return { hint: 'E — готовить: ' + st.label, fn: () => this.cookMenu(st.id) };
         return { hint: st.label + ': все места заняты', fn: () => {} };
@@ -500,6 +521,13 @@ const Kitchen = {
         if (id === 'grill') drawPatty(ctx, cx - cw / 2 + 2, 50, cw - 4, s.done ? 1 : s.t / s.total, s.meat, s.burnt);
         const prog = s.done ? 1 : s.t / s.total;
         if (!s.done) drawBar(ctx, cx - 8, 40, 16, prog, '#6fbf5a');
+        if (s.fw > 0 && !s.flip && !s.done) {
+          const blink = Math.floor(t * 8) % 2, by = 24;
+          R(ctx, cx - 8, by - 8, 16, 14, '#22141c'); R(ctx, cx - 7, by - 7, 14, 12, blink ? '#ffe070' : '#f0a030');
+          R(ctx, cx - 1, by - 5, 2, 6, '#22141c'); R(ctx, cx - 1, by + 2, 2, 2, '#22141c');
+          drawBar(ctx, cx - 8, by + 8, 16, 1 - s.fw / 2.4, s.fw < 0.9 ? '#ffffff' : '#f0a030');
+        }
+        if (s.flip === 'perfect' && !s.done) R(ctx, cx - 1, 36, 3, 2, '#ffe070');
         else if (!s.burnt) {
           drawBar(ctx, cx - 8, 40, 16, 1 - s.over / 10, s.over > 6 ? '#d6453d' : '#f0c030');
           const by = 31 + Math.round(Math.sin(t * 5 + i) * 1.5);

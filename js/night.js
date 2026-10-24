@@ -19,7 +19,7 @@ function makeGuest(forceTrait) {
   const r = Math.random();
   const trait = forceTrait || (r < 0.12 ? 'journalist' : r < 0.22 ? 'double' : r < 0.42 ? 'attentive' : null);
   return {
-    id: uid(), name: p.name, look: randomLook(), room: pick(free),
+    id: uid(), name: p.name, look: randomLook(null, p.female), room: pick(free),
     age: rint(19, 74), build: pick(BUILDS).id,
     suspicious: rint(5, 45) + (trait === 'attentive' ? 30 : 0) + (trait === 'journalist' ? 20 : 0),
     value: rint(20, 160) + (trait === 'double' ? 120 : 0),
@@ -40,7 +40,7 @@ const Night = {
     if (G.flags.knowerGuest) {
       G.flags.knowerGuest = false;
       const k = makeGuest('knower');
-      if (k) { k.name = 'Тощий тип'; k.revealed = true; k.car = null; G.guests.push(k); }
+      if (k) { k.name = 'Тощий тип'; k.look = KNOWER_LOOK; k.revealed = true; k.car = null; G.guests.push(k); }
     }
     // разведка: подставной человек и камеры
     const plant = hasStaff('plant');
@@ -109,11 +109,12 @@ const Night = {
       <div class="btns"><button class="b primary" data-a="go">🛏 Вернуться в постель</button></div></div>`, { go: () => { UI.close(); then(); } }, { cls: 'm-report' });
   },
 
-  takePet(g) {
+  async takePet(g) {
     Sound.sfx('pet');
     G.stamina = clamp(G.stamina - 10, 0, 100);
     addConscience(-3);
-    if (chance(0.75 - g.suspicious / 300)) {
+    const score = await MiniGame.play('redlight', { theme: 'pet' });
+    if (chance(MiniGame.chance(0.75 - g.suspicious / 300, score))) {
       const n = g.pet === 'собака' ? 4 : 2;
       G.stock.pet += n; g.alarm += 30;
       toast(`Питомец исчез. +${n} мяса животных`, 'night');

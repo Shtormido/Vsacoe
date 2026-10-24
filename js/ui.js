@@ -133,6 +133,7 @@ function itemLabel(it) {
   let s = d.icon + d.name;
   if (it.meat) s += '(' + MEATS[it.meat].short + ')';
   if (it.burnt) s += '🔥';
+  if (it.bonus >= 0.15) s += '★'; else if (it.bonus < 0) s += '▾';
   return s;
 }
 

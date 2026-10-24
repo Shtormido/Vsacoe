@@ -85,6 +85,15 @@ const Sound = {
     const t = this.now(), T = (...a) => this.tone(...a), N = (...a) => this.noise(...a);
     switch (name) {
       case 'type': T('square', rnd(520, 640), t, 0.018, 0.012, null, { filter: 'lowpass', freq: 1800 }); break;
+      case 'mg_ok': [72, 76, 79, 84].forEach((m, i) => T('square', mtof(m), t + i * 0.07, 0.12, 0.035, null, { filter: 'lowpass', freq: 3000 })); break;
+      case 'mg_bad': T('sawtooth', 160, t, 0.25, 0.06, null, { to: 90, filter: 'lowpass', freq: 900 }); break;
+      case 'mg_perfect': T('square', mtof(84), t, 0.08, 0.04, null, { filter: 'lowpass', freq: 4000 }); T('square', mtof(91), t + 0.05, 0.12, 0.035, null, { filter: 'lowpass', freq: 4000 }); break;
+      case 'mg_tick': T('square', 1200, t, 0.03, 0.03, null, { filter: 'lowpass', freq: 3000 }); break;
+      case 'mg_ratchet': N(t, 0.03, 0.12, null, { freq: 2600, q: 6 }); T('square', 300, t, 0.02, 0.03); break;
+      case 'mg_pump': N(t, 0.25, 0.08, null, { freq: 400, fTo: 1200, q: 1, attack: 0.05 }); break;
+      case 'mg_scrub': N(t, 0.07, 0.05, null, { freq: 3000, q: 2 }); break;
+      case 'mg_crash': N(t, 0.4, 0.3, null, { type: 'lowpass', freq: 1200, fTo: 200 }); T('square', 80, t, 0.2, 0.1, null, { to: 40 }); break;
+      case 'flip': N(t, 0.35, 0.16, null, { type: 'highpass', freq: 3000 }); T('sine', 220, t, 0.06, 0.12, null, { to: 440 }); break;
       case 'click': T('square', 900, t, 0.025, 0.035, null, { filter: 'lowpass', freq: 2500 }); break;
       case 'open': N(t, 0.18, 0.06, null, { freq: 600, fTo: 2400, q: 1.5, attack: 0.05 }); break;
       case 'good': [72, 76, 79].forEach((m, i) => T('triangle', mtof(m + 12), t + i * 0.06, 0.18, 0.06)); break;
