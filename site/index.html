@@ -351,7 +351,8 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
     <div class="tabs" role="tablist"><button role="tab" data-ptab="friends">Друзья</button><button role="tab" data-ptab="find">Найти игрока</button></div>
     <div data-ptp="friends"><div id="pplFriends"></div></div>
     <div data-ptp="find" hidden>
-      <div class="joinrow"><input class="inp" id="pplQ" placeholder="Логин или имя" maxlength="40" autocomplete="off" spellcheck="false"><button class="btn" id="pplGo">Найти</button></div>
+      <div class="joinrow"><input class="inp" id="pplQ" placeholder="Логин, имя или ID — например, #12" maxlength="40" autocomplete="off" spellcheck="false"><button class="btn" id="pplGo">Найти</button></div>
+      <p class="note">Регистр, «ё», пробелы и точки не важны. Имя можно писать и по-русски, и латиницей (alisa найдёт «Алиса»), а опечатку в одну-две буквы поиск простит. ID игрока есть на его странице и в «Аккаунте». Гостей найти нельзя: у них нет аккаунта.</p>
       <div id="pplFound"></div>
     </div>
   </div>
@@ -399,6 +400,7 @@ body.calm .sheet{opacity:0!important;pointer-events:none!important;transition:op
     </div>
     <div id="accIn" hidden>
       <div class="stats" id="accStats"></div>
+      <div class="btnrow"><button class="btn" id="aMyPage">Моя страница</button><button class="btn" id="aMyLink">Ссылка на мою страницу</button></div>
       <h3>Имя в игре</h3>
       <div class="joinrow"><input class="inp" id="aNewName" maxlength="20" autocomplete="nickname"><button class="btn" id="aSaveName">Сохранить</button></div>
       <h3>Партии по сети</h3><div class="games" id="accGames"></div>
@@ -2604,7 +2606,7 @@ function renderAcc(){const me=AUTH.me;$('accOut').hidden=!!me;$('accIn').hidden=
   $('aGuestsNote').textContent=AUTH.private?'Сервер закрытый (--private): без аккаунта в игру не войти, гостей нет.':'Без аккаунта, под любым именем. Их партии не влияют на рейтинг.';
   const tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
   $('accStats').innerHTML=tile(me.rating,'рейтинг')+tile(me.games,plural(me.games,'партия','партии','партий')+' по сети')+tile(me.games?Math.round(me.wins/me.games*100)+'%':'—','побед')+
-    `<div class="stat" style="grid-column:1/-1"><b style="font-size:16px">${esc(me.login)}</b><span>логин${me.role==='admin'?' · администратор сервера':''}</span></div>`;
+    `<div class="stat" style="grid-column:1/-1"><b style="font-size:16px">${esc(me.login)} · ID ${me.id}</b><span>логин и номер игрока — по ним вас найдут в «Люди и друзья»${me.role==='admin'?' · вы администратор сервера':''}</span></div>`;
   $('accGames').innerHTML='<p>Загружаю…</p>';$('accTop').innerHTML='';
   netApi('me/games').then(r=>{const list=r.games||[];
     $('accGames').innerHTML=list.length?list.map((g,i)=>{const win=g.w===g.you,how=g.by==='score'?'+'+fmt(g.m):g.by==='time'?'по времени':win?'соперник сдался':'вы сдались',dt=new Date(g.d);
@@ -2633,7 +2635,7 @@ function pplStatus(p){return p.playing?`играет сейчас · ${p.playing
 function pplActs(p){if(p.rel==='self')return '<i class="flag">это вы</i>';const w=p.playing&&p.playing.code?`<button class="btn" data-pw="${esc(p.playing.code)}">Смотреть</button>`:'';if(!AUTH.me)return w;
   const b=(a,t,pr)=>`<button class="btn${pr?' primary':''}" data-pa="${a}" data-r="${p.rel}" data-l="${esc(p.login)}">${t}</button>`;
   return w+(p.rel==='in'?b('add','Принять',1)+b('remove','Отклонить'):p.rel==='out'?b('remove','Отменить заявку'):p.rel==='friend'?'':b('add','В друзья'));}
-function pplRow(p){return `<div class="urow pp" data-pl="${esc(p.login)}"><div class="ui"><b>${esc(p.name)}</b> <small>${esc(p.login)}${p.admin?' · администратор':''}</small><span>${pplDot(p)}${pplStatus(p)} · рейтинг ${p.rating} · ${p.games} ${plural(p.games,'партия','партии','партий')}</span></div>${pplActs(p)}</div>`;}
+function pplRow(p){return `<div class="urow pp" data-pl="${esc(p.login)}"><div class="ui"><b>${esc(p.name)}</b> <small>${esc(p.login)} · ID ${p.id}${p.admin?' · администратор':''}</small><span>${pplDot(p)}${pplStatus(p)} · рейтинг ${p.rating} · ${p.games} ${plural(p.games,'партия','партии','партий')}</span></div>${pplActs(p)}</div>`;}
 function pplWire(box,after){box.querySelectorAll('[data-pl]').forEach(r=>r.onclick=()=>openProfile(r.dataset.pl,'people'));
   box.querySelectorAll('[data-pa]').forEach(b=>b.onclick=e=>{e.stopPropagation();pplAct(b.dataset.pa,b.dataset.l,b.dataset.r,after,b);});
   box.querySelectorAll('[data-pw]').forEach(b=>b.onclick=e=>{e.stopPropagation();closeSheet('sPeople');startWatch(b.dataset.pw);});}
@@ -2656,19 +2658,23 @@ function pplFriends(){const box=$('pplFriends');
 function pplFind(){PPL.q=$('pplQ').value.trim();const box=$('pplFound'),q=PPL.q;
   netApi('people?q='+encodeURIComponent(q)).then(r=>{if(q!==PPL.q)return;const l=r.people||[];
     box.innerHTML=(q?'':'<p class="note">Недавно заходили:</p>')+(l.map(pplRow).join('')||'<p class="note">Никого не нашлось.</p>');pplWire(box,pplFind);},e=>{box.innerHTML=`<p>${esc(e.message)}</p>`;});}
+/* login, or an ID written as #12 */
 function openProfile(login,back){if(back)PPL.back=back;PPL.login=login;$('hProf').textContent=login;$('profSub').textContent='Загружаю…';$('profStats').innerHTML=$('profGames').innerHTML='';$('profBtns').hidden=true;openSheet('sProfile');
   netApi('people/'+encodeURIComponent(login)).then(r=>{if(PPL.login===login&&!$('sProfile').hidden)renderProfile(r.person);},e=>{$('profSub').textContent=e.message;});}
+/* a link that opens a player's page (by ID: it survives a change of login) */
+function pageLink(id){return location.origin+location.pathname+'?p='+id;}
+function copyLink(u){(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast('Ссылка скопирована',1600),()=>{prompt('Скопируйте ссылку',u);});}
 function profClose(){closeSheet('sProfile');const b=PPL.back;PPL.back=null;if(b==='people')openPeople();else if(b==='acc')openAcc();else if(G.phase==='idle'||demo())openMain();}
 function renderProfile(p){const tile=(v,t)=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`;
   $('hProf').textContent=p.name;
-  $('profSub').innerHTML=`${esc(p.login)}${p.admin?' · администратор сервера':''}${p.rel==='friend'?' · в друзьях':''}<br>${pplDot(p)}${pplStatus(p)} · на сервере с ${dmy(p.since).slice(0,8)}`;
+  $('profSub').innerHTML=`${esc(p.login)} · ID ${p.id}${p.admin?' · администратор сервера':''}${p.rel==='friend'?' · в друзьях':''}<br>${pplDot(p)}${pplStatus(p)} · на сервере с ${dmy(p.since).slice(0,8)}`;
   $('profStats').innerHTML=tile(p.rating,'рейтинг')+tile(p.games,plural(p.games,'партия','партии','партий')+' по сети')+tile(p.games?Math.round(p.wins/p.games*100)+'%':'—','побед');
-  const b=[];if(p.playing&&p.playing.code)b.push('<button class="btn primary" data-pf="watch">Смотреть партию</button>');
+  const b=[];if(p.playing&&p.playing.code)b.push('<button class="btn primary" data-pf="watch">Смотреть партию</button>');b.push('<button class="btn" data-pf="link">Ссылка на страницу</button>');
   if(AUTH.me&&p.rel!=='self')b.push(p.rel==='in'?'<button class="btn primary" data-pf="add">Принять заявку</button><button class="btn" data-pf="remove">Отклонить</button>':p.rel==='out'?'<button class="btn" data-pf="remove">Отменить заявку</button>':
     p.rel==='friend'?'<button class="btn" data-pf="unfriend">Удалить из друзей</button>':'<button class="btn primary" data-pf="add">Добавить в друзья</button>');
   $('profBtns').innerHTML=b.join('');$('profBtns').hidden=!b.length;
   $('profBtns').querySelectorAll('[data-pf]').forEach(x=>x.onclick=()=>{const a=x.dataset.pf,re=()=>openProfile(p.login);
-    if(a==='watch'){closeSheet('sProfile');startWatch(p.playing.code);}
+    if(a==='watch'){closeSheet('sProfile');startWatch(p.playing.code);}else if(a==='link')copyLink(pageLink(p.id));
     else if(a==='unfriend')ask('Удалить из друзей?',`«${p.name}» пропадёт из вашего списка друзей, а вы — из его.`,'Удалить','Отмена',()=>{openSheet('sProfile');pplAct('remove',p.login,'friend',re);},()=>openSheet('sProfile'));
     else pplAct(a,p.login,p.rel,re,x);});
   const l=p.recent||[],nm=(x,c)=>esc(x.names[c]||'—')+(x.guest[c]?' <small>гость</small>':'');
@@ -3001,8 +3007,9 @@ function attractStep(tok){if(tok!==ATT.tok||!demo()||G.phase!=='idle')return;
   if(is3D())V3D.placeBot(r.move,c,done);else setTimeout(done,250);}
 
 /* ---------- main menu and changelog ---------- */
-const APP_VER='2.7';
+const APP_VER='2.8';
 const NEWS=[
+ ['2.8','Поиск игроков и ID',['У каждого игрока есть ID — он на странице игрока и в «Аккаунте»; найти можно по «#12» или просто «12»','Поиск не смотрит на регистр, «ё», пробелы и точки, понимает имя и по-русски, и латиницей (alisa найдёт «Алиса») и прощает опечатку в одну-две буквы','Сначала точные совпадения, потом похожие','«Ссылка на страницу» — отправьте другу, и она откроет вашу страницу; в «Аккаунте» есть кнопки «Моя страница» и «Ссылка на мою страницу»']],
  ['2.7','Люди и друзья',['Главное меню → «Люди и друзья»: найдите игрока по логину или имени','Страница игрока: рейтинг, партии, в сети ли он сейчас и его открытые партии — с повтором','Заявки в друзья: отправить, принять, отклонить; о новой заявке напомнит значок в меню','В списке друзей видно, кто в сети и кто играет, — партию друга можно сразу смотреть','Из таблицы лучших в «Аккаунте» тоже открывается страница игрока','Бабочки и стрекозы летают головой вперёд, после подсчёта очков доска заставки больше не хранит метки территории']],
  ['2.6','Места стали аккуратнее',['Убраны светлые прямоугольники на полу в чайной и храме','Подушки отодвинуты — чаши и крышки больше не залезают на них','В осеннем саду падают настоящие кленовые листья, а не звёздочки','Камера больше не проваливается в зонтик в саду и в крышу павильона у моря','Заставка на главном экране держит доску в кадре на любой ширине окна']],
  ['2.5','Управление сервером',['Для администраторов — панель в браузере: главное меню или «Аккаунт» → «Управление сервером»','Игроки: поиск, смена логина, имени и пароля, правка рейтинга Эло, блокировка, выход на всех устройствах, права администратора, удаление','Партии: удаление выбранных, всех партий игрока или всей истории, пересчёт рейтинга по оставшимся партиям','Сервер: режим регистрации, гости, коды приглашения, объявление на главном экране, закрытие зависших комнат','Обзор: сколько игроков и партий, кто онлайн, размер базы — и журнал всех действий администраторов']],
@@ -3586,7 +3593,7 @@ function boot(){
   $('csFileB').onchange=e=>{setCustomPic(1,e.target.files[0]);e.target.value='';};$('csFileW').onchange=e=>{setCustomPic(2,e.target.files[0]);e.target.value='';};
   $('csReset').onclick=()=>{try{localStorage.removeItem('jadego.stones');}catch(e){}if(S.stones==='custom'){S.stones='jade';saveSettings();markSet();makeSprites();if(V3D)setTimeout(()=>V3D.setStones(),20);}loadCustom().then(renderCustom);toast('Картинки убраны',1600);};
   $('mDaily').onclick=startDaily;
-  $('mmPeople').onclick=()=>openPeople();$('profBack').onclick=profClose;document.querySelectorAll('[data-ptab]').forEach(b=>b.onclick=()=>pplTab(b.dataset.ptab));
+  $('mmPeople').onclick=()=>openPeople();$('aMyPage').onclick=()=>{if(!AUTH.me)return;closeSheet('sAcc');openProfile('#'+AUTH.me.id,'acc');};$('aMyLink').onclick=()=>AUTH.me&&copyLink(pageLink(AUTH.me.id));$('profBack').onclick=profClose;document.querySelectorAll('[data-ptab]').forEach(b=>b.onclick=()=>pplTab(b.dataset.ptab));
   $('pplGo').onclick=pplFind;{let t=0;$('pplQ').addEventListener('input',()=>{clearTimeout(t);t=setTimeout(pplFind,350);});$('pplQ').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(t);pplFind();}});}
   /* every two minutes: keeps "online" true for friends and brings news of friend requests */
   setInterval(()=>{if(!AUTH.me||document.hidden)return;const was=PPL.req;authLoad().then(()=>{mainLabels();if(PPL.req>was)toast('Новая заявка в друзья — откройте «Люди и друзья» в главном меню',3600);});},120000);
@@ -3617,7 +3624,9 @@ function boot(){
   G.phase='idle';hud();
   const ready=Promise.all([netPing(),authLoad()]);ready.then(mainLabels);
   const qs=new URLSearchParams(location.search),inv=(qs.get('room')||'').toUpperCase().replace(/[^A-Z0-9]/g,''),wq=(qs.get('watch')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  if(wq.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>startWatch(wq),isCoarse?250:120);}
+  const pq=(qs.get('p')||'').replace(/[^0-9]/g,'');
+  if(pq&&!wq&&!inv){try{history.replaceState(null,'',location.pathname);}catch(e){}ready.then(()=>{if(AUTH.ok){openMain();openProfile('#'+pq,'main');}else openMain();});}
+  else if(wq.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>startWatch(wq),isCoarse?250:120);}
   else if(inv.length===6){try{history.replaceState(null,'',location.pathname);}catch(e){}setTimeout(()=>{openMain();const sv=netSaved();if(sv&&sv.code===inv){netConnect(sv.code,sv.token);return;}openNet(inv);setTimeout(()=>(AUTH.me?$('netJoin'):$('netLogin')||$('netJoin')).focus(),400);},isCoarse?250:120);}
   else{/* signed in (or no server): the main menu; otherwise sign-up first. A slow server never keeps the page blank */
     let shown=false;const decide=()=>{if(AUTH.ok&&!AUTH.me)openWelcome();else if(!shown)openMain();shown=true;};

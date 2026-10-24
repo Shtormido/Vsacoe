@@ -69,6 +69,56 @@ MIGRATIONS = (('users', 'hide_games', 'INTEGER NOT NULL DEFAULT 0'),     # keep 
               ('games', 'clock', 'INTEGER'))
 
 
+# ---------- player search: case, ё, spacing, Cyrillic or Latin spelling and a typo or two don't matter ----------
+TRANSLIT = dict(zip('абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
+                    ['a', 'b', 'v', 'g', 'd', 'e', 'e', 'zh', 'z', 'i', 'i', 'k', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'f', 'h', 'c', 'ch',
+                     'sh', 'sch', '', 'y', '', 'e', 'yu', 'ya']))
+LATIN_FOLD = (('kh', 'h'), ('ts', 'c'), ('tz', 'c'), ('yo', 'e'), ('jo', 'e'), ('ju', 'yu'), ('ja', 'ya'), ('j', 'i'), ('y', 'i'), ('w', 'v'), ('x', 'ks'), ('q', 'k'))
+
+
+def search_key(text):
+    """One spelling for comparing: lower case, Latin letters and digits only (Алиса, alisa and A-lisa all give 'alisa')."""
+    t = ''.join(TRANSLIT.get(ch, ch) for ch in str(text or '').lower())
+    t = re.sub(r'[^a-z0-9]', '', t)
+    for a, b in LATIN_FOLD:
+        t = t.replace(a, b)
+    return t
+
+
+def edit_distance(a, b, cap=3):
+    """Edit distance where swapping two neighbours counts as one typo; gives up (returns cap) once it is sure to reach cap."""
+    if abs(len(a) - len(b)) >= cap:
+        return cap
+    pp, prev = None, list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+            if pp and i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
+                v = min(v, pp[j - 2] + 1)
+            cur.append(v)
+        if min(cur) >= cap:
+            return cap
+        pp, prev = prev, cur
+    return min(prev[-1], cap)
+
+
+def match_rank(q, fields):
+    """0 exact, 1 starts with, 2 contains, 3 one typo away, 4 two typos away; None: no match. q and fields are search_key()s."""
+    best = None
+    allow = 0 if len(q) < 3 else 1 if len(q) < 5 else 2
+    for f in fields:
+        if not f:
+            continue
+        r = 0 if f == q else 1 if f.startswith(q) else 2 if q in f else None
+        if r is None and allow:
+            d = min([edit_distance(q, f, allow + 1)] + [edit_distance(q, f[i:i + len(q)], allow + 1) for i in range(0, max(1, len(f) - len(q) + 1))])
+            r = 2 + d if d <= allow else None
+        if r is not None and (best is None or r < best):
+            best = r
+    return best
+
+
 class AuthError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -116,7 +166,6 @@ class Accounts:
         self.started = time.time()
         self.db = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
-        self.db.create_function('ulower', 1, lambda t: t.lower() if isinstance(t, str) else t, deterministic=True)  # LIKE folds only ASCII case
         self.lock = threading.Lock()
         with self.lock:
             self.db.execute('PRAGMA journal_mode=WAL')
@@ -352,23 +401,44 @@ class Accounts:
     def person(self, u, me=None, rel=None, playing=None):
         """What anyone may see of a player. playing: uid -> the game they sit at now (from netgo)."""
         seen = u['seen'] or 0
-        return {'login': u['login'], 'name': u['name'], 'rating': round(u['rating']), 'games': u['games'], 'wins': u['wins'],
+        return {'id': u['id'], 'login': u['login'], 'name': u['name'], 'rating': round(u['rating']), 'games': u['games'], 'wins': u['wins'],
                 'online': time.time() - seen <= self.ONLINE, 'seen': seen * 1000, 'admin': u['role'] == 'admin',
                 'rel': rel if rel is not None else self._relation(me, u['id']), 'playing': (playing or {}).get(u['id'])}
 
     def _by_login(self, login):
-        u = self.q('SELECT * FROM users WHERE login=? AND blocked=0', (str(login or '').strip(),), one=True)
+        """By login, or by ID written as #12."""
+        login = str(login or '').strip()
+        if re.fullmatch(r'#\d{1,9}', login):
+            u = self.q('SELECT * FROM users WHERE id=? AND blocked=0', (int(login[1:]),), one=True)
+        else:
+            u = self.q('SELECT * FROM users WHERE login=? AND blocked=0', (login,), one=True)
         if not u:
             raise AuthError('Игрок не найден', 404)
         return u
 
     def people(self, query='', me=None, playing=None, limit=40):
-        """Search by login or name; with no query, who was here last."""
-        q = str(query or '').strip()[:40].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        like = '%' + q.lower() + '%'
-        rows = self.q("SELECT * FROM users WHERE blocked=0 AND (login LIKE ? ESCAPE '\\' OR ulower(name) LIKE ? ESCAPE '\\') "
-                      'ORDER BY COALESCE(seen, created) DESC LIMIT ?', (like, like, limit))
-        return [self.person(u, me, playing=playing) for u in rows]
+        """Search by ID (#12 or 12), login or name, forgiving case, ё, spaces and dots, Cyrillic or Latin spelling and a typo or two;
+        best matches first, then whoever was here last. With no query: who was here last."""
+        q = str(query or '').strip()[:40]
+        if not q:
+            rows = self.q('SELECT * FROM users WHERE blocked=0 ORDER BY COALESCE(seen, created) DESC LIMIT ?', (limit,))
+            return [self.person(u, me, playing=playing) for u in rows]
+        ranked = []
+        m = re.fullmatch(r'(?:id|ид|айди)?\s*[#№]?\s*(\d{1,9})', q, re.I)
+        if m:
+            u = self.q('SELECT * FROM users WHERE id=? AND blocked=0', (int(m.group(1)),), one=True)
+            if u:
+                ranked.append((-1, 0, u))
+        key = search_key(q)
+        if key:
+            for u in self.q('SELECT * FROM users WHERE blocked=0'):
+                if m and u['id'] == int(m.group(1)):
+                    continue
+                r = match_rank(key, (search_key(u['login']), search_key(u['name'])))
+                if r is not None:
+                    ranked.append((r, -(u['seen'] or u['created'] or 0), u))
+        ranked.sort(key=lambda t: (t[0], t[1]))
+        return [self.person(u, me, playing=playing) for _, _, u in ranked[:limit]]
 
     def profile(self, login, me=None, playing=None):
         """A player's page: their figures and their games that others may watch (none when they hide their games)."""

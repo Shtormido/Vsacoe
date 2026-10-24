@@ -163,9 +163,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if method == 'GET' and route == '/api/people':
                 q = re.search(r'[?&]q=([^&]*)', self.path)
                 return self._json(200, {'people': ACC.people(urllib.parse.unquote_plus(q.group(1)) if q else '', me, netgo.playing())})
-            p = re.fullmatch(r'/api/people/([A-Za-z0-9_.-]{1,20})', route)
+            p = re.fullmatch(r'/api/people/([A-Za-z0-9_.-]{1,20}|%23[0-9]{1,9})', route)   # a login, or an ID as #12
             if method == 'GET' and p:
-                return self._json(200, {'person': ACC.profile(p.group(1), me, netgo.playing())})
+                return self._json(200, {'person': ACC.profile(urllib.parse.unquote(p.group(1)), me, netgo.playing())})
             if not u:
                 raise netgo.ApiError('Друзья — только с аккаунтом', 401)
             if method == 'GET' and route == '/api/friends':
