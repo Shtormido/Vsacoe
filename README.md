@@ -35,6 +35,15 @@ sudo certbot --nginx -d motel.example.ru    # HTTPS (по желанию)
 Обновить игру (nginx): `sudo sh deploy/update.sh` — скачает свежую версию, переустановит на тот же порт и покажет номер версии до и после. Docker: `git pull && docker compose up -d --build`.
 Если порт закрыт фаерволом: `sudo ufw allow 8080/tcp`. Работает на Ubuntu/Debian, CentOS/Fedora (SELinux учтён), Arch.
 
+## Скачать для Windows
+
+| Файл | Как запустить |
+|---|---|
+| `Pridorozhny-Motel-*-Setup.exe` | установщик: ярлык «Придорожный Мотель» на рабочем столе и в «Пуске» |
+| `Pridorozhny-Motel-*-Portable.exe` | один файл, запускается без установки |
+
+Если Windows SmartScreen пишет «Защитник Windows предотвратил запуск» — «Подробнее» → «Выполнить в любом случае» (сборка без платной цифровой подписи).
+
 ## Скачать для Linux
 
 Готовые сборки — на странице **Releases** репозитория:
@@ -54,11 +63,12 @@ sudo certbot --nginx -d motel.example.ru    # HTTPS (по желанию)
 ```
 cd desktop
 npm install
-npm run dist   # AppImage, .deb и tar.gz в desktop/dist
-npm run web    # офлайн-версия для браузера
+npm run dist      # AppImage, .deb и tar.gz в desktop/dist
+npm run dist:win  # Setup.exe и Portable.exe (на Linux нужен wine)
+npm run web       # офлайн-версия для браузера
 ```
 
-Новый тег `v*` (например, `v1.0.1`) запускает сборку на GitHub Actions и публикует файлы в Releases.
+Новый тег `motel-v*` (например, `motel-v1.4.0`) запускает сборку для Linux и Windows на GitHub Actions и публикует файлы в Releases.
 
 ## Запуск из исходников
 

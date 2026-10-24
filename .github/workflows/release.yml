@@ -1,8 +1,8 @@
-name: Linux build
+name: Motel build (Linux + Windows)
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'motel-v*']
   workflow_dispatch:
 
 permissions:
@@ -38,6 +38,10 @@ jobs:
         with:
           name: Придорожный Мотель ${{ github.ref_name }}
           body: |
+            **Windows:**
+            - **Setup.exe** — установщик с ярлыком на рабочем столе
+            - **Portable.exe** — один файл, запускается без установки
+
             Сборки для Linux (x86_64):
             - **AppImage** — один файл, работает на любом дистрибутиве: `chmod +x *.AppImage && ./Pridorozhny-Motel-*.AppImage`
             - **.deb** — Ubuntu / Debian / Mint: `sudo apt install ./Pridorozhny-Motel-*-amd64.deb`
@@ -48,3 +52,27 @@ jobs:
             desktop/dist/*.deb
             desktop/dist/*.tar.gz
             desktop/dist/SHA256SUMS.txt
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pridorozhny-motel-windows
+          path: desktop/dist/*.exe
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: Придорожный Мотель ${{ github.ref_name }}
+          files: desktop/dist/*.exe
