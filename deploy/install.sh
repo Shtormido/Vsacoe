@@ -16,11 +16,17 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 # nginx
 if ! command -v nginx >/dev/null 2>&1; then
   echo "→ Устанавливаю nginx"
-  if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq nginx
+  if command -v apt-get >/dev/null; then
+    # не даём nginx стартовать с заглушкой на порту 80 во время установки — он может быть занят
+    NOSTART=0; [ -e /usr/sbin/policy-rc.d ] || { printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; chmod +x /usr/sbin/policy-rc.d; NOSTART=1; }
+    apt-get update -qq && apt-get install -y -qq nginx
+    [ "$NOSTART" = 1 ] && rm -f /usr/sbin/policy-rc.d
   elif command -v dnf >/dev/null; then dnf install -y nginx
   elif command -v yum >/dev/null; then yum install -y nginx
   elif command -v pacman >/dev/null; then pacman -Sy --noconfirm nginx
   else echo "Не знаю, как поставить nginx на этой системе. Поставь вручную и запусти скрипт снова."; exit 1; fi
+  # заглушка «Welcome to nginx» на порту 80 не нужна и может мешать другим сайтам
+  rm -f /etc/nginx/sites-enabled/default
 fi
 
 # файлы игры
