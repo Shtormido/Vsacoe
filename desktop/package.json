@@ -1,0 +1,65 @@
+{
+  "name": "pridorozhny-motel",
+  "productName": "Pridorozhny Motel",
+  "version": "1.0.0",
+  "description": "Придорожный Мотель — 2D пиксель-арт хоррор-кулинарный симулятор",
+  "homepage": "https://github.com/Shtormido/Vsacoe",
+  "author": {
+    "name": "Shtormido",
+    "email": "shtormido@users.noreply.github.com"
+  },
+  "license": "UNLICENSED",
+  "main": "main.js",
+  "scripts": {
+    "copy": "node copy-game.js",
+    "start": "npm run copy && electron .",
+    "dist": "npm run copy && electron-builder --linux --publish never",
+    "web": "node pack-web.js"
+  },
+  "build": {
+    "appId": "io.github.shtormido.pridorozhny-motel",
+    "productName": "Pridorozhny Motel",
+    "artifactName": "Pridorozhny-Motel-${version}-${arch}.${ext}",
+    "files": [
+      "main.js",
+      "game/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png",
+      "executableName": "pridorozhny-motel",
+      "synopsis": "Хоррор-кулинарный симулятор в пиксель-арте",
+      "desktop": {
+        "Name": "Придорожный Мотель",
+        "Comment": "Днём — закусочная, ночью — заготовка",
+        "StartupWMClass": "Pridorozhny Motel"
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ]
+    },
+    "publish": null
+  },
+  "devDependencies": {
+    "electron": "31.7.7",
+    "electron-builder": "24.13.3"
+  }
+}

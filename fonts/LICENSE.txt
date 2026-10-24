@@ -1,0 +1,2 @@
+Шрифты Tiny5 и Press Start 2P — SIL Open Font License 1.1 (https://openfontlicense.org).
+Встроены, чтобы игра работала без интернета.

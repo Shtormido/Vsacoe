@@ -1,0 +1,50 @@
+name: Linux build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run dist
+      - run: npm run web
+      - run: cd dist && sha256sum *.AppImage *.deb *.tar.gz > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pridorozhny-motel-linux
+          path: |
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/*.tar.gz
+            desktop/dist/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: Придорожный Мотель ${{ github.ref_name }}
+          body: |
+            Сборки для Linux (x86_64):
+            - **AppImage** — один файл, работает на любом дистрибутиве: `chmod +x *.AppImage && ./Pridorozhny-Motel-*.AppImage`
+            - **.deb** — Ubuntu / Debian / Mint: `sudo apt install ./Pridorozhny-Motel-*-amd64.deb`
+            - **tar.gz** — распаковать и запустить `pridorozhny-motel`
+            - **web.tar.gz** — браузерная версия без установки: `./play.sh`
+          files: |
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/*.tar.gz
+            desktop/dist/SHA256SUMS.txt

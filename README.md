@@ -5,7 +5,32 @@
 Днём — повар закусочной при мотеле (08:00–00:00), ночью — тихая ночная заготовка особого ресурса,
 утром — приведение бумаг в порядок, закупки, ремонт, подкуп и управление персоналом.
 
-## Запуск
+## Скачать для Linux
+
+Готовые сборки — на странице **Releases** репозитория:
+
+| Файл | Как запустить |
+|---|---|
+| `Pridorozhny-Motel-*-x86_64.AppImage` | любой дистрибутив: `chmod +x Pridorozhny-Motel-*.AppImage && ./Pridorozhny-Motel-*.AppImage` |
+| `Pridorozhny-Motel-*-amd64.deb` | Ubuntu / Debian / Mint: `sudo apt install ./Pridorozhny-Motel-*-amd64.deb`, затем «Придорожный Мотель» в меню |
+| `Pridorozhny-Motel-*-x64.tar.gz` | распаковать и запустить `./pridorozhny-motel` |
+| `Pridorozhny-Motel-*-web.tar.gz` | браузерная версия без установки: распаковать и `./play.sh` |
+
+Если AppImage не стартует на старом дистрибутиве без FUSE: `./Pridorozhny-Motel-*.AppImage --appimage-extract-and-run`.
+**F11** — полный экран.
+
+### Собрать самому
+
+```
+cd desktop
+npm install
+npm run dist   # AppImage, .deb и tar.gz в desktop/dist
+npm run web    # офлайн-версия для браузера
+```
+
+Новый тег `v*` (например, `v1.0.1`) запускает сборку на GitHub Actions и публикует файлы в Releases.
+
+## Запуск из исходников
 
 Чистые HTML/CSS/JS без сборки. Откройте `index.html` или раздайте папку любым статическим сервером:
 
