@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS games(
 CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY, uses INTEGER NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, t INTEGER NOT NULL, admin INTEGER, admin_login TEXT, action TEXT NOT NULL, detail TEXT);
+CREATE TABLE IF NOT EXISTS friends(
+  a INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, b INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ok INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, PRIMARY KEY(a, b));
+CREATE INDEX IF NOT EXISTS friends_b ON friends(b);
 CREATE INDEX IF NOT EXISTS games_black ON games(black);
 CREATE INDEX IF NOT EXISTS games_white ON games(white);
 '''
@@ -112,6 +116,7 @@ class Accounts:
         self.started = time.time()
         self.db = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
+        self.db.create_function('ulower', 1, lambda t: t.lower() if isinstance(t, str) else t, deterministic=True)  # LIKE folds only ASCII case
         self.lock = threading.Lock()
         with self.lock:
             self.db.execute('PRAGMA journal_mode=WAL')
@@ -326,9 +331,91 @@ class Accounts:
 
     def leaderboard(self, limit=20):
         rows = self.q('SELECT * FROM users WHERE games>0 AND blocked=0 ORDER BY rating DESC LIMIT ?', (limit,))
-        return [{'name': r['name'], 'rating': round(r['rating']), 'games': r['games'], 'wins': r['wins']} for r in rows]
+        return [{'login': r['login'], 'name': r['name'], 'rating': round(r['rating']), 'games': r['games'], 'wins': r['wins']} for r in rows]
 
     # ---------- invites ----------
+    # ---------- people and friends ----------
+    # a friendship is one row: a asked b; ok=0 while b has not answered
+    ONLINE = 300            # seen this many seconds ago or less: online
+    MAX_ASKED = 50          # unanswered requests one player may have out at a time
+    MAX_FRIENDS = 500
+
+    def _relation(self, me, other):
+        """How `other` stands to `me`: 'self', 'friend', 'out' (me asked them), 'in' (they asked me) or ''."""
+        if not me:
+            return ''
+        if me == other:
+            return 'self'
+        r = self.q('SELECT a, ok FROM friends WHERE (a=? AND b=?) OR (a=? AND b=?)', (me, other, other, me), one=True)
+        return '' if not r else 'friend' if r['ok'] else 'out' if r['a'] == me else 'in'
+
+    def person(self, u, me=None, rel=None, playing=None):
+        """What anyone may see of a player. playing: uid -> the game they sit at now (from netgo)."""
+        seen = u['seen'] or 0
+        return {'login': u['login'], 'name': u['name'], 'rating': round(u['rating']), 'games': u['games'], 'wins': u['wins'],
+                'online': time.time() - seen <= self.ONLINE, 'seen': seen * 1000, 'admin': u['role'] == 'admin',
+                'rel': rel if rel is not None else self._relation(me, u['id']), 'playing': (playing or {}).get(u['id'])}
+
+    def _by_login(self, login):
+        u = self.q('SELECT * FROM users WHERE login=? AND blocked=0', (str(login or '').strip(),), one=True)
+        if not u:
+            raise AuthError('Игрок не найден', 404)
+        return u
+
+    def people(self, query='', me=None, playing=None, limit=40):
+        """Search by login or name; with no query, who was here last."""
+        q = str(query or '').strip()[:40].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        like = '%' + q.lower() + '%'
+        rows = self.q("SELECT * FROM users WHERE blocked=0 AND (login LIKE ? ESCAPE '\\' OR ulower(name) LIKE ? ESCAPE '\\') "
+                      'ORDER BY COALESCE(seen, created) DESC LIMIT ?', (like, like, limit))
+        return [self.person(u, me, playing=playing) for u in rows]
+
+    def profile(self, login, me=None, playing=None):
+        """A player's page: their figures and their games that others may watch (none when they hide their games)."""
+        u = self._by_login(login)
+        p = self.person(u, me, playing=playing)
+        p['since'] = u['created'] * 1000
+        p['hide'] = bool(u['hide_games'])
+        p['friends'] = self.q('SELECT COUNT(*) AS n FROM friends WHERE ok=1 AND ? IN (a, b)', (u['id'],), one=True)['n']
+        rows = [] if u['hide_games'] else self.q('SELECT g.* FROM games g WHERE ? IN (g.black, g.white) AND %s ORDER BY g.ended DESC LIMIT 20' % self.VISIBLE, (u['id'],))
+        p['recent'] = [self._card(g) for g in rows]
+        return p
+
+    def friends(self, me, playing=None):
+        rows = self.q('SELECT u.*, f.a AS asked, f.ok AS ok FROM friends f JOIN users u ON u.id = CASE WHEN f.a=? THEN f.b ELSE f.a END '
+                      'WHERE ? IN (f.a, f.b) AND u.blocked=0 ORDER BY COALESCE(u.seen, u.created) DESC', (me, me))
+        out = {'friends': [], 'incoming': [], 'outgoing': []}
+        for r in rows:
+            rel = 'friend' if r['ok'] else 'out' if r['asked'] == me else 'in'
+            out[{'friend': 'friends', 'in': 'incoming', 'out': 'outgoing'}[rel]].append(self.person(r, rel=rel, playing=playing))
+        return out
+
+    def friend_requests(self, me):
+        return self.q('SELECT COUNT(*) AS n FROM friends f JOIN users u ON u.id=f.a WHERE f.b=? AND f.ok=0 AND u.blocked=0', (me,), one=True)['n']
+
+    def friend_add(self, me, login):
+        """Ask someone to be friends; when they already asked us, this accepts. Returns their new card."""
+        u = self._by_login(login)
+        if u['id'] == me:
+            raise AuthError('Это ваш аккаунт')
+        with self.lock:
+            r = self.db.execute('SELECT a, ok FROM friends WHERE (a=? AND b=?) OR (a=? AND b=?)', (me, u['id'], u['id'], me)).fetchone()
+            if r is None:
+                if self.db.execute('SELECT COUNT(*) FROM friends WHERE a=? AND ok=0', (me,)).fetchone()[0] >= self.MAX_ASKED:
+                    raise AuthError('Слишком много заявок без ответа — дождитесь, пока на них ответят', 429)
+                if self.db.execute('SELECT COUNT(*) FROM friends WHERE ok=1 AND ? IN (a, b)', (me,)).fetchone()[0] >= self.MAX_FRIENDS:
+                    raise AuthError('Друзей уже %d — больше не поместится' % self.MAX_FRIENDS, 429)
+                self.db.execute('INSERT INTO friends(a, b, ok, created) VALUES(?,?,0,?)', (me, u['id'], int(time.time())))
+            elif not r['ok'] and r['a'] == u['id']:
+                self.db.execute('UPDATE friends SET ok=1 WHERE a=? AND b=?', (u['id'], me))
+        return self.person(u, me)
+
+    def friend_remove(self, me, login):
+        """Unfriend, decline a request or take one back."""
+        u = self._by_login(login)
+        self.q('DELETE FROM friends WHERE (a=? AND b=?) OR (a=? AND b=?)', (me, u['id'], u['id'], me))
+        return self.person(u, me)
+
     def make_invite(self, uses=1):
         code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
         self.q('INSERT INTO invites(code,uses,created) VALUES(?,?,?)', (code, max(1, int(uses)), int(time.time())))

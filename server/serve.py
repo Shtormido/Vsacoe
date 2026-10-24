@@ -115,7 +115,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _auth(self, method, route, body):
         u = self._user()
         if route == '/api/auth/me':
-            return self._json(200, {'user': ACC.public(u), 'signup': ACC.signup, 'private': PRIVATE, 'guests': self._guests(), 'motd': ACC.setting('motd', '')})
+            return self._json(200, {'user': ACC.public(u), 'signup': ACC.signup, 'private': PRIVATE, 'guests': self._guests(), 'motd': ACC.setting('motd', ''),
+                                    'friendReq': ACC.friend_requests(u['id']) if u else 0})
         if method != 'POST':
             raise netgo.ApiError('Не найдено', 404)
         if route in ('/api/auth/login', '/api/auth/register'):
@@ -150,6 +151,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if isinstance(body.get('guests'), bool):
                     ACC.set_setting('guests', 'on' if body['guests'] else 'off')
                 return self._json(200, {'guests': self._guests()})
+        except accounts.AuthError as e:
+            raise netgo.ApiError(str(e), e.code)
+        raise netgo.ApiError('Не найдено', 404)
+
+    # ---------- people and friends ----------
+    def _people(self, method, route, body):
+        u = self._user()
+        me = u['id'] if u else None
+        try:
+            if method == 'GET' and route == '/api/people':
+                q = re.search(r'[?&]q=([^&]*)', self.path)
+                return self._json(200, {'people': ACC.people(urllib.parse.unquote_plus(q.group(1)) if q else '', me, netgo.playing())})
+            p = re.fullmatch(r'/api/people/([A-Za-z0-9_.-]{1,20})', route)
+            if method == 'GET' and p:
+                return self._json(200, {'person': ACC.profile(p.group(1), me, netgo.playing())})
+            if not u:
+                raise netgo.ApiError('Друзья — только с аккаунтом', 401)
+            if method == 'GET' and route == '/api/friends':
+                return self._json(200, ACC.friends(me, netgo.playing()))
+            if method == 'POST' and route in ('/api/friends/add', '/api/friends/remove'):
+                f = ACC.friend_add if route.endswith('add') else ACC.friend_remove
+                return self._json(200, {'person': f(me, body.get('login'))})
         except accounts.AuthError as e:
             raise netgo.ApiError(str(e), e.code)
         raise netgo.ApiError('Не найдено', 404)
@@ -273,6 +296,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not u:
                     raise netgo.ApiError('Нужно войти в аккаунт', 401)
                 return self._json(200, {'games': ACC.games_of(u['id'])})
+            if route.startswith('/api/people') or route.startswith('/api/friends'):
+                return self._people(method, route, body)
             if route == '/api/live' and method == 'GET':
                 return self._json(200, {'rooms': netgo.live()})
             if route == '/api/games' and method == 'GET':

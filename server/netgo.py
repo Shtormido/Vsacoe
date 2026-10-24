@@ -486,6 +486,18 @@ def live(limit=50):
     return out[:limit]
 
 
+def playing():
+    """Accounts seated at a game in progress: uid -> {'n', 'code'}; the code only when the game may be watched."""
+    with LOCK:
+        out = {}
+        for r in ROOMS.values():
+            if r.phase in ('play', 'scoring'):
+                for s in r.seats.values():
+                    if s and s['uid']:
+                        out[s['uid']] = {'n': r.n, 'code': r.code if r.public() else None}
+        return out
+
+
 def admin_rooms():
     """Every room, for the admin: who sits where and whether they are connected (never the moves of a hidden game)."""
     with LOCK:
