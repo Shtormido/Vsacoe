@@ -1609,7 +1609,7 @@ function create3D(){
   let tweens=[],time=0,active=true,camPreset=0;
   const hand={held:false,mesh:null,preview:-1};
   let lastRing=null,terrGroup=new THREE.Group(),markGroup=new THREE.Group();fxGroup.add(terrGroup,markGroup);
-  let terrKey='',markKey='';
+  let terrKey=null,markKey=null; /* null: redraw (and clear) on the next deco() whatever the score */
 
   function ctex(cv,rx,ry,linear){const t=new THREE.CanvasTexture(cv);if(!linear)t.encoding=THREE.sRGBEncoding;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx||1,ry||1);t.anisotropy=Math.min(8,maxAniso);return t;}
   function disposeTree(o){o.traverse(n=>{if(n.isLight&&n.dispose){try{n.dispose();}catch(e){}}
@@ -2179,8 +2179,8 @@ function create3D(){
   function clearStones(){for(const m of [...stoneGroup.children])if(m!==hand.mesh)stoneGroup.remove(m);stoneMeshes.clear();}
   function rebuildStones(){clearStones();for(let p=0;p<G.N*G.N;p++)if(G.board[p]){const m=stoneMesh(G.board[p]);placeAt(m,p);stoneGroup.add(m);stoneMeshes.set(p,m);}}
   function dropHand(){if(hand.mesh)stoneGroup.remove(hand.mesh);hand.mesh=null;hand.held=false;hand.preview=-1;}
-  function resync(){finishTweens();rebuildStones();syncLids();terrKey='';markKey='';deco();}
-  function rebuild(full){finishTweens();dropHand();buildBoard();if(full)buildEnv();rebuildStones();syncLids();terrKey='';markKey='';deco();frame(camPreset,false);}
+  function resync(){finishTweens();rebuildStones();syncLids();terrKey=null;markKey=null;deco();}
+  function rebuild(full){finishTweens();dropHand();buildBoard();if(full)buildEnv();rebuildStones();syncLids();terrKey=null;markKey=null;deco();frame(camPreset,false);}
   function spawnFromBowl(c){const m=stoneMesh(c),bp=L.bowl[c];m.position.set(bp.x+(Math.random()-.5)*3,bp.y+6.3,bp.z+(Math.random()-.5)*3);m.rotation.set((Math.random()-.5)*.6,Math.random()*6,(Math.random()-.5)*.6);stoneGroup.add(m);return m;}
   function settle(m){const y0=m.rotation.y;tween(.2,k=>{m.rotation.x=Math.sin(k*Math.PI*3)*(1-k)*.05;m.rotation.y=y0;});}
   function flyTo(m,p,o,done){const to=new V();pointWorld(p,to);to.x+=(Math.random()-.5)*.12;to.z+=(Math.random()-.5)*.12;to.y=STONE_HY;
@@ -2285,8 +2285,8 @@ function create3D(){
     rebuild,resync,onCommit,placeHuman,placeBot,deco,frame,resize,
     setEnv(){rebuild(true);},
     setBoard(){rebuild(true);},
-    setGrid(){finishTweens();dropHand();buildBoard();rebuildStones();syncLids();terrKey='';markKey='';deco();},
-    setStones(){finishTweens();dropHand();makeStoneMats();buildBoard();rebuildStones();syncLids();terrKey='';markKey='';deco();},
+    setGrid(){finishTweens();dropHand();buildBoard();rebuildStones();syncLids();terrKey=null;markKey=null;deco();},
+    setStones(){finishTweens();dropHand();makeStoneMats();buildBoard();rebuildStones();syncLids();terrKey=null;markKey=null;deco();},
     setActive(v){active=v;if(v){lastT=performance.now();resize();}},
     handState(){return !hand.held?'empty':hand.preview>=0?'preview':'held';},
     dropHand(){if(hand.held)returnToBowl();},
