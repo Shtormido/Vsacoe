@@ -35,6 +35,7 @@ const Night = {
   // ---------- выбор цели ----------
   start() {
     G.phase = 'nightmenu';
+    Atmos.setWeather(pick(['rain', 'rain', 'fog', 'clear']));
     if (G.flags.knowerGuest) {
       G.flags.knowerGuest = false;
       const k = makeGuest('knower');
@@ -65,6 +66,7 @@ const Night = {
     }).join('') || '<p class="muted">Мотель пуст. Ни одного постояльца.</p>';
     const hall = G.conscience < 40 ? '<p class="bad">В коридоре кто-то шепчет твоё имя. Там никого нет.</p>' : '';
     UI.open(`<h2>02:00 — Тихая ночная смена</h2>
+      <p>${{ rain: '🌧 За окном ливень — шум дождя заглушит возню (шире окно удара).', fog: '🌫 Над шоссе туман — неспящие видят ближе.', clear: '🌙 Ясная тихая ночь.' }[Atmos.weather]}</p>
       <p>Ты просыпаешься. Мотель спит. Особого ресурса в запасе: <b>${G.stock.special}</b>. Выносливость: <b>${Math.round(G.stamina)}</b>.</p>${hall}
       <div class="cards">${cards}</div>
       <div class="btns"><button class="b primary" data-a="sleep">Спать до утра (+выносливость)</button></div>`,
@@ -145,6 +147,7 @@ const Stealth = {
     let n = clamp(1 + restless - (hasStaff('caretaker') ? 1 : 0), 0, 3);
     this.npcs = [];
     for (let i = 0; i < n; i++) this.npcs.push({ x: rnd(40, 280), y: rnd(54, 86), dir: chance(0.5) ? 1 : -1, sp: rnd(16, 26), pause: 0, look: randomLook(), frame: 0, anim: 0, vy: chance(0.5) ? 1 : -1 });
+    this.flicker = rint(0, 4);
     this.beam = G.suspicion > 40 ? { x: -40, cd: rnd(3, 6), active: false, warn: 0 } : null;
     toast('Подберись к номеру ' + (target.room + 1) + ' и нажми E', 'night');
   },
@@ -205,10 +208,12 @@ const Stealth = {
     return false;
   },
 
+  visLen() { return Atmos.weather === 'fog' ? 44 : 58; },
+
   seen(n, p) {
     const dx = p.x - n.x, dy = p.y - n.y, d = Math.hypot(dx, dy);
     if (d < 10) return true;
-    if (d > 58) return false;
+    if (d > this.visLen()) return false;
     const a = Math.atan2(dy, dx), f = n.dir > 0 ? 0 : Math.PI;
     let diff = Math.abs(((a - f) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
     return diff < 0.45 && n.pause <= 0 || diff < 0.3;
@@ -224,7 +229,7 @@ const Stealth = {
   startStrike() {
     prompt('');
     const g = this.target;
-    const zone = clamp(44 + G.upgrades.soundproof * 10 + buildOf(g).zone - g.suspicious / 6 - (g.trait === 'double' ? 12 : 0) - (100 - G.stamina) / 10, 14, 80);
+    const zone = clamp(44 + (Atmos.weather === 'rain' ? 6 : 0) + G.upgrades.soundproof * 10 + buildOf(g).zone - g.suspicious / 6 - (g.trait === 'double' ? 12 : 0) - (100 - G.stamina) / 10, 14, 80);
     this.mode = 'strike';
     this.strike = { pos: 0, dir: 1, speed: 140, hits: 0, misses: 0, zone, zx: rnd(20, 180 - zone), flash: 0 };
     toast('ПРОБЕЛ — когда метка в зелёной зоне. Три попадания.', 'night');
@@ -259,8 +264,10 @@ const Stealth = {
       for (let i = -10; i < 12; i += 6) R(ctx, X + i, Y - 7, 1, 14, '#4a2c1a');
       R(ctx, X - 2, Y - 1, 4, 2, '#a8acb6');
     }
+    Atmos.drawPuddles(ctx, t, neonOn(t));
     G.guests.forEach(g => { if (g.car) { const sp = MOTEL.carSpot(g.room); drawCar(ctx, sp.x, sp.y, g.car); } });
     drawLampPost(ctx);
+    SUN_DX = 2;
     const actors = this.npcs.map(n => ({ y: n.y, f: () => drawChar(ctx, n.x, n.y, n.look, n.dir > 0 ? 'right' : 'left', n.frame) }));
     actors.push({ y: p.y, f: () => drawChar(ctx, p.x, p.y, NIGHT_LOOK, p.dir, p.frame) });
     actors.sort((a, b) => a.y - b.y).forEach(a => a.f());
@@ -269,28 +276,39 @@ const Stealth = {
     // ночное освещение
     Light.begin('#05051a', 0.9);
     Light.hole(px(p.x), px(p.y) - 14, 80, 1);
-    MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) Light.hole(X, Y + 24, 44, 0.5); });
+    const flick = i => i === this.flicker ? (Math.random() < 0.15 ? 0.05 : 0.5) : 0.5;
+    MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) Light.hole(X, Y + 24, 44, flick(i)); });
     Light.hole(TX, 54, 34, 0.55 + Math.sin(t * 4) * 0.1);
     Light.hole(201, 222, 56, 0.8); Light.hole(40, 312, 34, 0.45 + Math.random() * 0.1);
     Light.hole(300, 300, 96, 0.85); Light.hole(578, 230, 90, 0.7);
     this.npcs.forEach(n => {
-      Light.cone(px(n.x), px(n.y) - 16, n.dir > 0 ? 0 : Math.PI, 116, 0.45, 0.85);
+      Light.cone(px(n.x), px(n.y) - 16, n.dir > 0 ? 0 : Math.PI, this.visLen() * S, 0.45, 0.85);
       if (G.upgrades.cameras) Light.hole(px(n.x), px(n.y) - 16, 26, 0.9);
     });
     if (this.beam && this.beam.active) Light.rect(px(this.beam.x) - 24, 0, 48, 196, 0.9);
     Light.end(ctx);
 
-    MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) glow(ctx, X, Y, 20, 'rgba(255,210,140,A)', 0.3); });
+    MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5 && flick(i) > 0.1) glow(ctx, X, Y, 20, 'rgba(255,210,140,A)', 0.3); });
     glow(ctx, 201, 214, 24, 'rgba(160,255,170,A)', 0.2);
     glow(ctx, 300, 240, 30, 'rgba(255,240,180,A)', 0.4);
     drawSign(ctx, t);
+    Atmos.drawMoths(ctx, 300, 244);
+    Atmos.drawRain(ctx, OUTDOOR); Atmos.drawRainVeil(ctx, OUTDOOR);
+    Atmos.drawFog(ctx, t, 0.9);
     this.npcs.forEach(n => {
       const f = n.dir > 0 ? 0 : Math.PI, X = px(n.x), Y = px(n.y) - 16;
-      ctx.fillStyle = 'rgba(255,240,170,0.1)'; ctx.beginPath(); ctx.moveTo(X, Y); ctx.arc(X, Y, 116, f - 0.45, f + 0.45); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,240,170,0.1)'; ctx.beginPath(); ctx.moveTo(X, Y); ctx.arc(X, Y, this.visLen() * S, f - 0.45, f + 0.45); ctx.closePath(); ctx.fill();
       R(ctx, X + (n.dir > 0 ? 4 : -8), Y + 2, 4, 2, '#fff8c0');
     });
     if (this.beam && this.beam.active) { ctx.fillStyle = 'rgba(180,200,255,0.12)'; ctx.fillRect(px(this.beam.x) - 24, 0, 48, 196); }
     if (this.beam && this.beam.warn) { ctx.fillStyle = (t * 6 | 0) % 2 ? 'rgba(255,40,40,.3)' : 'rgba(40,90,255,.3)'; ctx.fillRect(0, 0, 10, PH); ctx.fillRect(PW - 10, 0, 10, PH); }
+    // опасность рядом: пульс
+    let danger = this.beam && this.beam.warn ? 0.6 : 0;
+    this.npcs.forEach(n => { danger = Math.max(danger, clamp(1 - (dist(n, p) - 12) / 50, 0, 1)); });
+    Atmos.drawFlash(ctx);
+    Atmos.vignette(ctx, 0.5);
+    Atmos.pulse(ctx, danger);
+    Atmos.grain(ctx, 0.08);
     // маркер цели
     const by = 12 + Math.round(Math.sin(t * 5) * 2);
     R(ctx, TX - 4, by, 9, 2, '#22141c'); R(ctx, TX - 3, by + 2, 7, 2, '#22141c'); R(ctx, TX - 2, by + 4, 5, 2, '#22141c');

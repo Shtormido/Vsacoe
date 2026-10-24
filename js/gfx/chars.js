@@ -323,7 +323,7 @@ function drawChar(ctx, wx, wy, look, dir = 'down', frame = 0, opts = {}) {
   if (!spr) { spr = buildChar(look, dir, frame % 4, blink); _charCache.set(key, spr); }
   const X = px(wx), Y = px(wy);
   const a = opts.alpha ?? 1;
-  shadow(ctx, X, Y - 1, (look.build === 'heavy' ? 10 : 8), 3, 0.3 * a);
+  shadow(ctx, X, Y - 1, (look.build === 'heavy' ? 10 : 8) + Math.abs(SUN_DX) / 2, 3, 0.32 * a, SUN_DX);
   ctx.globalAlpha = a;
   ctx.drawImage(spr, X - 14, Y - 45);
   ctx.globalAlpha = 1;

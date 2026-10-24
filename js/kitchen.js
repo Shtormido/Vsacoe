@@ -361,6 +361,11 @@ const Kitchen = {
   // ---------- отрисовка ----------
   draw(ctx, t) {
     ctx.drawImage(this.bg, 0, 0);
+    drawDinerWindows(ctx, G.time, t);
+    const sun = drawSunbeams(ctx, G.time);
+    SUN_DX = clamp(Math.round(-sun.skew / 18), -5, 5);
+    drawFans(ctx, t);
+    drawJukebox(ctx, t);
     this.drawClock(ctx);
     DINER.stations.forEach(st => drawStation(ctx, st, this.stations[st.id] || { slots: [] }, t));
     this.drawCooking(ctx, t);
@@ -404,6 +409,9 @@ const Kitchen = {
     }
     if (G.stamina < 25) { const v = ctx.createRadialGradient(PW / 2, PH / 2, PH * 0.35, PW / 2, PH / 2, PH * 0.75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,0,10,.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, PW, PH); }
     if (G.conscience < 40 && Math.sin(t * 0.7) > 0.97) { ctx.fillStyle = 'rgba(140,0,0,.25)'; ctx.fillRect(0, 0, PW, PH); }
+    Atmos.drawMotes(ctx, sun.a * 2.6);
+    Atmos.vignette(ctx, 0.32);
+    Atmos.grain(ctx, 0.05);
   },
 
   drawClock(ctx) {

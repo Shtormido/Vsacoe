@@ -100,6 +100,6 @@ function buildCar(col) {
 function drawCar(ctx, nx, ny, col) {
   let s = _carCache.get(col);
   if (!s) { s = buildCar(col); _carCache.set(col, s); }
-  shadow(ctx, nx + 16, ny + 28, 16, 24, 0.35);
+  boxShadow(ctx, nx + 3, ny + 6, 26, 46, 0.32, 4);
   ctx.drawImage(s, nx, ny);
 }

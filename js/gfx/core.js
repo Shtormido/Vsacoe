@@ -39,10 +39,33 @@ function outline(canvas, col = [34, 20, 28]) {
   return canvas;
 }
 
-// мягкая тень-эллипс
-function shadow(ctx, x, y, w, h, a = 0.3) {
-  ctx.fillStyle = `rgba(20,10,20,${a})`;
-  ctx.beginPath(); ctx.ellipse(Math.round(x), Math.round(y), w, h, 0, 0, Math.PI * 2); ctx.fill();
+// ---------- тени ----------
+// Свет падает спереди-слева: все тени чуть смещены вправо-вниз.
+const SHADOW_COL = 'rgba(28,12,30,';
+let SUN_DX = 2;   // смещение теней персонажей (меняется с солнцем)
+// пиксельный эллипс без сглаживания + более светлая полутень по краю
+function shadow(ctx, x, y, w, h, a = 0.3, dx = 2) {
+  x = Math.round(x + dx); y = Math.round(y); w = Math.round(w); h = Math.max(1, Math.round(h));
+  for (let j = -h; j <= h; j++) {
+    const k = Math.sqrt(1 - (j / (h + 0.5)) ** 2), hw = Math.round(w * k);
+    ctx.fillStyle = SHADOW_COL + (a * 0.55) + ')'; ctx.fillRect(x - hw - 1, y + j, hw * 2 + 2, 1);
+    ctx.fillStyle = SHADOW_COL + (a * 0.6) + ')'; ctx.fillRect(x - hw + 1, y + j, Math.max(0, hw * 2 - 2), 1);
+  }
+}
+// тень от прямоугольного предмета: контакт у основания + падающая вправо-вниз
+function boxShadow(ctx, x, y, w, h, a = 0.28, off = 3) {
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = SHADOW_COL + a + ')';
+  ctx.fillRect(x + off, y, w, h); ctx.fillRect(x + off + 1, y + h, w - 2, 1);
+  ctx.fillStyle = SHADOW_COL + (a * 0.5) + ')';
+  ctx.fillRect(x + off + w, y + 1, 1, h - 1); ctx.fillRect(x + off + 2, y + h + 1, w - 4, 1);
+}
+// полоса окклюзии у основания предмета, стоящего у стены
+function contactShadow(ctx, x, y, w, a = 0.35) {
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = SHADOW_COL + a + ')'; ctx.fillRect(x - 1, y, w + 5, 2);
+  ctx.fillStyle = SHADOW_COL + (a * 0.55) + ')'; ctx.fillRect(x, y + 2, w + 6, 2);
+  ctx.fillStyle = SHADOW_COL + (a * 0.25) + ')'; ctx.fillRect(x + 2, y + 4, w + 5, 2);
 }
 
 // ---------- пиксельный шрифт 3×5 ----------
@@ -56,19 +79,24 @@ const FONT = {
   N: '110101101101101', O: '010101101101010', P: '110101110100100', R: '110101110101101', S: '011100010001110', T: '111010010010010',
   U: '101101101101111', V: '101101101101010', W: '101101111111101', X: '101101010101101', Y: '101101010010010'
 };
+// широкие буквы 5×5, чтобы M и W не путались с H
+const FONT5 = { M: '1000111011101011000110001', W: '1000110001101011101110001' };
+const glyphW = ch => FONT5[ch] ? 5 : 3;
 function pText(ctx, str, x, y, col, sc = 1, shadowCol) {
   str = String(str).toUpperCase();
   const draw = (ox, oy, c) => {
     ctx.fillStyle = c;
-    for (let k = 0; k < str.length; k++) {
-      const g = FONT[str[k]] || FONT['?'];
-      for (let i = 0; i < 15; i++) if (g[i] === '1') ctx.fillRect(Math.round(ox + (k * 4 + i % 3) * sc), Math.round(oy + Math.floor(i / 3) * sc), sc, sc);
+    let cx = 0;
+    for (const ch of str) {
+      const w = glyphW(ch), g = FONT5[ch] || FONT[ch] || FONT['?'];
+      for (let i = 0; i < w * 5; i++) if (g[i] === '1') ctx.fillRect(Math.round(ox + (cx + i % w) * sc), Math.round(oy + Math.floor(i / w) * sc), sc, sc);
+      cx += w + 1;
     }
   };
   if (shadowCol) draw(x + sc, y + sc, shadowCol);
   draw(x, y, col);
 }
-const pTextW = (str, sc = 1) => (String(str).length * 4 - 1) * sc;
+const pTextW = (str, sc = 1) => ([...String(str).toUpperCase()].reduce((s, ch) => s + glyphW(ch) + 1, 0) - 1) * sc;
 
 // ---------- частицы (в координатах мира) ----------
 const Particles = {
@@ -86,7 +114,8 @@ const Particles = {
     this.list.forEach(p => {
       const k = 1 - p.t / p.life;
       ctx.globalAlpha = clamp(k * 1.5, 0, 1);
-      if (p.text) { pText(ctx, p.text, px(p.x) - pTextW(p.text, 2) / 2, px(p.y), p.col, 2, '#2a1420'); }
+      if (p.kind === 'note') { const X = px(p.x), Y = px(p.y) + Math.round(Math.sin(p.t * 6) * 2); R(ctx, X, Y + 4, 3, 2, p.col); R(ctx, X + 2, Y, 1, 5, p.col); R(ctx, X + 3, Y, 2, 1, p.col); }
+      else if (p.text) { pText(ctx, p.text, px(p.x) - pTextW(p.text, 2) / 2, px(p.y), p.col, 2, '#2a1420'); }
       else if (p.kind === 'puff') { const s = p.size + (1 - k) * 3; R(ctx, px(p.x) - s, px(p.y) - s, s * 2, s * 2, p.col); }
       else R(ctx, px(p.x), px(p.y), p.size, p.size, p.col);
     });

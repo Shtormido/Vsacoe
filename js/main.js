@@ -17,6 +17,7 @@ const Game = {
 
   init() {
     newGame();
+    Atmos.init();
     this.fit();
     window.addEventListener('resize', () => this.fit());
     this.title();
@@ -32,6 +33,7 @@ const Game = {
 
   title() {
     G.phase = 'title';
+    Atmos.setWeather('rain');
     const saved = loadSave();
     UI.open(`<div class="title-screen"><h1>ПРИДОРОЖНЫЙ<br>МОТЕЛЬ</h1>
       <p>Хоррор-кулинарный симулятор с чёрным юмором.</p>
@@ -136,24 +138,40 @@ const Game = {
 
   draw(t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (Atmos.shake > 0) ctx.translate(rint(-2, 2), rint(-1, 1));
     if (G.phase === 'day' && G.stamina < 25 && !UI.isOpen()) ctx.translate(rint(-1, 1) * (Math.random() < 0.3 ? S : 0), 0);
     if (G.phase === 'day') { Kitchen.draw(ctx, t); return; }
     if (G.phase === 'stealth') { Stealth.draw(ctx, t); return; }
-    // фон для меню: мотель ночью или утром
+    // фон для меню: мотель ночью или на рассвете
     this.motelBG = this.motelBG || buildMotelBG();
     ctx.drawImage(this.motelBG, 0, 0);
+    const night = G.phase !== 'morning';
+    if (night) Atmos.drawPuddles(ctx, t, neonOn(t));
     G.guests.forEach(g => { if (g.car) { const sp = MOTEL.carSpot(g.room); drawCar(ctx, sp.x, sp.y, g.car); } });
     drawLampPost(ctx);
-    const night = G.phase !== 'morning';
     if (night) {
       Light.begin('#05051a', 0.82);
       MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) Light.hole(X, Y + 24, 44, 0.5); });
       Light.hole(201, 222, 56, 0.8); Light.hole(300, 300, 96, 0.85); Light.hole(578, 230, 90, 0.7);
       Light.end(ctx);
+      glow(ctx, 300, 240, 30, 'rgba(255,240,180,A)', 0.4);
+      drawSign(ctx, t);
+      Atmos.drawMoths(ctx, 300, 244);
+      Atmos.drawRain(ctx, OUTDOOR); Atmos.drawRainVeil(ctx, OUTDOOR);
+      Atmos.drawFog(ctx, t, 0.8);
+      Atmos.drawFlash(ctx);
+      Atmos.vignette(ctx, 0.55);
     } else {
-      ctx.fillStyle = 'rgba(255,170,110,0.18)'; ctx.fillRect(0, 0, PW, PH);
+      // рассвет: тёплый свет сверху, холодные тени снизу, утренняя дымка
+      const g = ctx.createLinearGradient(0, 0, 0, PH);
+      g.addColorStop(0, 'rgba(255,170,110,0.28)'); g.addColorStop(1, 'rgba(70,80,140,0.22)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, PW, PH);
+      glow(ctx, 520, 300, 220, 'rgba(255,190,120,A)', 0.18);
+      drawSign(ctx, t);
+      Atmos.drawFog(ctx, t, 0.7);
+      Atmos.vignette(ctx, 0.35);
     }
-    drawSign(ctx, t);
+    Atmos.grain(ctx, 0.07);
   },
 
   loop(ts) {
@@ -161,6 +179,7 @@ const Game = {
     const dt = Math.min(0.05, t - (this.last || t));
     this.last = t;
     this.update(dt);
+    Atmos.update(dt, OUTDOOR);
     this.draw(t);
     updateHUD();
     requestAnimationFrame(x => this.loop(x));

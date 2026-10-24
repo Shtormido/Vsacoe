@@ -33,6 +33,7 @@ const Morning = {
 
   start(fromTime) {
     G.phase = 'morning';
+    Atmos.setWeather('fog');
     G.time = fromTime;
     G.day++;
     this.tab = 'overview'; this.haste = false;
