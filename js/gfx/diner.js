@@ -11,7 +11,7 @@ const DINER = {
     { id: 'backdoor', x: 284, w: 24, label: 'Чёрный ход' }
   ],
   seats: [40, 92, 144, 196, 248],
-  seatY: 108, aisleY: 120,
+  seatY: 110, aisleY: 121,
   booths: [[12, 62], [84, 138], [182, 236], [250, 300]],
   bounds: { x1: 10, x2: 310, y1: 46, y2: 78 },
   door: { x: 160, y: 186 }
@@ -103,9 +103,9 @@ function buildDinerBG() {
   // ---- табуреты: ножки (подушки — в динамике) ----
   DINER.seats.forEach(s => {
     const X = s * S;
-    shadow(x, X, 223, 9, 3, 0.3);
-    r(X - 2, 208, 4, 13, '#a8acb6'); r(X - 2, 208, 1, 13, '#e4e8f0'); r(X + 1, 208, 1, 13, '#6a6e78');
-    r(X - 7, 220, 14, 2, '#8a8e98');
+    shadow(x, X, 225, 9, 3, 0.3);
+    r(X - 2, 210, 4, 13, '#a8acb6'); r(X - 2, 210, 1, 13, '#e4e8f0'); r(X + 1, 210, 1, 13, '#6a6e78');
+    r(X - 7, 222, 14, 2, '#8a8e98');
   });
 
   // ---- кабинки ----
@@ -240,8 +240,8 @@ function drawStation(ctx, st, state, t) {
 function drawStoolTops(ctx) {
   DINER.seats.forEach(s => {
     const X = s * S;
-    R(ctx, X - 9, 204, 18, 6, '#c03a3a'); R(ctx, X - 8, 203, 16, 1, '#c03a3a');
-    R(ctx, X - 7, 204, 8, 1, '#ea6a5a'); R(ctx, X - 9, 209, 18, 2, '#c8ccd6'); R(ctx, X - 9, 210, 18, 1, '#8a8e98');
+    R(ctx, X - 10, 206, 20, 6, '#c03a3a'); R(ctx, X - 9, 205, 18, 1, '#c03a3a');
+    R(ctx, X - 8, 206, 9, 1, '#ea6a5a'); R(ctx, X - 10, 211, 20, 2, '#c8ccd6'); R(ctx, X - 10, 212, 20, 1, '#8a8e98');
   });
 }
 

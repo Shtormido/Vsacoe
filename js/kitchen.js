@@ -184,7 +184,7 @@ const Kitchen = {
     if (G.conscience < 35 && chance(0.12)) type = 'ghost';
     let person, look;
     if (type === 'regular') { const reg = pick(G.regulars); person = { name: reg.name }; look = reg.look; }
-    else { person = randomPerson(); look = randomLook(); }
+    else { person = randomPerson(); look = randomLook(type); }
     const t = CUSTOMER_TYPES[type];
     const order = [];
     if (type === 'rich') order.push({ dish: 'signature' });
@@ -369,7 +369,7 @@ const Kitchen = {
     const p = this.player;
     drawChar(ctx, p.x, p.y, PLAYER_LOOK, p.dir, p.frame);
     if (this.tray.length) {
-      const X = px(p.x), Y = px(p.y) - 46, w = this.tray.length * 13 + 4;
+      const X = px(p.x), Y = px(p.y) - 58, w = this.tray.length * 13 + 4;
       R(ctx, X - w / 2 - 1, Y + 7, w + 2, 3, '#5a5e68'); R(ctx, X - w / 2, Y + 7, w, 1, '#c8ccd6');
       this.tray.forEach((it, i) => drawItem(ctx, it.dish, X - w / 2 + 9 + i * 13, Y, it.meat, it.burnt));
     }
@@ -437,7 +437,7 @@ const Kitchen = {
   },
 
   drawBubble(ctx, c, t) {
-    const X = px(c.x), top = px(c.y) - 40;
+    const X = px(c.x), top = px(c.y) - 44;
     if (c.state === 'wait' && c.type !== 'ghost') {
       const items = c.order.filter(o => !o.done);
       if (items.length) {
