@@ -14,6 +14,16 @@ const TALK = {
   ghost:    ['…', 'Ты помнишь меня?', 'Номер семь. Ночью. Помнишь?', 'Холодно здесь…']
 };
 
+// как клиенты называют блюда, когда делают заказ
+const ORDER_WORDS = { burger: 'бургер', shawarma: 'шаурму', signature: 'ваше фирменное блюдо', nuggets: 'наггетсы', fries: 'картошку', cola: 'колу', fanta: 'фанту', water: 'воду', tea: 'чай', coffee: 'кофе' };
+const ORDER_LINES = {
+  traveler: ['Мне, пожалуйста, {}.', 'Давайте {}. И побыстрее, мне ещё ехать.', 'Хм… {}, наверное.'],
+  regular:  ['Как обычно, шеф: {}.', 'Сегодня {}. Ты знаешь, как я люблю.', 'Эй, шеф! {}, и не жалей соуса.'],
+  referral: ['Мне советовали {}. Посмотрим.', 'Говорят, у вас отличная кухня. Давайте {}.', 'Мне {}, пожалуйста.'],
+  rich:     ['{}. И, надеюсь, оно того стоит.', 'Я приехал ради одного: {}.', 'Подайте {}. Деньги не проблема.'],
+  ghost:    ['…{}… как в ту ночь…', 'Мне… {}. Ты ведь помнишь мой заказ?', '{}. Холодно здесь…']
+};
+
 const Kitchen = {
   player: { x: 160, y: 60, dir: 'down', frame: 0, anim: 0 },
   tray: [],
@@ -237,9 +247,9 @@ const Kitchen = {
   },
 
   boardInfo() {
-    const list = this.customers.filter(c => c.state === 'wait' || c.state === 'eat').map(c => {
+    const list = this.customers.filter(c => c.state === 'wait' || c.state === 'eat' || c.state === 'order').map(c => {
       const t = CUSTOMER_TYPES[c.type], att = Math.round(c.attention * 5);
-      const items = c.order.map(o => `<span class="oitem ${o.done ? 'done' : ''}">${icon('dish', o.dish, 26)}</span>`).join('');
+      const items = c.state === 'order' ? '<span class="small bad">Заказ не принят — подойди к клиенту</span>' : c.order.map(o => `<span class="oitem ${o.done ? 'done' : ''}">${icon('dish', o.dish, 26)}</span>`).join('');
       const risk = specialRisk(c.attention, c.order.some(o => o.dish === 'signature'));
       return `<div class="ticket t-${c.type}">
         <div class="tk-pin"></div>
@@ -301,20 +311,20 @@ const Kitchen = {
         const dx = wp.x - c.x, dy = wp.y - c.y, l = Math.hypot(dx, dy), sp = 50 * dt;
         if (l <= sp) {
           c.x = wp.x; c.y = wp.y; c.path.shift();
-          if (!c.path.length) { if (c.state === 'walk') c.state = 'wait'; else c.gone = true; }
+          if (!c.path.length) { if (c.state === 'walk') { c.state = 'order'; this.orderTip(); } else c.gone = true; }
         } else {
           c.x += dx / l * sp; c.y += dy / l * sp;
           c.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy < 0 ? 'up' : 'down');
           c.anim += dt; if (c.anim > 0.14) { c.anim = 0; c.frame++; }
         }
-      } else if (c.state === 'wait') {
+      } else if (c.state === 'wait' || c.state === 'order') {
         c.dir = 'up'; c.frame = 0;
         c.patience -= dt * (G.time > 22 * 60 ? 1.3 : 1);
         if (c.type === 'ghost' && c.patience <= 0) { c.gone = true; toast('…клиент исчез. Был ли он вообще?', 'night'); G.stress = clamp(G.stress + 10, 0, 100); return; }
         if (c.patience <= 0) {
           this.leave(c); c.bubble = '😠'; c.bubbleT = 3;
           addRep(-1.5); G.dayLog.angry++; G.stats.angry++;
-          toast(c.name + ' ушёл, не дождавшись заказа', 'bad'); Sound.sfx('angry');
+          toast(c.state === 'order' ? c.name + ' ушёл: у него так и не приняли заказ' : c.name + ' ушёл, не дождавшись заказа', 'bad'); Sound.sfx('angry');
         }
       } else if (c.state === 'eat') {
         c.eatT -= dt;
@@ -327,6 +337,27 @@ const Kitchen = {
   leave(c) {
     c.state = 'leave'; c.frame = 0;
     c.path = [{ x: c.x, y: DINER.aisleY }, { x: DINER.door.x, y: DINER.aisleY }, { x: DINER.door.x, y: DINER.door.y }];
+  },
+
+  // подсказка при первом клиенте в игре
+  orderTip() {
+    if (G.flags.orderTip) return;
+    G.flags.orderTip = true;
+    toast('Клиент сел за стойку — подойди и нажми E, чтобы принять заказ', 'good');
+  },
+
+  takeOrder(c) {
+    const words = c.order.map(o => ORDER_WORDS[o.dish]);
+    const list = words.length > 1 ? words.slice(0, -1).join(', ') + ' и ' + words[words.length - 1] : words[0];
+    let line = pick(ORDER_LINES[c.type]).split('{}').join(list);
+    line = line[0].toUpperCase() + line.slice(1);
+    Sound.sfx('paper');
+    UI.talk(c.look, c.name, line, () => {
+      c.state = 'wait';
+      // клиент рад, что к нему подошли: немного терпения сверху
+      c.patience = Math.min(c.maxPatience, c.patience + c.maxPatience * 0.25);
+      Sound.sfx('click');
+    }, c.type === 'ghost' ? 'sus' : c.patience / c.maxPatience < 0.3 ? 'angry' : c.type === 'regular' ? 'happy' : 'neutral');
   },
 
   serve(c) {
@@ -426,10 +457,11 @@ const Kitchen = {
       opts.push({ d: Math.abs(p.x - cx), ax: cx, ay: 2, ...this.stationAction(st) });
     });
     if (p.y > 70) this.customers.forEach(c => {
-      if (c.state !== 'wait' && c.state !== 'eat') return;
+      if (c.state !== 'wait' && c.state !== 'eat' && c.state !== 'order') return;
       const d = Math.abs(p.x - c.x);
       if (d > 14) return;
       const t = CUSTOMER_TYPES[c.type];
+      if (c.state === 'order') return opts.push({ d, ax: c.x, ay: c.y - 44, hint: `E — принять заказ: ${c.name} (${t.name})`, fn: () => c.state === 'order' && this.takeOrder(c) });
       opts.push({ d, ax: c.x, ay: c.y - 44, hint: c.state === 'eat' ? `${c.name} ест…` : `E — обслужить: ${c.name} (${t.name})`, fn: () => c.state === 'wait' && this.serve(c) });
     });
     opts.sort((a, b) => a.d - b.d);
@@ -479,7 +511,7 @@ const Kitchen = {
     }
 
     // клиенты
-    const seated = c => (c.state === 'wait' || c.state === 'eat') || (c.path && c.path.length === 1 && c.state === 'walk');
+    const seated = c => (c.state === 'wait' || c.state === 'eat' || c.state === 'order') || (c.path && c.path.length === 1 && c.state === 'walk');
     this.customers.slice().sort((a, b) => a.y - b.y).forEach(c => {
       drawChar(ctx, c.x, c.y, c.look, c.dir || 'up', c.frame, { alpha: c.type === 'ghost' ? 0.4 + Math.sin(t * 6) * 0.15 : 1 });
     });
@@ -567,8 +599,21 @@ const Kitchen = {
         if (c.type === 'regular') { R(ctx, X + w / 2 - 3, y - 4, 2, 2, '#e05a6a'); R(ctx, X + w / 2, y - 4, 2, 2, '#e05a6a'); R(ctx, X + w / 2 - 3, y - 3, 5, 2, '#e05a6a'); R(ctx, X + w / 2 - 2, y - 1, 3, 1, '#e05a6a'); }
       }
     }
+    if (c.state === 'order') {
+      // блокнот с «!» — заказ ещё не принят
+      const y = top - 18 - Math.round(Math.abs(Math.sin(t * 3)) * 2);
+      R(ctx, X - 9, y - 1, 18, 18, '#22141c'); R(ctx, X - 8, y, 16, 16, '#fbf8f0'); R(ctx, X - 8, y + 14, 16, 2, '#d8d0c0');
+      R(ctx, X - 2, y + 16, 4, 2, '#fbf8f0'); R(ctx, X - 1, y + 18, 2, 1, '#22141c'); R(ctx, X - 3, y + 16, 1, 2, '#22141c'); R(ctx, X + 2, y + 16, 1, 2, '#22141c');
+      R(ctx, X - 6, y + 2, 8, 11, '#8a6a3a'); R(ctx, X - 5, y + 3, 6, 9, '#f4e8b0');
+      for (let i = 0; i < 4; i++) R(ctx, X - 4, y + 5 + i * 2, 4, 1, '#b8a878');
+      R(ctx, X - 6, y + 2, 8, 1, '#c03a3a');
+      const blink = Math.sin(t * 6) > 0 ? '#e03a3a' : '#b02828';
+      R(ctx, X + 3, y + 2, 3, 7, blink); R(ctx, X + 3, y + 10, 3, 3, blink);
+      const pr = c.patience / c.maxPatience;
+      drawBar(ctx, X - 10, y - 6, 20, pr, pr > 0.5 ? '#6fbf5a' : pr > 0.25 ? '#f0c030' : '#d6453d');
+    }
     if (c.state === 'eat') { if (Math.sin(t * 8 + c.id) > 0.6) R(ctx, X - 1, top + 2, 3, 2, '#f0d090'); }
-    if (c.bubbleT > 0 && c.bubble) this.drawEmote(ctx, X, top - (c.state === 'wait' && c.order.some(o => !o.done) ? 28 : 4), c.bubble, t);
+    if (c.bubbleT > 0 && c.bubble) this.drawEmote(ctx, X, top - (c.state === 'order' || (c.state === 'wait' && c.order.some(o => !o.done)) ? 28 : 4), c.bubble, t);
   },
 
   drawEmote(ctx, X, Y, kind, t) {

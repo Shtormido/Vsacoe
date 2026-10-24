@@ -44,7 +44,7 @@ const Game = {
         <p class="sound-hint">🔊 Включи звук — у каждой фазы своя музыка</p>
       </div>
       <div class="cycle">
-        <div class="cy c-day"><i>☀</i><b>08:00–00:00</b><span>Закусочная: гриль, вертел, фритюр, напитки. Мясо выбираешь сам — и кому его подать.</span></div>
+        <div class="cy c-day"><i>☀</i><b>08:00–00:00</b><span>Закусочная: принимай заказы, готовь на гриле, вертеле, фритюре. Мясо выбираешь сам — и кому его подать.</span></div>
         <div class="cy c-sleep"><i>🌙</i><b>00:00–02:00</b><span>Короткий сон. От него — выносливость и твёрдость рук.</span></div>
         <div class="cy c-night"><i>🔪</i><b>02:00</b><span>Ночная смена: выбери постояльца, прокрадись мимо неспящих, попади в ритм.</span></div>
         <div class="cy c-morning"><i>📁</i><b>Утро</b><span>Бумаги и следы, закупки, ремонт, подкуп, персонал.</span></div>
@@ -90,7 +90,7 @@ const Game = {
     G.phase = 'sleep';
     Sound.sfx('close');
     prompt('');
-    const left = Kitchen.customers.filter(c => c.state === 'wait').length;
+    const left = Kitchen.customers.filter(c => c.state === 'wait' || c.state === 'order').length;
     if (left) { addRep(-left * 0.5); }
     Kitchen.customers = []; Kitchen.tray = [];
     G.time = CLOSE_TIME;
