@@ -32,8 +32,8 @@ fi
 # файлы игры
 echo "→ Копирую игру в $WEBROOT"
 mkdir -p "$WEBROOT"
-rm -rf "$WEBROOT/css" "$WEBROOT/js" "$WEBROOT/fonts"
-cp -r "$SRC/index.html" "$SRC/css" "$SRC/js" "$SRC/fonts" "$WEBROOT/"
+rm -rf "$WEBROOT/css" "$WEBROOT/js" "$WEBROOT/fonts" "$WEBROOT/icons"
+cp -r "$SRC/index.html" "$SRC/css" "$SRC/js" "$SRC/fonts" "$SRC/icons" "$WEBROOT/"
 find "$WEBROOT" -type d -exec chmod 755 {} +
 find "$WEBROOT" -type f -exec chmod 644 {} +
 
