@@ -75,31 +75,24 @@ const UI = (() => {
       if (opts.who) {
         if (!/class="tw/.test(text)) text = text.replace(/<p>([^<]*)<\/p>/, '<p class="tw speech">$1</p>');
         this.open(`<div class="talk">
-          <div class="portrait"><img src="${portraitURL(opts.who.look)}" alt=""><div class="nameplate">${opts.who.name}</div></div>
+          <div class="portrait"><img src="${portraitURL(opts.who.look, opts.who.mood)}" alt=""><div class="nameplate">${opts.who.name}</div></div>
           <div class="talk-body"><h2>${title}</h2>${text}<div class="btns">${btns}</div></div></div>`, h, Object.assign({ talk: true }, opts));
       } else this.open(`<h2>${title}</h2>${text}<div class="btns">${btns}</div>`, h, opts);
     },
     // реплика персонажа: E / клик — дальше
-    talk(look, name, line, then) {
-      this.choice('', `<p class="tw speech">${line}</p>`, [{ t: 'Дальше ▸', cls: 'primary', fn: then }], { who: { look, name }, closable: true });
+    talk(look, name, line, then, mood) {
+      this.choice('', `<p class="tw speech">${line}</p>`, [{ t: 'Дальше ▸', cls: 'primary', fn: then }], { who: { look, name, mood }, closable: true });
     }
   };
 })();
 
-// портрет: голова и плечи персонажа крупно
+// детальный портрет 64×64 (gfx/portrait.js), кэш по персонажу и эмоции
 const _portraits = new Map();
-function portraitURL(look) {
+function portraitURL(look, mood = 'neutral') {
   if (!look._id) Object.defineProperty(look, '_id', { value: _lookId++, enumerable: false });
-  if (_portraits.has(look._id)) return _portraits.get(look._id);
-  const spr = buildChar(look, 'down', 0, false);
-  const [c, x] = makeCanvas(32, 32);
-  const g = x.createLinearGradient(0, 0, 0, 32); g.addColorStop(0, '#8ab8d8'); g.addColorStop(1, '#d8c8a0');
-  x.fillStyle = g; x.fillRect(0, 0, 32, 32);
-  x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(0, 22, 32, 10);
-  x.drawImage(spr, 2, look.chef ? 3 : 0, 28, 32, 2, 1, 28, 32);
-  const url = c.toDataURL();
-  _portraits.set(look._id, url);
-  return url;
+  const key = look._id + mood;
+  if (!_portraits.has(key)) _portraits.set(key, buildPortrait(look, mood).toDataURL());
+  return _portraits.get(key);
 }
 
 function toast(msg, cls = '') {

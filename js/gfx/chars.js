@@ -30,7 +30,7 @@ function randomLook(kind) {
 }
 const PLAYER_LOOK = { skin: '#f8d8b8', hair: '#4a2c18', eye: '#3a2a1a', shirt: '#f4f2ec', pants: '#3a3a44', shoes: '#1e1a1e', style: 'short', outfit: 'chef', build: 'avg', chef: true };
 const NIGHT_LOOK = { skin: '#f8d8b8', hair: '#4a2c18', eye: '#3a2a1a', shirt: '#2a2a36', pants: '#1e1e26', shoes: '#1e1a1e', style: 'hood', outfit: 'hoodie', build: 'avg' };
-const SHERIFF_LOOK = { skin: '#e8b890', hair: '#5a3a20', eye: '#3a5a8a', shirt: '#c8a868', shirt2: '#e8dcc0', pants: '#5a5040', shoes: '#3a2418', style: 'cowboy', hat: '#8a6a40', outfit: 'jacket', build: 'heavy', beard: 'mustache' };
+const SHERIFF_LOOK = { skin: '#e8b890', hair: '#5a3a20', eye: '#3a5a8a', shirt: '#c8a868', shirt2: '#e8dcc0', pants: '#5a5040', shoes: '#3a2418', style: 'cowboy', hat: '#8a6a40', outfit: 'jacket', build: 'heavy', beard: 'mustache', badge: true };
 const INSPECTOR_LOOK = { skin: '#f0c49c', hair: '#9a9aa2', eye: '#2a1a22', shirt: '#6a6a74', pants: '#6a6a74', shoes: '#1e1a1e', style: 'short', outfit: 'suit', build: 'thin', glasses: true, old: true };
 const KNOWER_LOOK = { skin: '#d8b090', hair: '#3a2a1a', eye: '#6a4426', shirt: '#4a5a3a', pants: '#3a3a44', shoes: '#3a2418', style: 'mohawk', outfit: 'hoodie', build: 'thin', beard: 'stubble' };
 const GHOST_LOOK = { skin: '#dfe4ee', hair: '#c8ccd8', eye: '#1a1a2a', shirt: '#b8bccb', pants: '#a8acbb', shoes: '#9a9eac', style: 'long', outfit: 'dress', build: 'thin', female: true };

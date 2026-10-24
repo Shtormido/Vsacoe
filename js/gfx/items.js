@@ -103,3 +103,41 @@ function drawCar(ctx, nx, ny, col) {
   boxShadow(ctx, nx + 3, ny + 6, 26, 46, 0.32, 4);
   ctx.drawImage(s, nx, ny);
 }
+
+// ---------- иконки ингредиентов (для меню) ----------
+function buildIngredient(id) {
+  const [c, x] = makeCanvas(14, 14);
+  const r = (X, Y, w, h, col) => { x.fillStyle = col; x.fillRect(X + 1, Y + 1, w, h); };
+  switch (id) {
+    case 'meat':
+      r(1, 3, 10, 7, '#d0505a'); r(0, 4, 12, 5, '#d0505a'); r(2, 2, 7, 1, '#d0505a'); r(2, 4, 3, 1, '#f8e0e0'); r(6, 6, 4, 1, '#f8e0e0'); r(3, 8, 2, 1, '#f8e0e0'); r(1, 9, 9, 1, '#a03040'); r(10, 4, 1, 5, '#a03040'); break;
+    case 'pet':
+      r(0, 3, 12, 8, '#e8d8c0'); r(0, 3, 12, 1, '#fff4e0'); r(1, 4, 10, 6, '#c86a5a'); r(4, 6, 4, 3, '#5a3a2a'); r(3, 4, 1, 1, '#5a3a2a'); r(5, 4, 1, 1, '#5a3a2a'); r(7, 4, 1, 1, '#5a3a2a'); r(9, 5, 1, 1, '#5a3a2a'); break;
+    case 'special':
+      r(1, 4, 9, 7, '#7a1a1e'); r(0, 5, 11, 5, '#7a1a1e'); r(2, 5, 3, 1, '#b0303a'); r(1, 10, 9, 1, '#4a0a10');
+      r(8, 1, 2, 5, '#f4f0e0'); r(7, 0, 2, 2, '#f4f0e0'); r(10, 0, 2, 2, '#f4f0e0'); r(4, 11, 1, 2, '#9a1a22'); r(4, 12, 1, 1, '#c02030'); break;
+    case 'buns':
+      r(1, 2, 10, 6, '#d8963a'); r(2, 1, 8, 1, '#d8963a'); r(2, 2, 4, 1, '#f0b860'); r(3, 4, 1, 1, '#fff4d0'); r(6, 3, 1, 1, '#fff4d0'); r(8, 5, 1, 1, '#fff4d0');
+      r(1, 8, 10, 3, '#c8803a'); r(1, 10, 10, 1, '#a0602a'); break;
+    case 'veg':
+      r(0, 2, 7, 7, '#5aa83a'); r(1, 1, 5, 1, '#5aa83a'); r(1, 3, 2, 3, '#8ad060'); r(3, 2, 1, 6, '#3a7a2a');
+      r(6, 5, 6, 6, '#d83a3a'); r(7, 6, 4, 4, '#f05a4a'); r(8, 7, 2, 2, '#f8d0a0'); break;
+    case 'sauce':
+      r(4, 0, 3, 2, '#e8e4dc'); r(3, 2, 5, 1, '#e8e4dc'); r(2, 3, 7, 9, '#d02a2a'); r(3, 4, 1, 7, '#f05a4a'); r(8, 3, 1, 9, '#901a1a'); r(3, 6, 5, 3, '#f4f0e0'); r(4, 7, 3, 1, '#d02a2a'); break;
+    case 'chicken':
+      r(1, 1, 7, 7, '#d8a040'); r(0, 2, 9, 5, '#d8a040'); r(2, 2, 3, 2, '#f0c870'); r(7, 7, 2, 2, '#c08030'); r(8, 8, 2, 3, '#f4f0e0'); r(9, 10, 3, 2, '#f4f0e0'); break;
+    case 'potato':
+      r(1, 3, 10, 7, '#b88a50'); r(2, 2, 7, 1, '#b88a50'); r(2, 3, 3, 2, '#d8aa70'); r(4, 6, 1, 1, '#7a5a30'); r(8, 4, 1, 1, '#7a5a30'); r(6, 8, 1, 1, '#7a5a30'); r(1, 9, 9, 1, '#8a6a3a'); break;
+    case 'blanks':
+      r(2, 0, 9, 12, '#f4f0e0'); r(1, 1, 9, 12, '#fffcf0'); for (let j = 3; j < 10; j += 2) r(2, j, 6, 1, '#a8a090'); r(6, 8, 4, 3, '#c02a3a'); r(7, 9, 2, 1, '#f08090'); break;
+  }
+  return outline(c);
+}
+
+// картинка (dataURL) для HTML-меню
+const _iconUrl = new Map();
+function iconURL(kind, id, meat) {
+  const key = kind + id + (meat || '');
+  if (!_iconUrl.has(key)) _iconUrl.set(key, (kind === 'dish' ? buildItem(id, meat) : buildIngredient(id)).toDataURL());
+  return _iconUrl.get(key);
+}

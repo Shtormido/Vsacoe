@@ -257,7 +257,7 @@ const Kitchen = {
     });
     if (!gave) {
       c.bubble = '💬'; c.bubbleT = 3;
-      UI.talk(c.look, c.name, pick(TALK[c.type]));
+      UI.talk(c.look, c.name, pick(TALK[c.type]), null, c.patience / c.maxPatience < 0.3 ? 'angry' : c.type === 'regular' ? 'happy' : c.attention > 0.5 ? 'sus' : 'neutral');
       return;
     }
     if (c.order.every(o => o.done)) { c.state = 'eat'; c.eatT = 4; }
@@ -496,7 +496,7 @@ const Events = {
         else { addRep(3); toast('Инспекция пройдена!', 'good'); }
       } },
       { t: 'Сунуть $60', dis: G.money < 60, fn: () => { G.money -= 60; if (chance(0.8)) toast('Инспектор «ничего не заметил»', 'good'); else { addSuspicion(8); toast('Инспектор оскорбился!', 'bad'); } } }
-    ], { who: { look: INSPECTOR_LOOK, name: 'Инспектор Грэм' } });
+    ], { who: { look: INSPECTOR_LOOK, name: 'Инспектор Грэм', mood: G.cleanliness < 50 ? 'angry' : 'neutral' } });
   },
   sheriff() {
     const tails = G.tails.length, badJ = G.tails.filter(t => t.bad).length;
@@ -505,7 +505,7 @@ const Events = {
       { t: 'Угостить за счёт заведения', fn: () => this.sheriffCheck(0) },
       { t: 'Показать журнал регистрации', fn: () => this.sheriffCheck(badJ ? 0.25 : -0.15) },
       { t: 'Подкуп $150', dis: G.money < 150, fn: () => { G.money -= 150; if (chance(0.6)) { addSuspicion(-10); toast('Шериф довольно хмыкнул', 'good'); } else { addSuspicion(15); toast('Шериф: «Ты меня за кого держишь?»', 'bad'); } } }
-    ], { who: { look: SHERIFF_LOOK, name: 'Шериф Коулман' } });
+    ], { who: { look: SHERIFF_LOOK, name: 'Шериф Коулман', mood: 'sus' } });
   },
   sheriffCheck(mod) {
     const p = G.suspicion / 220 + G.tails.length * 0.05 + mod;
@@ -518,6 +518,6 @@ const Events = {
       { t: 'Заплатить $200', dis: G.money < 200, fn: () => { G.money -= 200; toast('Он ухмыльнулся и ушёл', 'night'); } },
       { t: 'Послать его', fn: () => { addRumors(10); addSuspicion(10); toast('Он пообещал «поговорить с кем надо»', 'bad'); } },
       { t: 'Пригласить в мотель «поговорить»', fn: () => { G.flags.knowerGuest = true; addConscience(-3); toast('Он заселится сегодня. Ночь покажет.', 'night'); } }
-    ], { who: { look: KNOWER_LOOK, name: 'Тощий тип' } });
+    ], { who: { look: KNOWER_LOOK, name: 'Тощий тип', mood: 'happy' } });
   }
 };
