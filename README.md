@@ -32,7 +32,7 @@ sudo certbot --nginx -d motel.example.ru    # HTTPS (по желанию)
 - поддомен: добавь DNS-запись `motel.твой-сайт.ru` на IP сервера и `sudo ./deploy/install.sh motel.твой-сайт.ru`;
 - папкой на текущем сайте (`твой-сайт.ru/motel/`): `sudo ./deploy/install.sh --files-only` — скрипт скопирует игру и покажет 4 строки для конфига сайта.
 
-Обновить игру: `git pull`, затем снова `docker compose up -d --build` или `sudo ./deploy/install.sh …`.
+Обновить игру (nginx): `sudo sh deploy/update.sh` — скачает свежую версию, переустановит на тот же порт и покажет номер версии до и после. Docker: `git pull && docker compose up -d --build`.
 Если порт закрыт фаерволом: `sudo ufw allow 8080/tcp`. Работает на Ubuntu/Debian, CentOS/Fedora (SELinux учтён), Arch.
 
 ## Скачать для Linux
