@@ -233,6 +233,7 @@ const Morning = {
 
   upgEffect(k, l) {
     return {
+      equip: `все блюда: время ×${(1 - l * 0.1).toFixed(2)}`,
       grill: `гриль ${2 + l} места, вертел ${1 + l} · время ×${(1 - l * 0.12).toFixed(2)}`,
       fryer: `${2 + l} корзины · время ×${(1 - l * 0.12).toFixed(2)}`,
       recipes: `качество +${l * 10}%`,

@@ -9,16 +9,16 @@ const MEATS = {
 };
 
 const DISHES = {
-  burger:    { name: 'Бургер',    icon: '🍔', station: 'grill',    time: 7, price: 8,  meat: true, need: { buns: 1, veg: 1, sauce: 1 } },
-  shawarma:  { name: 'Шаурма',    icon: '🌯', station: 'spit',     time: 8, price: 9,  meat: true, need: { veg: 1, sauce: 1 } },
-  signature: { name: 'Фирменный', icon: '⭐', station: 'grill',    time: 10, price: 45, meat: true, special: 2, need: { buns: 1, veg: 1, sauce: 2 } },
-  nuggets:   { name: 'Наггетсы',  icon: '🍗', station: 'fryer',    time: 5, price: 5,  need: { chicken: 1 } },
-  fries:     { name: 'Картошка',  icon: '🍟', station: 'fryer',    time: 4, price: 4,  need: { potato: 1 } },
-  cola:      { name: 'Кола',      icon: '🥤', station: 'drinks',   time: 0, price: 2 },
-  fanta:     { name: 'Фанта',     icon: '🍊', station: 'drinks',   time: 0, price: 2 },
-  water:     { name: 'Вода',      icon: '💧', station: 'drinks',   time: 0, price: 1 },
-  tea:       { name: 'Чай',       icon: '🍵', station: 'drinks',   time: 0, price: 2 },
-  coffee:    { name: 'Кофе',      icon: '☕', station: 'drinks',   time: 0, price: 3 }
+  burger:    { name: 'Бургер',    icon: '🍔', station: 'grill',    time: 7, price: 10,  meat: true, need: { buns: 1, veg: 1, sauce: 1 } },
+  shawarma:  { name: 'Шаурма',    icon: '🌯', station: 'spit',     time: 8, price: 11,  meat: true, need: { veg: 1, sauce: 1 } },
+  signature: { name: 'Фирменный', icon: '⭐', station: 'grill',    time: 10, price: 55, meat: true, special: 2, need: { buns: 1, veg: 1, sauce: 2 } },
+  nuggets:   { name: 'Наггетсы',  icon: '🍗', station: 'fryer',    time: 5, price: 6,  need: { chicken: 1 } },
+  fries:     { name: 'Картошка',  icon: '🍟', station: 'fryer',    time: 4, price: 5,  need: { potato: 1 } },
+  cola:      { name: 'Кола',      icon: '🥤', station: 'drinks',   time: 0, price: 3 },
+  fanta:     { name: 'Фанта',     icon: '🍊', station: 'drinks',   time: 0, price: 3 },
+  water:     { name: 'Вода',      icon: '💧', station: 'drinks',   time: 0, price: 2 },
+  tea:       { name: 'Чай',       icon: '🍵', station: 'drinks',   time: 0, price: 3 },
+  coffee:    { name: 'Кофе',      icon: '☕', station: 'drinks',   time: 0, price: 4 }
 };
 const MAINS = ['burger', 'shawarma'], SIDES = ['nuggets', 'fries'], DRINKS = ['cola', 'fanta', 'water', 'tea', 'coffee'];
 
@@ -34,6 +34,7 @@ const SHOP = [
 ];
 
 const UPGRADES = {
+  equip:      { name: 'Кухонное оборудование', desc: 'Мощнее конфорки и фритюр: все блюда готовятся быстрее (−10% времени за уровень)', max: 3, cost: l => 160 + l * 140 },
   grill:      { name: 'Гриль',            desc: '+1 место на гриле и вертеле, быстрее готовка', max: 3, cost: l => 150 + l * 150 },
   fryer:      { name: 'Фритюр',           desc: '+1 корзина, быстрее жарка',                    max: 3, cost: l => 120 + l * 120 },
   recipes:    { name: 'Рецепты',          desc: '+10% к качеству блюд и чаевым',                max: 3, cost: l => 200 + l * 200 },
@@ -57,7 +58,7 @@ function newGame() {
     forgery: 0,
     stock: { meat: 15, pet: 0, special: 0, buns: 30, veg: 30, sauce: 30, chicken: 20, potato: 20, blanks: 2 },
     equip: { grill: 100, spit: 100, fryer: 100, drinks: 100 },
-    upgrades: { grill: 0, fryer: 0, recipes: 0, tray: 0, signature: 0, soundproof: 0, cameras: 0, tunnels: 0 },
+    upgrades: { equip: 0, grill: 0, fryer: 0, recipes: 0, tray: 0, signature: 0, soundproof: 0, cameras: 0, tunnels: 0 },
     staff: [], candidates: [], guests: [], tails: [], regulars: [],
     helperMeat: 'meat',
     stats: { served: 0, specialServed: 0, kills: 0, earned: 0, angry: 0 },
@@ -72,7 +73,13 @@ function save() {
   try { localStorage.setItem('motel-save', JSON.stringify(G)); } catch (e) { /* хранилище недоступно */ }
 }
 function loadSave() {
-  try { const s = localStorage.getItem('motel-save'); return s ? JSON.parse(s) : null; } catch (e) { return null; }
+  try {
+    const s = localStorage.getItem('motel-save'); if (!s) return null;
+    const g = JSON.parse(s);
+    // новые улучшения в старых сохранениях начинаются с нуля
+    g.upgrades = Object.assign(Object.fromEntries(Object.keys(UPGRADES).map(k => [k, 0])), g.upgrades);
+    return g;
+  } catch (e) { return null; }
 }
 function clearSave() { try { localStorage.removeItem('motel-save'); } catch (e) { /* ignore */ } }
 

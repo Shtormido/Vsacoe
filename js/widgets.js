@@ -33,6 +33,7 @@ function kitchenMods(stId) {
   const lvl = stId === 'fryer' ? G.upgrades.fryer : G.upgrades.grill;
   const parts = [`выносливость ${Math.round(G.stamina)} → ×${(1 + (100 - G.stamina) / 120).toFixed(2)}`];
   if (lvl) parts.push(`улучшение ${lvl} → ×${(1 - lvl * 0.12).toFixed(2)}`);
+  if (G.upgrades.equip) parts.push(`оборудование ${G.upgrades.equip} → ×${(1 - G.upgrades.equip * 0.1).toFixed(2)}`);
   if (hasStaff('helper')) parts.push('помощник → ×0.85');
   return parts.join(' · ');
 }

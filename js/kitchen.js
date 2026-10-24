@@ -1,9 +1,9 @@
 // Дневная фаза: закусочная 8:00–00:00
 const CUSTOMER_TYPES = {
-  traveler: { name: 'Проезжий',      patience: 55, tip: 0.05, attention: 0.15 },
-  regular:  { name: 'Постоянный',    patience: 70, tip: 0.25, attention: 0.45 },
-  referral: { name: 'По рекомендации', patience: 60, tip: 0.15, attention: 0.3 },
-  rich:     { name: 'Богач',         patience: 50, tip: 0.4,  attention: 0.35 },
+  traveler: { name: 'Проезжий',      patience: 70, tip: 0.05, attention: 0.15 },
+  regular:  { name: 'Постоянный',    patience: 90, tip: 0.25, attention: 0.45 },
+  referral: { name: 'По рекомендации', patience: 75, tip: 0.15, attention: 0.3 },
+  rich:     { name: 'Богач',         patience: 65, tip: 0.4,  attention: 0.35 },
   ghost:    { name: '???',           patience: 20, tip: 0,    attention: 0 }
 };
 const TALK = {
@@ -27,7 +27,7 @@ const Kitchen = {
   startDay() {
     this.bg = this.bg || buildDinerBG();
     this.player = { x: 160, y: 60, dir: 'down', frame: 0, anim: 0 };
-    this.tray = []; this.customers = []; this.spawnT = 3; this.helperT = 6;
+    this.tray = []; this.customers = []; this.spawnT = 6; this.helperT = 6;
     const g = G.upgrades.grill, f = G.upgrades.fryer;
     this.stations = {
       grill:  { slots: Array(2 + g).fill(null), broken: G.equip.grill <= 0 },
@@ -47,7 +47,7 @@ const Kitchen = {
   cookMul(st) {
     const lvl = st === 'fryer' ? G.upgrades.fryer : G.upgrades.grill;
     const helper = hasStaff('helper') ? 0.85 : 1;
-    return (1 + (100 - G.stamina) / 120) * (1 - lvl * 0.12) * helper;
+    return (1 + (100 - G.stamina) / 120) * (1 - lvl * 0.12) * (1 - (G.upgrades.equip || 0) * 0.1) * helper;
   },
   errorChance() { return (100 - G.stamina) / 500 + G.stress / 400 + (G.conscience < 30 ? 0.05 : 0); },
 
@@ -71,9 +71,11 @@ const Kitchen = {
     // спавн клиентов
     this.spawnT -= dt;
     if (this.spawnT <= 0 && G.time < CLOSE_TIME - 30) {
-      const h = G.time / 60, peak = (h >= 12 && h < 14) || (h >= 18 && h < 20) ? 0.6 : 1;
-      this.spawnT = (9 - G.rep / 20) * peak * rnd(0.7, 1.3);
-      this.spawnCustomer();
+      // спокойный поток: реже клиенты и не больше 2–5 человек за стойкой (растёт с репутацией)
+      const h = G.time / 60, peak = (h >= 12 && h < 14) || (h >= 18 && h < 20) ? 0.75 : 1;
+      const maxIn = Math.min(5, 2 + Math.floor(G.rep / 30)), inside = this.customers.filter(c => c.state !== 'leave').length;
+      if (inside >= maxIn) this.spawnT = 3;
+      else { this.spawnT = Math.max(7, 15 - G.rep / 12) * peak * rnd(0.8, 1.25); this.spawnCustomer(); }
     }
 
     // события
@@ -455,6 +457,10 @@ const Kitchen = {
     drawJukebox(ctx, t);
     this.drawClock(ctx);
     DINER.stations.forEach(st => drawStation(ctx, st, this.stations[st.id] || { slots: [] }, t));
+    const eq = G.upgrades.equip || 0;
+    if (eq) DINER.stations.filter(st => ['grill', 'spit', 'fryer', 'drinks'].includes(st.id)).forEach(st => {
+      for (let i = 0; i < eq; i++) { const X = st.x * S + 4 + i * 7, Y = 76; R(ctx, X, Y - 1, 5, 5, '#5a3a10'); R(ctx, X + 2, Y - 2, 1, 1, '#ffd23a'); R(ctx, X, Y, 5, 1, '#ffd23a'); R(ctx, X + 1, Y + 1, 3, 2, '#ffd23a'); R(ctx, X + 2, Y, 1, 1, '#fff6b0'); }
+    });
     this.drawCooking(ctx, t);
 
     // повар
