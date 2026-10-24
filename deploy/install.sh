@@ -2,6 +2,7 @@
 # Установка игры на Linux-сервер с nginx.
 #   sudo ./deploy/install.sh                  — сайт на порту 8080 (http://IP:8080), другие сайты не трогаются
 #   sudo ./deploy/install.sh motel.example.ru — сайт на домене (порт 80), потом можно включить HTTPS
+#   sudo ./deploy/install.sh --files-only     — только скопировать игру, чтобы подключить папкой к своему сайту
 # Повторный запуск после git pull обновляет игру.
 set -eu
 
@@ -29,6 +30,20 @@ rm -rf "$WEBROOT/css" "$WEBROOT/js" "$WEBROOT/fonts"
 cp -r "$SRC/index.html" "$SRC/css" "$SRC/js" "$SRC/fonts" "$WEBROOT/"
 find "$WEBROOT" -type d -exec chmod 755 {} +
 find "$WEBROOT" -type f -exec chmod 644 {} +
+
+if [ "$DOMAIN" = "--files-only" ]; then
+  echo
+  echo "Игра скопирована в $WEBROOT. Чтобы она открывалась на твоём сайте по адресу /motel/,"
+  echo "добавь в блок server {…} своего сайта (обычно /etc/nginx/sites-available/…):"
+  echo
+  echo "    location /motel/ {"
+  echo "        alias $WEBROOT/;"
+  echo "        try_files \$uri \$uri/ =404;"
+  echo "    }"
+  echo
+  echo "Затем: sudo nginx -t && sudo systemctl reload nginx"
+  exit 0
+fi
 
 # конфиг сайта
 if [ -n "$DOMAIN" ]; then LISTEN=80; NAME="$DOMAIN"; else LISTEN="$PORT"; NAME="_"; fi
