@@ -84,6 +84,7 @@ const Sound = {
     if (!this.ready()) return;
     const t = this.now(), T = (...a) => this.tone(...a), N = (...a) => this.noise(...a);
     switch (name) {
+      case 'type': T('square', rnd(520, 640), t, 0.018, 0.012, null, { filter: 'lowpass', freq: 1800 }); break;
       case 'click': T('square', 900, t, 0.025, 0.035, null, { filter: 'lowpass', freq: 2500 }); break;
       case 'open': N(t, 0.18, 0.06, null, { freq: 600, fTo: 2400, q: 1.5, attack: 0.05 }); break;
       case 'good': [72, 76, 79].forEach((m, i) => T('triangle', mtof(m + 12), t + i * 0.06, 0.18, 0.06)); break;

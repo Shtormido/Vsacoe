@@ -257,7 +257,7 @@ const Kitchen = {
     });
     if (!gave) {
       c.bubble = '💬'; c.bubbleT = 3;
-      toast(`${c.name}: «${pick(TALK[c.type])}»`);
+      UI.talk(c.look, c.name, pick(TALK[c.type]));
       return;
     }
     if (c.order.every(o => o.done)) { c.state = 'eat'; c.eatT = 4; }
@@ -332,7 +332,7 @@ const Kitchen = {
   // ---------- взаимодействие ----------
   nearest() {
     const p = this.player, opts = [];
-    if (p.y < 54) DINER.stations.forEach(st => {
+    if (p.y < 62) DINER.stations.forEach(st => {
       const cx = st.x + st.w / 2;
       if (Math.abs(p.x - cx) > st.w / 2 + 6) return;
       opts.push({ d: Math.abs(p.x - cx), ax: cx, ay: 2, ...this.stationAction(st) });
@@ -379,7 +379,7 @@ const Kitchen = {
     const p = this.player;
     drawChar(ctx, p.x, p.y, PLAYER_LOOK, p.dir, p.frame);
     if (this.tray.length) {
-      const X = px(p.x), Y = px(p.y) - 58, w = this.tray.length * 13 + 4;
+      const X = px(p.x), Y = px(p.y) - (p.dir === 'up' ? 30 : 22), w = this.tray.length * 13 + 4;   // поднос в руках, на уровне груди
       R(ctx, X - w / 2 - 1, Y + 7, w + 2, 3, '#5a5e68'); R(ctx, X - w / 2, Y + 7, w, 1, '#c8ccd6');
       this.tray.forEach((it, i) => drawItem(ctx, it.dish, X - w / 2 + 9 + i * 13, Y, it.meat, it.burnt));
     }
@@ -441,7 +441,9 @@ const Kitchen = {
         if (!s.done) drawBar(ctx, cx - 8, 40, 16, prog, '#6fbf5a');
         else if (!s.burnt) {
           drawBar(ctx, cx - 8, 40, 16, 1 - s.over / 10, s.over > 6 ? '#d6453d' : '#f0c030');
-          drawItem(ctx, s.dish, cx, 30 + Math.round(Math.sin(t * 5 + i) * 2), s.meat);
+          const by = 31 + Math.round(Math.sin(t * 5 + i) * 1.5);
+          R(ctx, cx - 9, by - 9, 18, 17, '#22141c'); R(ctx, cx - 8, by - 8, 16, 15, '#fbf8f0'); R(ctx, cx - 8, by + 5, 16, 2, '#d8d0c0');
+          drawItem(ctx, s.dish, cx, by - 1, s.meat);
         }
         if (s.burnt) { if (Math.random() < 0.15) Particles.smoke(cx / S, 24); }
         else if (Math.random() < 0.06) Particles.steam(cx / S, 24);
@@ -465,7 +467,7 @@ const Kitchen = {
       }
     }
     if (c.state === 'eat') { if (Math.sin(t * 8 + c.id) > 0.6) R(ctx, X - 1, top + 2, 3, 2, '#f0d090'); }
-    if (c.bubbleT > 0 && c.bubble) this.drawEmote(ctx, X, top - 4, c.bubble, t);
+    if (c.bubbleT > 0 && c.bubble) this.drawEmote(ctx, X, top - (c.state === 'wait' && c.order.some(o => !o.done) ? 28 : 4), c.bubble, t);
   },
 
   drawEmote(ctx, X, Y, kind, t) {
@@ -494,7 +496,7 @@ const Events = {
         else { addRep(3); toast('Инспекция пройдена!', 'good'); }
       } },
       { t: 'Сунуть $60', dis: G.money < 60, fn: () => { G.money -= 60; if (chance(0.8)) toast('Инспектор «ничего не заметил»', 'good'); else { addSuspicion(8); toast('Инспектор оскорбился!', 'bad'); } } }
-    ]);
+    ], { who: { look: INSPECTOR_LOOK, name: 'Инспектор Грэм' } });
   },
   sheriff() {
     const tails = G.tails.length, badJ = G.tails.filter(t => t.bad).length;
@@ -503,7 +505,7 @@ const Events = {
       { t: 'Угостить за счёт заведения', fn: () => this.sheriffCheck(0) },
       { t: 'Показать журнал регистрации', fn: () => this.sheriffCheck(badJ ? 0.25 : -0.15) },
       { t: 'Подкуп $150', dis: G.money < 150, fn: () => { G.money -= 150; if (chance(0.6)) { addSuspicion(-10); toast('Шериф довольно хмыкнул', 'good'); } else { addSuspicion(15); toast('Шериф: «Ты меня за кого держишь?»', 'bad'); } } }
-    ]);
+    ], { who: { look: SHERIFF_LOOK, name: 'Шериф Коулман' } });
   },
   sheriffCheck(mod) {
     const p = G.suspicion / 220 + G.tails.length * 0.05 + mod;
@@ -516,6 +518,6 @@ const Events = {
       { t: 'Заплатить $200', dis: G.money < 200, fn: () => { G.money -= 200; toast('Он ухмыльнулся и ушёл', 'night'); } },
       { t: 'Послать его', fn: () => { addRumors(10); addSuspicion(10); toast('Он пообещал «поговорить с кем надо»', 'bad'); } },
       { t: 'Пригласить в мотель «поговорить»', fn: () => { G.flags.knowerGuest = true; addConscience(-3); toast('Он заселится сегодня. Ночь покажет.', 'night'); } }
-    ]);
+    ], { who: { look: KNOWER_LOOK, name: 'Тощий тип' } });
   }
 };

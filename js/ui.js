@@ -2,29 +2,37 @@
 const UI = (() => {
   const modal = document.getElementById('modal');
   const box = document.getElementById('modal-box');
-  let handlers = {}, closable = false, onClose = null;
+  let handlers = {}, closable = false, onClose = null, tw = null;
 
   box.addEventListener('click', e => {
     const el = e.target.closest('[data-a]');
-    if (!el || el.disabled) return;
+    if (!el) { UI.skipType(); return; }
+    if (el.disabled) return;
     Sound.sfx('click');
     const fn = handlers[el.dataset.a];
     if (fn) fn(el.dataset.v, el);
   });
 
+  // ночные сцены — тёмная рамка, дневные — пергамент
+  const theme = () => ['day', 'morning'].includes(G && G.phase) ? 'paper' : 'dark';
+
   return {
-    // html: разметка, h: { действие: функция }, opts: { closable, onClose }
+    // html: разметка, h: { действие: функция }, opts: { closable, onClose, wide }
     open(html, h = {}, opts = {}) {
       handlers = h; closable = !!opts.closable; onClose = opts.onClose || null;
       if (!this.isOpen()) Sound.sfx('open');
+      box.className = theme() + (opts.talk ? ' talk-box' : '');
       box.innerHTML = html;
+      modal.classList.toggle('bottom', !!opts.talk);
       modal.classList.remove('hidden');
       box.scrollTop = 0;
       Keys.actPressed = false; Keys.spacePressed = false;
+      this.startType();
     },
     // обновить содержимое, не сбрасывая прокрутку
     refresh(html, h) { const s = box.scrollTop; box.innerHTML = html; if (h) handlers = h; box.scrollTop = s; },
     close() {
+      clearInterval(tw); tw = null;
       modal.classList.add('hidden'); box.innerHTML = '';
       const cb = onClose; onClose = null; handlers = {};
       Keys.actPressed = false;
@@ -32,14 +40,67 @@ const UI = (() => {
     },
     isOpen() { return !modal.classList.contains('hidden'); },
     escape() { if (this.isOpen() && closable) this.close(); },
-    // короткий диалог с кнопками: [{ t, fn, cls, dis }]
+
+    // печатающийся текст в элементах .tw
+    startType() {
+      clearInterval(tw);
+      const els = [...box.querySelectorAll('.tw')];
+      if (!els.length) return;
+      const full = els.map(e => e.textContent);
+      els.forEach(e => { e.textContent = ''; });
+      box.classList.add('typing');
+      let i = 0, k = 0;
+      tw = setInterval(() => {
+        if (i >= els.length) { this.skipType(); return; }
+        for (let n = 0; n < 2 && i < els.length; n++) {
+          els[i].textContent = full[i].slice(0, ++k);
+          if (k >= full[i].length) { i++; k = 0; }
+        }
+        if (k % 4 === 1) Sound.sfx('type');
+      }, 22);
+      this._full = [els, full];
+    },
+    skipType() {
+      if (!tw) return;
+      clearInterval(tw); tw = null;
+      const [els, full] = this._full; els.forEach((e, i) => { e.textContent = full[i]; });
+      box.classList.remove('typing');
+    },
+    typing() { return !!tw; },
+
+    // диалог с кнопками: [{ t, fn, cls, dis }]; opts.who = { look, name } — с портретом
     choice(title, text, buttons, opts = {}) {
       const h = {};
       const btns = buttons.map((b, i) => { h['c' + i] = () => { if (!b.keep) this.close(); b.fn && b.fn(); }; return `<button class="b ${b.cls || ''}" data-a="c${i}" ${b.dis ? 'disabled' : ''}>${b.t}</button>`; }).join('');
-      this.open(`<h2>${title}</h2>${text}<div class="btns">${btns}</div>`, h, opts);
+      if (opts.who) {
+        if (!/class="tw/.test(text)) text = text.replace(/<p>([^<]*)<\/p>/, '<p class="tw speech">$1</p>');
+        this.open(`<div class="talk">
+          <div class="portrait"><img src="${portraitURL(opts.who.look)}" alt=""><div class="nameplate">${opts.who.name}</div></div>
+          <div class="talk-body"><h2>${title}</h2>${text}<div class="btns">${btns}</div></div></div>`, h, Object.assign({ talk: true }, opts));
+      } else this.open(`<h2>${title}</h2>${text}<div class="btns">${btns}</div>`, h, opts);
+    },
+    // реплика персонажа: E / клик — дальше
+    talk(look, name, line, then) {
+      this.choice('', `<p class="tw speech">${line}</p>`, [{ t: 'Дальше ▸', cls: 'primary', fn: then }], { who: { look, name }, closable: true });
     }
   };
 })();
+
+// портрет: голова и плечи персонажа крупно
+const _portraits = new Map();
+function portraitURL(look) {
+  if (!look._id) Object.defineProperty(look, '_id', { value: _lookId++, enumerable: false });
+  if (_portraits.has(look._id)) return _portraits.get(look._id);
+  const spr = buildChar(look, 'down', 0, false);
+  const [c, x] = makeCanvas(32, 32);
+  const g = x.createLinearGradient(0, 0, 0, 32); g.addColorStop(0, '#8ab8d8'); g.addColorStop(1, '#d8c8a0');
+  x.fillStyle = g; x.fillRect(0, 0, 32, 32);
+  x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(0, 22, 32, 10);
+  x.drawImage(spr, 2, look.chef ? 3 : 0, 28, 32, 2, 1, 28, 32);
+  const url = c.toDataURL();
+  _portraits.set(look._id, url);
+  return url;
+}
 
 function toast(msg, cls = '') {
   Sound.sfx(cls === 'bad' ? 'bad' : cls === 'good' ? 'good' : 'toast');

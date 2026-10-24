@@ -28,6 +28,11 @@ window.addEventListener('keydown', e => {
   Sound.unlock();
   if (e.code === 'KeyM') { Sound.toggleMute(); return; }
   if (e.code === 'Escape') { UI.escape(); return; }
+  if (UI.isOpen() && (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') && document.querySelector('#modal-box.talk-box')) {
+    e.preventDefault();
+    if (UI.typing()) UI.skipType(); else { const b = document.querySelector('#modal-box .btns .b.primary:not([disabled])') || document.querySelector('#modal-box .btns .b:not([disabled])'); if (b) b.click(); }
+    return;
+  }
   const k = KEYMAP[e.code];
   if (k) { setKey(k, true); if (!UI.isOpen() || k === 'space') e.preventDefault(); }
 });

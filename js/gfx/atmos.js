@@ -112,7 +112,7 @@ const Atmos = {
   },
   // лужи с отражением неона
   drawPuddles(ctx, t, neonOn) {
-    [[330, 322, 22, 5], [468, 300, 16, 4], [596, 338, 20, 5], [410, 350, 14, 3]].forEach(([x, y, w, h], i) => {
+    [[306, 330, 18, 5], [452, 348, 18, 4], [560, 350, 20, 5], [376, 346, 14, 3]].forEach(([x, y, w, h], i) => {
       ctx.fillStyle = 'rgba(20,24,40,0.55)'; ctx.beginPath(); ctx.ellipse(x, y, w, h, 0, 0, 7); ctx.fill();
       ctx.fillStyle = 'rgba(120,140,190,0.25)'; ctx.fillRect(x - w + 4, y - 1, w * 2 - 8, 1);
       if (neonOn) { ctx.fillStyle = 'rgba(255,70,130,0.28)'; ctx.fillRect(x - 6, y - 2, 12, 3); }
