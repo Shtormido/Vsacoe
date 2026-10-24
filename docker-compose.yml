@@ -1,0 +1,7 @@
+services:
+  motel:
+    build: .
+    image: pridorozhny-motel
+    ports:
+      - "8080:80"
+    restart: unless-stopped

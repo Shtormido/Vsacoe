@@ -5,6 +5,31 @@
 Днём — повар закусочной при мотеле (08:00–00:00), ночью — тихая ночная заготовка особого ресурса,
 утром — приведение бумаг в порядок, закупки, ремонт, подкуп и управление персоналом.
 
+## Установка на Linux-сервер (сайт)
+
+**Вариант 1 — Docker** (проще всего):
+
+```
+git clone https://github.com/Shtormido/Vsacoe.git motel && cd motel
+git checkout Придорожный-Мотель
+docker compose up -d --build
+```
+
+Игра откроется на `http://IP-сервера:8080`. Порт меняется в `docker-compose.yml`.
+
+**Вариант 2 — nginx** (скрипт сам поставит nginx, если его нет; другие сайты не трогает):
+
+```
+git clone https://github.com/Shtormido/Vsacoe.git motel && cd motel
+git checkout Придорожный-Мотель
+sudo ./deploy/install.sh                    # http://IP-сервера:8080
+sudo ./deploy/install.sh motel.example.ru   # на своём домене, порт 80
+sudo certbot --nginx -d motel.example.ru    # HTTPS (по желанию)
+```
+
+Обновить игру: `git pull`, затем снова `docker compose up -d --build` или `sudo ./deploy/install.sh …`.
+Если порт закрыт фаерволом: `sudo ufw allow 8080/tcp`. Работает на Ubuntu/Debian, CentOS/Fedora (SELinux учтён), Arch.
+
 ## Скачать для Linux
 
 Готовые сборки — на странице **Releases** репозитория:

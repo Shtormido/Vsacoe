@@ -1,0 +1,64 @@
+#!/bin/sh
+# Установка игры на Linux-сервер с nginx.
+#   sudo ./deploy/install.sh                  — сайт на порту 8080 (http://IP:8080), другие сайты не трогаются
+#   sudo ./deploy/install.sh motel.example.ru — сайт на домене (порт 80), потом можно включить HTTPS
+# Повторный запуск после git pull обновляет игру.
+set -eu
+
+DOMAIN="${1:-}"
+PORT="${PORT:-8080}"
+WEBROOT="${WEBROOT:-/var/www/motel}"
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+
+[ "$(id -u)" -eq 0 ] || { echo "Запусти через sudo: sudo $0 $*"; exit 1; }
+
+# nginx
+if ! command -v nginx >/dev/null 2>&1; then
+  echo "→ Устанавливаю nginx"
+  if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq nginx
+  elif command -v dnf >/dev/null; then dnf install -y nginx
+  elif command -v yum >/dev/null; then yum install -y nginx
+  elif command -v pacman >/dev/null; then pacman -Sy --noconfirm nginx
+  else echo "Не знаю, как поставить nginx на этой системе. Поставь вручную и запусти скрипт снова."; exit 1; fi
+fi
+
+# файлы игры
+echo "→ Копирую игру в $WEBROOT"
+mkdir -p "$WEBROOT"
+rm -rf "$WEBROOT/css" "$WEBROOT/js" "$WEBROOT/fonts"
+cp -r "$SRC/index.html" "$SRC/css" "$SRC/js" "$SRC/fonts" "$WEBROOT/"
+find "$WEBROOT" -type d -exec chmod 755 {} +
+find "$WEBROOT" -type f -exec chmod 644 {} +
+
+# конфиг сайта
+if [ -n "$DOMAIN" ]; then LISTEN=80; NAME="$DOMAIN"; else LISTEN="$PORT"; NAME="_"; fi
+if [ -d /etc/nginx/sites-available ]; then
+  CONF=/etc/nginx/sites-available/motel.conf
+  ln -sf "$CONF" /etc/nginx/sites-enabled/motel.conf
+else
+  CONF=/etc/nginx/conf.d/motel.conf
+fi
+# IPv6 включаем, только если он есть на сервере — иначе nginx не стартует
+if [ -f /proc/net/if_inet6 ]; then V6=''; else V6='/\[::\]/d'; fi
+sed -e "s/LISTEN/$LISTEN/g" -e "s/SERVER_NAME/$NAME/" -e "s#ROOT#$WEBROOT#" -e "${V6:-s/^\$//}" "$SRC/deploy/nginx-motel.conf" > "$CONF"
+echo "→ Конфиг: $CONF"
+
+command -v restorecon >/dev/null 2>&1 && restorecon -R "$WEBROOT" || true   # SELinux (CentOS, Fedora)
+
+nginx -t
+if [ -d /run/systemd/system ]; then
+  systemctl enable --now nginx
+  systemctl reload nginx
+else
+  nginx -s reload 2>/dev/null || nginx
+fi
+
+echo
+if [ -n "$DOMAIN" ]; then
+  echo "Готово: http://$DOMAIN"
+  echo "HTTPS (бесплатный сертификат):  sudo apt install certbot python3-certbot-nginx && sudo certbot --nginx -d $DOMAIN"
+else
+  IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  echo "Готово: http://${IP:-IP-сервера}:$LISTEN"
+  echo "Если не открывается — открой порт:  sudo ufw allow $LISTEN/tcp"
+fi
