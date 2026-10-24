@@ -250,51 +250,63 @@ const Stealth = {
 
   draw(ctx, t) {
     ctx.drawImage(this.bg, 0, 0);
-    G.guests.forEach(g => { if (g.car) drawCar(ctx, 140 + g.room * 29 % 150, 150 + (g.room % 2) * 4, g.car); });
-    drawSign(ctx, t);
-    const door = MOTEL.doors[this.target.room];
-    R(ctx, door.x - 8, 12, 16, 1, '#e8a33d');
-    if (G.upgrades.tunnels) { R(ctx, MOTEL.hatch.x - 6, MOTEL.hatch.y - 3, 12, 6, '#2a1a12'); R(ctx, MOTEL.hatch.x - 5, MOTEL.hatch.y - 2, 10, 1, '#5a3a22'); }
-    this.npcs.forEach(n => drawChar(ctx, n.x, n.y, n.look, n.dir > 0 ? 'right' : 'left', n.frame));
-    const p = this.player;
-    drawChar(ctx, p.x, p.y, { skin: '#f1c27d', hair: '#3a2a1a', shirt: '#2a2a3a', pants: '#1a1a22' }, p.dir, p.frame);
+    const p = this.player, door = MOTEL.doors[this.target.room], TX = door.x * S;
+    // свет из-под дверей тех, кто не спит
+    G.guests.forEach(g => { if (g.alarm > 30 || g.suspicious > 45) { const X = MOTEL.doors[g.room].x * S; R(ctx, X - 14, 82, 28, 2, '#ffd27a'); } });
+    if (G.upgrades.tunnels) {
+      const X = px(MOTEL.hatch.x), Y = px(MOTEL.hatch.y);
+      R(ctx, X - 13, Y - 8, 26, 16, '#2a1810'); R(ctx, X - 12, Y - 7, 24, 14, '#6a4228');
+      for (let i = -10; i < 12; i += 6) R(ctx, X + i, Y - 7, 1, 14, '#4a2c1a');
+      R(ctx, X - 2, Y - 1, 4, 2, '#a8acb6');
+    }
+    G.guests.forEach(g => { if (g.car) { const sp = MOTEL.carSpot(g.room); drawCar(ctx, sp.x, sp.y, g.car); } });
+    drawLampPost(ctx);
+    const actors = this.npcs.map(n => ({ y: n.y, f: () => drawChar(ctx, n.x, n.y, n.look, n.dir > 0 ? 'right' : 'left', n.frame) }));
+    actors.push({ y: p.y, f: () => drawChar(ctx, p.x, p.y, NIGHT_LOOK, p.dir, p.frame) });
+    actors.sort((a, b) => a.y - b.y).forEach(a => a.f());
+    if (G.conscience < 40 && Math.sin(t * 1.3) > 0.9) drawChar(ctx, 300 - (t * 20 % 280), 60, GHOST_LOOK, 'left', Math.floor(t * 4), { alpha: 0.3 });
 
-    // темнота с кругом света вокруг игрока и фонарями неспящих
-    const dark = this.dark || (this.dark = document.createElement('canvas'));
-    dark.width = W; dark.height = H;
-    const d = dark.getContext('2d');
-    d.fillStyle = 'rgba(5,5,20,0.88)'; d.fillRect(0, 0, W, H);
-    d.globalCompositeOperation = 'destination-out';
-    const hole = (x, y, r) => { const gr = d.createRadialGradient(x, y, 2, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); d.fillStyle = gr; d.beginPath(); d.arc(x, y, r, 0, 7); d.fill(); };
-    hole(p.x, p.y - 8, 44);
-    hole(door.x, 30, 18);
-    hole(292, 112, 26);
+    // ночное освещение
+    Light.begin('#05051a', 0.9);
+    Light.hole(px(p.x), px(p.y) - 14, 80, 1);
+    MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) Light.hole(X, Y + 24, 44, 0.5); });
+    Light.hole(TX, 54, 34, 0.55 + Math.sin(t * 4) * 0.1);
+    Light.hole(201, 222, 56, 0.8); Light.hole(40, 312, 34, 0.45 + Math.random() * 0.1);
+    Light.hole(300, 300, 96, 0.85); Light.hole(578, 230, 90, 0.7);
     this.npcs.forEach(n => {
-      d.fillStyle = 'rgba(0,0,0,0.85)'; d.beginPath();
-      const f = n.dir > 0 ? 0 : Math.PI;
-      d.moveTo(n.x, n.y - 8); d.arc(n.x, n.y - 8, 58, f - 0.45, f + 0.45); d.closePath(); d.fill();
-      if (G.upgrades.cameras) hole(n.x, n.y - 8, 14);
+      Light.cone(px(n.x), px(n.y) - 16, n.dir > 0 ? 0 : Math.PI, 116, 0.45, 0.85);
+      if (G.upgrades.cameras) Light.hole(px(n.x), px(n.y) - 16, 26, 0.9);
     });
-    if (this.beam && this.beam.active) { d.fillStyle = 'rgba(0,0,0,0.9)'; d.fillRect(this.beam.x - 12, 0, 24, 98); }
-    d.globalCompositeOperation = 'source-over';
-    ctx.drawImage(dark, 0, 0);
+    if (this.beam && this.beam.active) Light.rect(px(this.beam.x) - 24, 0, 48, 196, 0.9);
+    Light.end(ctx);
+
+    MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) glow(ctx, X, Y, 20, 'rgba(255,210,140,A)', 0.3); });
+    glow(ctx, 201, 214, 24, 'rgba(160,255,170,A)', 0.2);
+    glow(ctx, 300, 240, 30, 'rgba(255,240,180,A)', 0.4);
+    drawSign(ctx, t);
     this.npcs.forEach(n => {
-      ctx.fillStyle = 'rgba(255,240,170,0.12)'; ctx.beginPath();
-      const f = n.dir > 0 ? 0 : Math.PI;
-      ctx.moveTo(n.x, n.y - 8); ctx.arc(n.x, n.y - 8, 58, f - 0.45, f + 0.45); ctx.closePath(); ctx.fill();
+      const f = n.dir > 0 ? 0 : Math.PI, X = px(n.x), Y = px(n.y) - 16;
+      ctx.fillStyle = 'rgba(255,240,170,0.1)'; ctx.beginPath(); ctx.moveTo(X, Y); ctx.arc(X, Y, 116, f - 0.45, f + 0.45); ctx.closePath(); ctx.fill();
+      R(ctx, X + (n.dir > 0 ? 4 : -8), Y + 2, 4, 2, '#fff8c0');
     });
-    if (this.beam && this.beam.active) { ctx.fillStyle = 'rgba(180,200,255,0.15)'; ctx.fillRect(this.beam.x - 12, 0, 24, 98); }
-    if (this.beam && this.beam.warn) { ctx.fillStyle = (t * 6 | 0) % 2 ? 'rgba(255,0,0,.25)' : 'rgba(0,80,255,.25)'; ctx.fillRect(0, 0, 8, H); }
-    if (G.conscience < 40 && Math.sin(t * 1.3) > 0.9) drawChar(ctx, 300 - (t * 20 % 280), 60, { skin: '#ddd', hair: '#ddd', shirt: '#ccc', pants: '#bbb' }, 'left', 0, { alpha: 0.25 });
+    if (this.beam && this.beam.active) { ctx.fillStyle = 'rgba(180,200,255,0.12)'; ctx.fillRect(px(this.beam.x) - 24, 0, 48, 196); }
+    if (this.beam && this.beam.warn) { ctx.fillStyle = (t * 6 | 0) % 2 ? 'rgba(255,40,40,.3)' : 'rgba(40,90,255,.3)'; ctx.fillRect(0, 0, 10, PH); ctx.fillRect(PW - 10, 0, 10, PH); }
+    // маркер цели
+    const by = 12 + Math.round(Math.sin(t * 5) * 2);
+    R(ctx, TX - 4, by, 9, 2, '#22141c'); R(ctx, TX - 3, by + 2, 7, 2, '#22141c'); R(ctx, TX - 2, by + 4, 5, 2, '#22141c');
+    R(ctx, TX - 3, by, 7, 1, '#ff6a6a'); R(ctx, TX - 2, by + 2, 5, 1, '#e04a4a'); R(ctx, TX - 1, by + 4, 3, 1, '#c03030');
 
     if (this.mode === 'strike') {
-      const s = this.strike;
-      R(ctx, 50, 130, 220, 34, 'rgba(0,0,0,.85)');
-      R(ctx, 60, 142, 200, 10, '#3a1a1a');
-      R(ctx, 60 + s.zx, 142, s.zone, 10, '#3f8a35');
-      R(ctx, 60 + s.pos - 1, 138, 3, 18, s.flash > 0 ? '#fff' : s.flash < 0 ? '#d6453d' : '#e8a33d');
-      for (let i = 0; i < 3; i++) R(ctx, 140 + i * 14, 133, 10, 4, i < s.hits ? '#d6453d' : '#555');
-      for (let i = 0; i < 2; i++) R(ctx, 64 + i * 8, 133, 5, 4, i < s.misses ? '#e8a33d' : '#333');
+      const s = this.strike, X0 = 120, Y0 = 290;
+      R(ctx, 98, 258, 444, 72, '#22141c'); R(ctx, 100, 260, 440, 68, '#3a2430'); R(ctx, 100, 260, 440, 2, '#5a3a48');
+      pText(ctx, 'SPACE', 320 - pTextW('SPACE', 2) / 2, 268, '#e8d8c8', 2, '#22141c');
+      R(ctx, X0 - 2, Y0 - 2, 404, 18, '#22141c'); R(ctx, X0, Y0, 400, 14, '#5a1e24');
+      for (let i = X0; i < X0 + 400; i += 8) R(ctx, i, Y0, 1, 14, '#4a161c');
+      R(ctx, X0 + s.zx * 2, Y0, s.zone * 2, 14, '#4f9a40'); R(ctx, X0 + s.zx * 2, Y0, s.zone * 2, 2, '#7ac860');
+      const mx = X0 + Math.round(s.pos * 2), mc = s.flash > 0 ? '#ffffff' : s.flash < 0 ? '#ff4a4a' : '#ffd040';
+      R(ctx, mx - 3, Y0 - 6, 7, 26, '#22141c'); R(ctx, mx - 2, Y0 - 5, 5, 24, mc);
+      for (let i = 0; i < 3; i++) { const X = 450 + i * 22, hit = i < s.hits; R(ctx, X, 268, 8, 10, '#22141c'); R(ctx, X + 1, 269, 6, 8, hit ? '#c02020' : '#5a4a50'); R(ctx, X + 2, 266, 4, 3, hit ? '#c02020' : '#5a4a50'); }
+      for (let i = 0; i < 2; i++) { const X = 112 + i * 16; R(ctx, X, 268, 12, 10, '#22141c'); R(ctx, X + 1, 269, 10, 8, i < s.misses ? '#f0a030' : '#4a3a40'); }
     }
   }
 };

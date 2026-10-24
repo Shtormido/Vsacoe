@@ -25,9 +25,9 @@ const Game = {
 
   fit() {
     const st = document.getElementById('stage');
-    const s = Math.min(st.clientWidth / W, st.clientHeight / H);
-    const k = s >= 2 ? Math.floor(s) : s;
-    canvas.style.width = W * k + 'px'; canvas.style.height = H * k + 'px';
+    const s = Math.min(st.clientWidth / PW, st.clientHeight / PH);
+    const k = s >= 2 ? Math.floor(s) : s >= 1 ? Math.floor(s * 2) / 2 : s;
+    canvas.style.width = Math.floor(PW * k) + 'px'; canvas.style.height = Math.floor(PH * k) + 'px';
   },
 
   title() {
@@ -136,16 +136,24 @@ const Game = {
 
   draw(t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (G.phase === 'day' && G.stamina < 25 && !UI.isOpen()) ctx.translate(rint(-1, 1) * (Math.random() < 0.3 ? 1 : 0), 0);
+    if (G.phase === 'day' && G.stamina < 25 && !UI.isOpen()) ctx.translate(rint(-1, 1) * (Math.random() < 0.3 ? S : 0), 0);
     if (G.phase === 'day') { Kitchen.draw(ctx, t); return; }
     if (G.phase === 'stealth') { Stealth.draw(ctx, t); return; }
-    // фон для меню: мотель снаружи
+    // фон для меню: мотель ночью или утром
     this.motelBG = this.motelBG || buildMotelBG();
     ctx.drawImage(this.motelBG, 0, 0);
+    G.guests.forEach(g => { if (g.car) { const sp = MOTEL.carSpot(g.room); drawCar(ctx, sp.x, sp.y, g.car); } });
+    drawLampPost(ctx);
+    const night = G.phase !== 'morning';
+    if (night) {
+      Light.begin('#05051a', 0.82);
+      MOTEL.lamps.forEach(([X, Y], i) => { if (i < 5) Light.hole(X, Y + 24, 44, 0.5); });
+      Light.hole(201, 222, 56, 0.8); Light.hole(300, 300, 96, 0.85); Light.hole(578, 230, 90, 0.7);
+      Light.end(ctx);
+    } else {
+      ctx.fillStyle = 'rgba(255,170,110,0.18)'; ctx.fillRect(0, 0, PW, PH);
+    }
     drawSign(ctx, t);
-    const night = G.phase === 'nightmenu' || G.phase === 'title' || G.phase === 'ending' || G.phase === 'sleep';
-    ctx.fillStyle = night ? 'rgba(5,5,25,.7)' : `rgba(230,150,90,${0.15})`;
-    ctx.fillRect(0, 0, W, H);
   },
 
   loop(ts) {

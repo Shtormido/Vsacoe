@@ -64,6 +64,7 @@ const Kitchen = {
     } else p.frame = 0;
 
     this.updateStations(dt);
+    Particles.update(dt);
     this.updateCustomers(dt);
     this.updateHelper(dt);
 
@@ -80,6 +81,7 @@ const Kitchen = {
 
     // взаимодействие
     const target = this.nearest();
+    this.target = target;
     prompt(target ? target.hint : '');
     if (consumeAct() && target) target.fn();
   },
@@ -194,7 +196,7 @@ const Kitchen = {
     if (type === 'ghost') order.push({ dish: pick(MAINS) });
     this.customers.push({
       id: uid(), type, name: person.name, look, seat, order, state: 'walk',
-      x: DINER.door.x, y: DINER.door.y, tx: DINER.seats[seat], ty: 104,
+      x: DINER.door.x, y: DINER.door.y, path: [{ x: DINER.door.x, y: DINER.aisleY }, { x: DINER.seats[seat], y: DINER.aisleY }, { x: DINER.seats[seat], y: DINER.seatY }],
       patience: t.patience, maxPatience: t.patience, attention: clamp(t.attention + rnd(-0.1, 0.15) + G.rumors / 400, 0, 1),
       eatT: 0, frame: 0, anim: 0, pay: 0, quality: 0, bubble: null, bubbleT: 0, served: []
     });
@@ -204,23 +206,22 @@ const Kitchen = {
     this.customers.forEach(c => {
       if (c.bubbleT > 0) c.bubbleT -= dt;
       if (c.state === 'walk' || c.state === 'leave') {
-        const dx = c.tx - c.x, dy = c.ty - c.y, l = Math.hypot(dx, dy);
-        if (l < 2) {
-          if (c.state === 'walk') c.state = 'wait';
-          else c.gone = true;
+        const wp = c.path[0];
+        const dx = wp.x - c.x, dy = wp.y - c.y, l = Math.hypot(dx, dy), sp = 50 * dt;
+        if (l <= sp) {
+          c.x = wp.x; c.y = wp.y; c.path.shift();
+          if (!c.path.length) { if (c.state === 'walk') c.state = 'wait'; else c.gone = true; }
         } else {
-          // сначала по вертикали в зал, потом к месту
-          const sp = 50 * dt;
-          if (Math.abs(dx) > 2 && c.y > 120) { c.x += Math.sign(dx) * Math.min(sp, Math.abs(dx)); c.dir = dx > 0 ? 'right' : 'left'; }
-          else { c.x += dx / l * sp; c.y += dy / l * sp; c.dir = dy < 0 ? 'up' : 'down'; }
-          c.anim += dt; if (c.anim > 0.15) { c.anim = 0; c.frame++; }
+          c.x += dx / l * sp; c.y += dy / l * sp;
+          c.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy < 0 ? 'up' : 'down');
+          c.anim += dt; if (c.anim > 0.14) { c.anim = 0; c.frame++; }
         }
       } else if (c.state === 'wait') {
         c.dir = 'up'; c.frame = 0;
         c.patience -= dt * (G.time > 22 * 60 ? 1.3 : 1);
         if (c.type === 'ghost' && c.patience <= 0) { c.gone = true; toast('…клиент исчез. Был ли он вообще?', 'night'); G.stress = clamp(G.stress + 10, 0, 100); return; }
         if (c.patience <= 0) {
-          c.state = 'leave'; c.tx = DINER.door.x; c.ty = DINER.door.y + 4; c.bubble = '😠'; c.bubbleT = 3;
+          this.leave(c); c.bubble = '😠'; c.bubbleT = 3;
           addRep(-1.5); G.dayLog.angry++; G.stats.angry++;
           toast(c.name + ' ушёл, не дождавшись заказа', 'bad');
         }
@@ -230,6 +231,11 @@ const Kitchen = {
       }
     });
     this.customers = this.customers.filter(c => !c.gone);
+  },
+
+  leave(c) {
+    c.state = 'leave'; c.frame = 0;
+    c.path = [{ x: c.x, y: DINER.aisleY }, { x: DINER.door.x, y: DINER.aisleY }, { x: DINER.door.x, y: DINER.door.y }];
   },
 
   serve(c) {
@@ -292,8 +298,9 @@ const Kitchen = {
       G.regulars.push({ name: c.name, look: c.look });
       toast(c.name + ' стал постоянным клиентом!', 'good');
     }
-    toast(`+$${total} от ${c.name}`, 'good');
-    c.state = 'leave'; c.tx = DINER.door.x; c.ty = DINER.door.y + 4;
+    Particles.text(c.x, c.y - 40, '+$' + total, '#ffe070');
+    if (q >= 1.4) Particles.sparkle(c.x, c.y - 30);
+    this.leave(c);
   },
 
   updateHelper(dt) {
@@ -323,14 +330,14 @@ const Kitchen = {
     if (p.y < 54) DINER.stations.forEach(st => {
       const cx = st.x + st.w / 2;
       if (Math.abs(p.x - cx) > st.w / 2 + 6) return;
-      opts.push({ d: Math.abs(p.x - cx), ...this.stationAction(st) });
+      opts.push({ d: Math.abs(p.x - cx), ax: cx, ay: 2, ...this.stationAction(st) });
     });
     if (p.y > 70) this.customers.forEach(c => {
       if (c.state !== 'wait' && c.state !== 'eat') return;
       const d = Math.abs(p.x - c.x);
       if (d > 14) return;
       const t = CUSTOMER_TYPES[c.type];
-      opts.push({ d, hint: c.state === 'eat' ? `${c.name} ест…` : `E — обслужить: ${c.name} (${t.name})`, fn: () => c.state === 'wait' && this.serve(c) });
+      opts.push({ d, ax: c.x, ay: c.y - 44, hint: c.state === 'eat' ? `${c.name} ест…` : `E — обслужить: ${c.name} (${t.name})`, fn: () => c.state === 'wait' && this.serve(c) });
     });
     opts.sort((a, b) => a.d - b.d);
     return opts[0];
@@ -354,44 +361,115 @@ const Kitchen = {
   // ---------- отрисовка ----------
   draw(ctx, t) {
     ctx.drawImage(this.bg, 0, 0);
-    // окна в зале
-    const sk = sky(G.time);
-    [[0, 112], [312, 112]].forEach(([wx, wy]) => { R(ctx, wx, wy - 14, 8, 30, '#3a2a1a'); R(ctx, wx + 1, wy - 13, 6, 28, sk); });
-    // часы на стене
-    R(ctx, 236, 4, 6, 6, '#fff'); R(ctx, 238, 5, 1, 3, '#000');
+    this.drawClock(ctx);
     DINER.stations.forEach(st => drawStation(ctx, st, this.stations[st.id] || { slots: [] }, t));
+    this.drawCooking(ctx, t);
+
+    // повар
     const p = this.player;
-    drawChar(ctx, p.x, p.y, { skin: '#f1c27d', hair: '#3a2a1a', shirt: '#eee', pants: '#333', apron: true, chefHat: true }, p.dir, p.frame);
-    // поднос в руках
-    this.tray.forEach((it, i) => R(ctx, p.x - 5 + i * 4, p.y - 26, 3, 3, it.meat === 'special' ? '#c33' : '#e8a33d'));
-    // клиенты (за стойкой видны сверху)
+    drawChar(ctx, p.x, p.y, PLAYER_LOOK, p.dir, p.frame);
+    if (this.tray.length) {
+      const X = px(p.x), Y = px(p.y) - 46, w = this.tray.length * 13 + 4;
+      R(ctx, X - w / 2 - 1, Y + 7, w + 2, 3, '#5a5e68'); R(ctx, X - w / 2, Y + 7, w, 1, '#c8ccd6');
+      this.tray.forEach((it, i) => drawItem(ctx, it.dish, X - w / 2 + 9 + i * 13, Y, it.meat, it.burnt));
+    }
+
+    // клиенты
+    const seated = c => (c.state === 'wait' || c.state === 'eat') || (c.path && c.path.length === 1 && c.state === 'walk');
     this.customers.slice().sort((a, b) => a.y - b.y).forEach(c => {
-      const ghost = c.type === 'ghost';
-      drawChar(ctx, c.x, c.y, c.look, c.dir || 'up', c.frame, { alpha: ghost ? 0.45 + Math.sin(t * 6) * 0.15 : 1 });
-      if (c.state === 'wait') {
-        // пузырь заказа
-        const items = c.order.filter(o => !o.done);
-        const bw = items.length * 7 + 3;
-        R(ctx, c.x - bw / 2, c.y - 36, bw, 9, '#fff'); R(ctx, c.x - 1, c.y - 27, 2, 2, '#fff');
-        items.forEach((o, i) => R(ctx, c.x - bw / 2 + 2 + i * 7, c.y - 34, 5, 5, dishColor(o.dish)));
-        // терпение
-        const pr = c.patience / c.maxPatience;
-        R(ctx, c.x - 6, c.y - 24, 12, 2, '#000'); R(ctx, c.x - 6, c.y - 24, 12 * pr, 2, pr > 0.5 ? '#6fbf5a' : pr > 0.25 ? '#e8a33d' : '#d6453d');
-        if (c.type === 'rich') R(ctx, c.x - 1, c.y - 40, 3, 3, '#ffd700');
-        if (c.type === 'regular') R(ctx, c.x - 1, c.y - 40, 3, 3, '#6fbf5a');
-      }
+      drawChar(ctx, c.x, c.y, c.look, c.dir || 'up', c.frame, { alpha: c.type === 'ghost' ? 0.4 + Math.sin(t * 6) * 0.15 : 1 });
     });
-    // вечер/ночь за окном: лёгкое затемнение
-    const h = G.time / 60;
-    if (h >= 20) { ctx.fillStyle = `rgba(20,10,40,${Math.min(0.35, (h - 20) / 10)})`; ctx.fillRect(0, 0, W, H); }
-    // галлюцинации
-    if (G.conscience < 40 && Math.sin(t * 0.7) > 0.97) { ctx.fillStyle = 'rgba(140,0,0,.25)'; ctx.fillRect(0, 0, W, H); }
+    drawStoolTops(ctx);
+    this.customers.forEach(c => { if (!seated(c)) drawChar(ctx, c.x, c.y, c.look, c.dir || 'up', c.frame); });
+    this.customers.forEach(c => this.drawBubble(ctx, c, t));
+
+    // стрелка над целью взаимодействия
+    if (this.target && this.target.ax != null && !UI.isOpen()) {
+      const X = px(this.target.ax), Y = px(this.target.ay) + Math.round(Math.sin(t * 6) * 2);
+      R(ctx, X - 4, Y, 9, 2, '#22141c'); R(ctx, X - 3, Y + 2, 7, 2, '#22141c'); R(ctx, X - 2, Y + 4, 5, 2, '#22141c'); R(ctx, X - 1, Y + 6, 3, 1, '#22141c');
+      R(ctx, X - 3, Y, 7, 1, '#ffe070'); R(ctx, X - 2, Y + 2, 5, 1, '#ffd040'); R(ctx, X - 1, Y + 4, 3, 1, '#f0b020');
+    }
+    Particles.draw(ctx);
+
+    // время суток и лампы
+    const tint = dayTint(G.time);
+    if (tint) {
+      Light.begin(tint[0], tint[1]);
+      if (G.time / 60 >= 19) {
+        [130, 320, 510].forEach(X => Light.hole(X, 110, 80, 0.8));
+        [80, 240, 400, 560].forEach(X => Light.hole(X, 236, 70, 0.75));
+      }
+      Light.end(ctx);
+      if (G.time / 60 >= 19) [80, 240, 400, 560].forEach(X => glow(ctx, X, 236, 60, 'rgba(255,200,120,A)', 0.1));
+    }
+    if (G.stamina < 25) { const v = ctx.createRadialGradient(PW / 2, PH / 2, PH * 0.35, PW / 2, PH / 2, PH * 0.75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,0,10,.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, PW, PH); }
+    if (G.conscience < 40 && Math.sin(t * 0.7) > 0.97) { ctx.fillStyle = 'rgba(140,0,0,.25)'; ctx.fillRect(0, 0, PW, PH); }
+  },
+
+  drawClock(ctx) {
+    const X = 448, Y = 30;
+    R(ctx, X - 10, Y - 10, 20, 20, '#3a2418'); R(ctx, X - 9, Y - 9, 18, 18, '#f8f4e8'); R(ctx, X - 9, Y - 9, 18, 1, '#ffffff');
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; R(ctx, X + Math.round(Math.sin(a) * 7), Y - Math.round(Math.cos(a) * 7), 1, 1, '#8a7a6a'); }
+    const hand = (a, len, col) => { for (let k = 0; k <= len; k++) R(ctx, X + Math.round(Math.sin(a) * k), Y - Math.round(Math.cos(a) * k), 1, 1, col); };
+    const m = G.time % 60, h = (G.time / 60) % 12;
+    hand(m / 60 * Math.PI * 2, 7, '#3a3a44'); hand(h / 12 * Math.PI * 2, 4, '#c03030');
+  },
+
+  drawCooking(ctx, t) {
+    const st = id => DINER.stations.find(s => s.id === id);
+    ['grill', 'spit', 'fryer'].forEach(id => {
+      const S0 = st(id), slots = this.stations[id].slots, n = slots.length;
+      const X = S0.x * S, w = S0.w * S, cw = (w - 8) / n;
+      slots.forEach((s, i) => {
+        if (!s) return;
+        const cx = X + 4 + i * cw + cw / 2;
+        if (id === 'grill') drawPatty(ctx, cx - cw / 2 + 2, 50, cw - 4, s.done ? 1 : s.t / s.total, s.meat, s.burnt);
+        const prog = s.done ? 1 : s.t / s.total;
+        if (!s.done) drawBar(ctx, cx - 8, 40, 16, prog, '#6fbf5a');
+        else if (!s.burnt) {
+          drawBar(ctx, cx - 8, 40, 16, 1 - s.over / 10, s.over > 6 ? '#d6453d' : '#f0c030');
+          drawItem(ctx, s.dish, cx, 30 + Math.round(Math.sin(t * 5 + i) * 2), s.meat);
+        }
+        if (s.burnt) { if (Math.random() < 0.15) Particles.smoke(cx / S, 24); }
+        else if (Math.random() < 0.06) Particles.steam(cx / S, 24);
+      });
+    });
+  },
+
+  drawBubble(ctx, c, t) {
+    const X = px(c.x), top = px(c.y) - 40;
+    if (c.state === 'wait' && c.type !== 'ghost') {
+      const items = c.order.filter(o => !o.done);
+      if (items.length) {
+        const w = items.length * 14 + 4, y = top - 18;
+        R(ctx, X - w / 2 - 1, y - 1, w + 2, 18, '#22141c'); R(ctx, X - w / 2, y, w, 16, '#fbf8f0'); R(ctx, X - w / 2, y + 14, w, 2, '#d8d0c0');
+        R(ctx, X - 2, y + 16, 4, 2, '#fbf8f0'); R(ctx, X - 1, y + 18, 2, 1, '#22141c'); R(ctx, X - 3, y + 16, 1, 2, '#22141c'); R(ctx, X + 2, y + 16, 1, 2, '#22141c');
+        items.forEach((o, i) => drawItem(ctx, o.dish, X - w / 2 + 9 + i * 14, y + 8));
+        const pr = c.patience / c.maxPatience;
+        drawBar(ctx, X - 10, y - 6, 20, pr, pr > 0.5 ? '#6fbf5a' : pr > 0.25 ? '#f0c030' : '#d6453d');
+        if (c.type === 'rich') { R(ctx, X + w / 2 - 2, y - 4, 5, 5, '#22141c'); R(ctx, X + w / 2 - 1, y - 3, 3, 3, '#ffd23a'); }
+        if (c.type === 'regular') { R(ctx, X + w / 2 - 3, y - 4, 2, 2, '#e05a6a'); R(ctx, X + w / 2, y - 4, 2, 2, '#e05a6a'); R(ctx, X + w / 2 - 3, y - 3, 5, 2, '#e05a6a'); R(ctx, X + w / 2 - 2, y - 1, 3, 1, '#e05a6a'); }
+      }
+    }
+    if (c.state === 'eat') { if (Math.sin(t * 8 + c.id) > 0.6) R(ctx, X - 1, top + 2, 3, 2, '#f0d090'); }
+    if (c.bubbleT > 0 && c.bubble) this.drawEmote(ctx, X, top - 4, c.bubble, t);
+  },
+
+  drawEmote(ctx, X, Y, kind, t) {
+    const y = Y - 14 - Math.round(Math.abs(Math.sin(t * 4)) * 2);
+    R(ctx, X - 8, y - 1, 16, 15, '#22141c'); R(ctx, X - 7, y, 14, 13, '#fbf8f0'); R(ctx, X - 1, y + 13, 3, 2, '#22141c');
+    const r = (a, b, w, h, col) => R(ctx, X + a, y + b, w, h, col);
+    switch (kind) {
+      case '😍': r(-5, 3, 4, 3, '#e04a5a'); r(1, 3, 4, 3, '#e04a5a'); r(-4, 6, 8, 2, '#e04a5a'); r(-2, 8, 4, 2, '#e04a5a'); r(-4, 4, 1, 1, '#ffb0b8'); break;
+      case '🙂': r(-3, 3, 2, 2, '#22141c'); r(2, 3, 2, 2, '#22141c'); r(-4, 7, 1, 1, '#22141c'); r(-3, 8, 7, 1, '#22141c'); r(4, 7, 1, 1, '#22141c'); break;
+      case '🤢': r(-5, 2, 11, 9, '#7ac860'); r(-3, 4, 2, 1, '#22141c'); r(2, 4, 2, 1, '#22141c'); r(-2, 8, 5, 1, '#22141c'); break;
+      case '😠': r(-5, 2, 2, 6, '#d83030'); r(-1, 2, 2, 6, '#d83030'); r(3, 2, 2, 6, '#d83030'); r(-5, 10, 2, 2, '#d83030'); r(-1, 10, 2, 2, '#d83030'); r(3, 10, 2, 2, '#d83030'); break;
+      case '🤨': r(-2, 2, 5, 1, '#3a3a8a'); r(2, 3, 2, 3, '#3a3a8a'); r(0, 6, 2, 2, '#3a3a8a'); r(0, 10, 2, 2, '#3a3a8a'); break;
+      case '👻': r(-4, 3, 8, 8, '#c8ccd8'); r(-2, 5, 1, 2, '#22141c'); r(1, 5, 1, 2, '#22141c'); break;
+      default: [-4, 0, 4].forEach((a, i) => r(a - 1, 6, 2, 2, (Math.floor(t * 4) % 3) === i ? '#22141c' : '#8a7a7a'));
+    }
   }
 };
-
-function dishColor(d) {
-  return { burger: '#c0703a', shawarma: '#e0c080', signature: '#ffd700', nuggets: '#d4a017', fries: '#f5d742', cola: '#3a1a0a', fanta: '#e8761c', water: '#8fc4e8', tea: '#9c6b30', coffee: '#4a2a14' }[d];
-}
 
 // Случайные дневные события
 const Events = {
