@@ -120,7 +120,10 @@ body { background: radial-gradient(ellipse at 50% 40%, #22161e 0%, #0c070b 75%);
 #sound-btn { position: absolute; top: 8px; right: 10px; z-index: 40; width: 34px; height: 34px; font-size: 16px; cursor: pointer;
   background: rgba(42,29,36,.85); color: var(--ink); border: 2px solid var(--border); }
 #sound-btn:hover { border-color: var(--accent); }
-.ver { font-size: 12px; color: var(--muted, #8a7a7a); margin-top: 4px; opacity: .8; }
+.ver { display: inline-block; margin-top: 8px; padding: 4px 10px; font-size: 14px; color: #ffe070; border: 2px solid #6a4a2a; background: rgba(42,29,36,.85); }
+/* версия всегда видна в левом верхнем углу */
+#version { position: absolute; top: 8px; left: 10px; z-index: 40; padding: 3px 8px; font-size: 12px; color: #ffe070; background: rgba(42,29,36,.85); border: 2px solid var(--border); pointer-events: none; }
+@media (max-width: 760px) { #version { display: none; } }  /* на телефоне версия — только на главном экране, иначе налезает на HUD */
 .sound-hint { font-size: 12px; color: var(--accent); animation: blink 1.6s infinite; }
 @keyframes blink { 50% { opacity: .35; } }
 

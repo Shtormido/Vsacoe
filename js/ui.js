@@ -158,3 +158,5 @@ function statsHTML() {
     <div>🏚 Мотель: <b>${tierOf(MOTEL_TIERS, G.rumors)}</b></div>
   </div>`;
 }
+
+document.getElementById('version').textContent = 'v' + GAME_VERSION;

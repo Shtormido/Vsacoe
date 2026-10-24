@@ -42,7 +42,7 @@ const Game = {
     UI.open(`<div class="title-screen">
         <div class="logo"><span class="l1">ПРИДОРОЖНЫЙ</span><span class="l2">МОТЕЛЬ</span><span class="l3">хоррор-кулинарный симулятор</span></div>
         <p class="sound-hint">🔊 Включи звук — у каждой фазы своя музыка</p>
-        <p class="ver">версия ${GAME_VERSION}</p>
+        <p class="ver">Версия ${GAME_VERSION}</p>
       </div>
       <div class="cycle">
         <div class="cy c-day"><i>☀</i><b>08:00–00:00</b><span>Закусочная: принимай заказы, готовь на гриле, вертеле, фритюре. Мясо выбираешь сам — и кому его подать.</span></div>
