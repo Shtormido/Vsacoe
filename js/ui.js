@@ -21,7 +21,7 @@ const UI = (() => {
     open(html, h = {}, opts = {}) {
       handlers = h; closable = !!opts.closable; onClose = opts.onClose || null;
       if (!this.isOpen()) Sound.sfx('open');
-      box.className = theme() + (opts.talk ? ' talk-box' : '');
+      box.className = theme() + (opts.talk ? ' talk-box' : '') + (opts.cls ? ' ' + opts.cls : '');
       box.innerHTML = html;
       modal.classList.toggle('bottom', !!opts.talk);
       modal.classList.remove('hidden');

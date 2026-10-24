@@ -27,6 +27,7 @@ function setKey(k, down) {
 window.addEventListener('keydown', e => {
   Sound.unlock();
   if (e.code === 'KeyM') { Sound.toggleMute(); return; }
+  if (e.code === 'KeyJ' || e.code === 'Tab') { e.preventDefault(); if (UI.isOpen() && document.querySelector('#modal-box.m-journal')) UI.close(); else Game.journal(); return; }
   if (e.code === 'Escape') { UI.escape(); return; }
   if (UI.isOpen() && (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') && document.querySelector('#modal-box.talk-box')) {
     e.preventDefault();

@@ -40,7 +40,7 @@ const Kitchen = {
     if (G.cleanliness < 60 || chance(0.15)) this.eventT.push({ at: rint(10, 20) * 60, type: 'sanitary' });
     if (G.suspicion > 30 && chance(0.25 + G.suspicion / 200)) this.eventT.push({ at: rint(9, 22) * 60, type: 'sheriff' });
     if (G.rumors > 20 && chance(0.3)) this.eventT.push({ at: rint(11, 22) * 60, type: 'knower' });
-    G.dayLog = { earned: 0, served: 0, angry: 0, special: 0 };
+    G.dayLog = { earned: 0, served: 0, angry: 0, special: 0, repStart: G.rep };
   },
 
   speedMul() { return 0.6 + G.stamina / 250; },
@@ -130,47 +130,108 @@ const Kitchen = {
     Sound.sfx('pickup');
   },
 
+  // ---------- меню станций ----------
+  stationHead(stId) {
+    const st = DINER.stations.find(s => s.id === stId), S0 = this.stations[stId];
+    const lvl = stId === 'fryer' ? G.upgrades.fryer : G.upgrades.grill, eq = G.equip[stId];
+    const free = S0.slots ? S0.slots.filter(s => !s).length : 0, total = S0.slots ? S0.slots.length : 0;
+    const right = `<div class="mh-stats">${meter(eq, 100, goodCls(eq), '🔧', Math.round(eq) + '%')}${total ? `<div class="kv"><span>Места</span><b>${pips(free, total, 'slots')}</b></div>` : ''}<div class="kv"><span>Уровень</span><b>${pips(lvl, 3, 'gold')}</b></div></div>`;
+    return menuHead(`<div class="st-badge st-${stId}"></div>`, st.label, stId === 'drinks' ? 'Самые обычные напитки' : 'Ты сам решаешь, из чего готовить и кому подать', right);
+  },
+
   cookMenu(stId) {
     const dishes = stId === 'grill' ? ['burger'].concat(G.upgrades.signature ? ['signature'] : []) : stId === 'spit' ? ['shawarma'] : ['nuggets', 'fries'];
-    const buttons = [];
-    dishes.forEach(dish => {
-      const d = DISHES[dish];
-      if (dish === 'signature') {
-        buttons.push({ t: `${d.icon} ${d.name} (особый ×2)`, dis: !this.canCook(dish, 'special'), fn: () => this.startCook(stId, dish, 'special') });
-      } else if (d.meat) {
-        Object.keys(MEATS).forEach(m => buttons.push({ t: `${d.icon} ${d.name}: ${MEATS[m].name} [${G.stock[m]}]`, dis: !this.canCook(dish, m), fn: () => this.startCook(stId, dish, m) }));
-      } else buttons.push({ t: `${d.icon} ${d.name}`, dis: !this.canCook(dish), fn: () => this.startCook(stId, dish) });
-    });
-    buttons.push({ t: 'Отмена', cls: 'danger' });
-    UI.choice(DINER.stations.find(s => s.id === stId).label, `<p class="muted">Свободно мест: ${this.stations[stId].slots.filter(s => !s).length}. Ты сам решаешь, из чего готовить и кому подать.</p>`, buttons, { closable: true });
+    const mul = this.cookMul(stId), err = this.errorChance(), h = { x: () => UI.close() };
+    const cards = dishes.map(dish => {
+      const d = DISHES[dish], time = (d.time * mul).toFixed(1);
+      const ings = Object.entries(d.need || {}).map(([k, v]) => `<span class="ing ${G.stock[k] < v ? 'lack' : ''}" title="${ING[k]}">${icon('ing', k, 22)}<b>${G.stock[k]}</b><i>/${v}</i></span>`).join('');
+      let opts;
+      if (d.meat) {
+        const meats = dish === 'signature' ? ['special'] : Object.keys(MEATS);
+        opts = '<div class="meat-tiles">' + meats.map(m => {
+          const M = MEATS[m], need = d.special || 1, ok = !!this.canCook(dish, m);
+          const q = M.quality * (1 + G.upgrades.recipes * 0.1);
+          const pay = Math.round(d.price * (q >= 1 ? 1 : 0.7) * (1 + 0.15 * q));
+          const lo = m === 'special' ? specialRisk(0.15, dish === 'signature') : m === 'pet' ? 0.15 * 0.05 : 0;
+          const hi = m === 'special' ? specialRisk(0.65, dish === 'signature') : m === 'pet' ? 0.6 * 0.05 : 0;
+          const key = 'm_' + dish + '_' + m;
+          h[key] = () => { UI.close(); this.startCook(stId, dish, m); };
+          const note = m === 'special' ? '<span class="tnote bad">♥ −совесть при заготовке · слухи</span>' : m === 'pet' ? '<span class="tnote warn">дороже, лёгкий риск</span>' : '<span class="tnote good">безопасно</span>';
+          return `<button class="tile meat-${m}" data-a="${key}" ${ok ? '' : 'disabled'}>
+            <div class="tile-top">${icon('ing', m, 30)}<div><b>${M.name}</b><span class="small">в запасе ${G.stock[m]}${need > 1 ? ` · нужно ${need}` : ''}</span></div></div>
+            ${meter(q, 1.9, 'gold', 'вкус', '×' + q.toFixed(2))}
+            ${meter(hi * 100, 30, hi > 0.12 ? 'bad' : hi > 0 ? 'warn' : 'good', 'риск', hi ? pct(lo) + '–' + pct(hi) : '0%')}
+            <div class="tile-foot">${chip('≈ $' + pay, 'gold')}${note}</div>
+          </button>`;
+        }).join('') + '</div>';
+      } else {
+        const ok = !!this.canCook(dish);
+        h['c_' + dish] = () => { UI.close(); this.startCook(stId, dish); };
+        opts = `<button class="b primary" data-a="c_${dish}" ${ok ? '' : 'disabled'}>🔥 Жарить</button>`;
+      }
+      return `<div class="recipe"><div class="recipe-ico">${icon('dish', dish, 64, dish === 'signature' ? 'special' : null)}</div>
+        <div class="recipe-body"><div class="recipe-head"><b>${d.name}</b>${chip('$' + d.price, 'gold')}${chip('⏱ ' + time + ' с')}${dish === 'signature' ? chip('для богачей', 'info') : ''}</div>
+        <div class="ings">${ings}</div>${opts}</div></div>`;
+    }).join('');
+    UI.open(`${this.stationHead(stId)}<div class="recipes">${cards}</div>
+      <div class="mods">${kv('Скорость готовки', '×' + mul.toFixed(2))}${kv('Шанс ошибки', pct(err), err > 0.1 ? 'bad' : '')}${kv('Горит через', '10 с после готовности')}</div>
+      <div class="mods-src">${kitchenMods(stId)}</div>
+      <div class="btns"><button class="b" data-a="x">Закрыть</button></div>`, h, { closable: true, cls: 'm-station' });
   },
+
   drinksMenu() {
     if (this.tray.length >= trayMax()) { toast('Поднос полон', 'bad'); return; }
-    UI.choice('Напитки', '<p class="muted">Самые обычные напитки.</p>',
-      DRINKS.map(k => ({ t: DISHES[k].icon + ' ' + DISHES[k].name, fn: () => { this.tray.push({ dish: k }); Sound.sfx('pour'); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2); } }))
-        .concat([{ t: 'Отмена', cls: 'danger' }]), { closable: true });
+    const h = { x: () => UI.close() };
+    const tiles = DRINKS.map(k => {
+      h['d_' + k] = () => { UI.close(); this.tray.push({ dish: k }); Sound.sfx('pour'); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2); };
+      return `<button class="tile drink" data-a="d_${k}">${icon('dish', k, 48)}<b>${DISHES[k].name}</b>${chip('$' + DISHES[k].price, 'gold')}</button>`;
+    }).join('');
+    UI.open(`${this.stationHead('drinks')}
+      <div class="fountain">${tiles}</div>
+      <div class="mods">${kv('Поднос', this.tray.length + ' / ' + trayMax())}${kv('Налить', 'мгновенно')}${kv('Износ автомата', '−0.2% за стакан')}</div>
+      <div class="btns"><button class="b" data-a="x">Закрыть</button></div>`, h, { closable: true, cls: 'm-drinks' });
   },
+
   fridgeInfo() {
-    const s = G.stock;
-    UI.choice('Холодильник', `<div class="stats">
-      <div>🥩 Обычное мясо: <b>${s.meat}</b></div><div>🐾 Мясо животных: <b>${s.pet}</b></div>
-      <div>🩸 Особый ресурс: <b>${s.special}</b></div><div>🍞 Булочки: <b>${s.buns}</b></div>
-      <div>🥬 Овощи: <b>${s.veg}</b></div><div>🥫 Соусы: <b>${s.sauce}</b></div>
-      <div>🍗 Курица: <b>${s.chicken}</b></div><div>🥔 Картофель: <b>${s.potato}</b></div></div>
-      <p class="muted">Докупить продукты можно утром.</p>`, [{ t: 'Закрыть' }], { closable: true });
+    const s = G.stock, low = n => n < 5;
+    const slot = k => `<div class="slot ${low(s[k]) ? 'low' : ''} ${k === 'special' ? 'dark' : ''}" title="${ING[k]}">${icon('ing', k, 40)}<span class="cnt">${s[k]}</span><span class="sname">${ING[k]}</span></div>`;
+    const meat = s.meat + s.pet + s.special;
+    const can = {
+      burger: Math.min(s.buns, s.veg, s.sauce, meat), shawarma: Math.min(s.veg, s.sauce, meat),
+      nuggets: s.chicken, fries: s.potato
+    };
+    UI.open(`${menuHead(`<div class="st-badge st-fridge"></div>`, 'Холодильник', 'Запасы закусочной. Докупить можно утром.', `<div class="mh-stats">${kv('Мяса всего', meat)}${kv('Бланков', s.blanks)}</div>`)}
+      <h3>Мясо</h3><div class="inv">${['meat', 'pet', 'special'].map(slot).join('')}</div>
+      <h3>Продукты</h3><div class="inv">${['buns', 'veg', 'sauce', 'chicken', 'potato'].map(slot).join('')}</div>
+      <h3>Хватит примерно на</h3>
+      <div class="can">${Object.entries(can).map(([k, n]) => `<span class="can-item ${n < 5 ? 'low' : ''}">${icon('dish', k, 28)}<b>${n}</b></span>`).join('')}</div>
+      ${tip('Красная рамка — меньше 5 штук. Особый ресурс пополняется только ночью.')}
+      <div class="btns"><button class="b" data-a="x">Закрыть</button></div>`, { x: () => UI.close() }, { closable: true, cls: 'm-fridge' });
   },
+
   boardInfo() {
-    const list = this.customers.filter(c => c.state === 'wait').map(c => {
-      const t = CUSTOMER_TYPES[c.type];
-      return `<div class="card"><h4>${c.name} — ${t.name}</h4>
-        <div class="row">Заказ: ${c.order.map(o => (o.done ? '✅' : '') + DISHES[o.dish].icon + DISHES[o.dish].name).join(', ')}</div>
-        <div class="row">Внимательность: ${'●'.repeat(Math.round(c.attention * 5))}${'○'.repeat(5 - Math.round(c.attention * 5))} · терпение ${Math.round(c.patience)}</div></div>`;
-    }).join('') || '<p class="muted">Заказов нет.</p>';
-    const helper = hasStaff('helper');
-    const hm = helper ? `<h3>Повар-помощник (${helper.name})</h3><p class="muted">Из чего ему готовить мясные блюда:</p>
-      <div class="btns">${Object.keys(MEATS).map(m => `<button class="b ${G.helperMeat === m ? 'primary' : ''}" data-a="hm" data-v="${m}">${MEATS[m].name}</button>`).join('')}</div>` : '';
-    UI.open(`<h2>Доска заказов</h2><div class="cards">${list}</div>${hm}<div class="btns"><button class="b" data-a="x">Закрыть</button></div>`,
-      { x: () => UI.close(), hm: v => { G.helperMeat = v; UI.close(); this.boardInfo(); } }, { closable: true });
+    const list = this.customers.filter(c => c.state === 'wait' || c.state === 'eat').map(c => {
+      const t = CUSTOMER_TYPES[c.type], att = Math.round(c.attention * 5);
+      const items = c.order.map(o => `<span class="oitem ${o.done ? 'done' : ''}">${icon('dish', o.dish, 26)}</span>`).join('');
+      const risk = specialRisk(c.attention, c.order.some(o => o.dish === 'signature'));
+      return `<div class="ticket t-${c.type}">
+        <div class="tk-pin"></div>
+        <div class="tk-head">${portraitImg(c.look)}<div><b>${c.name}</b><span class="tk-type">${t.name}${c.type === 'regular' ? ' ♥' : ''}</span></div></div>
+        <div class="tk-items">${items}</div>
+        ${meter(c.patience, c.maxPatience, goodCls(c.patience / c.maxPatience * 100), '⏳', Math.round(c.patience) + 'с')}
+        <div class="kv"><span>Внимательность</span><b>${pips(att, 5, 'eye')}</b></div>
+        <div class="kv"><span>Риск с особым мясом</span><b class="${risk > 0.12 ? 'bad' : ''}">${pct(risk)}</b></div>
+        <div class="kv"><span>Чаевые</span><b>${'$'.repeat(Math.max(1, Math.round(t.tip * 10)))}</b></div>
+        ${c.state === 'eat' ? stamp('ЕСТ', 'good') : ''}
+      </div>`;
+    }).join('') || '<p class="muted">Заказов нет. Зал пуст.</p>';
+    const helper = hasStaff('helper'), h = { x: () => UI.close(), hm: v => { G.helperMeat = v; this.boardInfo(); } };
+    const hm = helper ? `<div class="helper-box">${portraitImg(helper.look || PLAYER_LOOK)}<div><b>${helper.name}</b> · повар-помощник<span class="small">Сам готовит недостающие блюда раз в 5 с. Из чего готовить мясо:</span>
+      <div class="btns">${Object.keys(MEATS).map(m => `<button class="b ${G.helperMeat === m ? 'primary' : ''}" data-a="hm" data-v="${m}">${icon('ing', m, 18)} ${MEATS[m].name}</button>`).join('')}</div></div></div>` : '';
+    UI.open(`${menuHead('<div class="st-badge st-board"></div>', 'Доска заказов', 'Кто сидит за стойкой и насколько он внимателен', `<div class="mh-stats">${kv('В зале', this.customers.length)}${kv('Слухи', Math.round(G.rumors))}</div>`)}
+      <div class="tickets">${list}</div>${hm}
+      ${tip('Риск — шанс, что клиент почует неладное с особым мясом. Постоянные внимательнее, слухи повышают риск всем.')}
+      <div class="btns"><button class="b" data-a="x">Закрыть</button></div>`, h, { closable: true, cls: 'm-board' });
   },
 
   // ---------- клиенты ----------

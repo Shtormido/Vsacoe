@@ -20,6 +20,7 @@ const Game = {
     Atmos.init();
     Sound.loadPrefs(); updateSoundBtn();
     document.getElementById('sound-btn').addEventListener('click', () => { Sound.unlock(); Sound.toggleMute(); });
+    document.getElementById('journal-btn').addEventListener('click', () => this.journal());
     this.fit();
     window.addEventListener('resize', () => this.fit());
     this.title();
@@ -37,26 +38,25 @@ const Game = {
     G.phase = 'title';
     Atmos.setWeather('rain');
     const saved = loadSave();
-    UI.open(`<div class="title-screen"><h1>ПРИДОРОЖНЫЙ<br>МОТЕЛЬ</h1>
-      <p>Хоррор-кулинарный симулятор с чёрным юмором.</p>
-      <p class="sound-hint">🔊 Включи звук — у каждой фазы своя музыка (M — выключить)</p>
-      <p class="muted">Днём ты повар закусочной при мотеле. Ночью — заготавливаешь особый ресурс.</p></div>
-      <div class="help">
-        <h3>Как играть</h3>
-        <p>• <b>WASD / стрелки</b> — ходить, <b>E</b> — действие, <b>Пробел</b> — удар в ночной мини-игре, <b>Esc</b> — закрыть окно.</p>
-        <p>• <b>08:00–00:00</b> — закусочная: готовь у гриля, вертела, фритюра, наливай напитки и подавай клиентам у стойки. Мясо выбираешь сам: обычное, животных или особое — и сам решаешь, кому его подать.</p>
-        <p>• <b>00:00–02:00</b> — сон. От него зависят выносливость и твёрдость рук.</p>
-        <p>• <b>02:00</b> — ночная смена: выбери постояльца, проберись мимо неспящих и фар патруля, попади в ритм.</p>
-        <p>• <b>Утро</b> — приведи бумаги в порядок: журнал, вещи, машины, следы. Закупки, ремонт, подкуп, персонал.</p>
-        <p>• Следи за <b>подозрениями города</b>, <b>чистотой мотеля</b> и <b>совестью</b>. Концовок — пять.</p>
+    const key = k => `<span class="keycap">${k}</span>`;
+    UI.open(`<div class="title-screen">
+        <div class="logo"><span class="l1">ПРИДОРОЖНЫЙ</span><span class="l2">МОТЕЛЬ</span><span class="l3">хоррор-кулинарный симулятор</span></div>
+        <p class="sound-hint">🔊 Включи звук — у каждой фазы своя музыка</p>
       </div>
-      <div class="btns" style="justify-content:center">
-        <button class="b primary" data-a="new">Новая игра</button>
-        ${saved ? `<button class="b" data-a="cont">Продолжить (день ${saved.day})</button>` : ''}
+      <div class="cycle">
+        <div class="cy c-day"><i>☀</i><b>08:00–00:00</b><span>Закусочная: гриль, вертел, фритюр, напитки. Мясо выбираешь сам — и кому его подать.</span></div>
+        <div class="cy c-sleep"><i>🌙</i><b>00:00–02:00</b><span>Короткий сон. От него — выносливость и твёрдость рук.</span></div>
+        <div class="cy c-night"><i>🔪</i><b>02:00</b><span>Ночная смена: выбери постояльца, прокрадись мимо неспящих, попади в ритм.</span></div>
+        <div class="cy c-morning"><i>📁</i><b>Утро</b><span>Бумаги и следы, закупки, ремонт, подкуп, персонал.</span></div>
+      </div>
+      <div class="controls">${key('W A S D')} ходить · ${key('E')} действие · ${key('Пробел')} удар · ${key('J')} журнал · ${key('Esc')} закрыть · ${key('M')} звук</div>
+      <div class="btns title-btns">
+        <button class="b primary big" data-a="new">▶ Новая игра</button>
+        ${saved ? `<button class="b big" data-a="cont">Продолжить · день ${saved.day}</button>` : ''}
       </div>`, {
       new: () => { clearSave(); newGame(); UI.close(); this.startDay(true); },
       cont: () => { G = saved; UI.close(); G.phase = 'morning'; Morning.report = ['Игра загружена.']; Morning.tab = 'overview'; Morning.render(); }
-    });
+    }, { cls: 'm-title' });
   },
 
   startDay(first) {
@@ -102,13 +102,23 @@ const Game = {
     if (G.suspicion > 60) { rest -= 5; dreams.push('Во сне выли сирены.'); }
     G.stamina = clamp(G.stamina + rest, 0, 100);
     G.stress = clamp(G.stress - 12, 0, 100);
-    const d = G.dayLog;
-    UI.choice('00:00 — Закусочная закрыта', `
-      <p>Обслужено: <b>${d.served}</b> · Ушли злыми: <b>${d.angry}</b> · Выручка: <b>$${d.earned}</b> · Блюд из особого ресурса: <b>${d.special || 0}</b></p>
-      <p>Ты запираешь дверь и ложишься спать до двух ночи.</p>
-      ${dreams.length ? `<p class="bad">${dreams.join(' ')}</p>` : '<p class="muted">Сон был коротким, но крепким.</p>'}
-      <p>Выносливость: <b>${Math.round(G.stamina)}</b></p>`,
-      [{ t: '02:00 — проснуться', cls: 'primary', fn: () => { G.time = WAKE_TIME; Night.start(); } }]);
+    const d = G.dayLog, dRep = G.rep - (d.repStart ?? G.rep), line = (k, v, cls = '') => `<div class="rc-line ${cls}"><span>${k}</span><i></i><b>${v}</b></div>`;
+    UI.open(`<div class="close-day">
+      <div class="receipt">
+        <div class="rc-head">ЗАКУСОЧНАЯ «ПРИДОРОЖНЫЙ»<br><span>день ${G.day} · касса №1</span></div>
+        ${line('Обслужено', d.served)}${line('Ушли злыми', d.angry, d.angry ? 'bad' : '')}${line('Блюд из особого', d.special || 0, d.special ? 'blood' : '')}
+        ${line('Репутация', (dRep >= 0 ? '+' : '') + dRep.toFixed(1), dRep < 0 ? 'bad' : 'good')}
+        <div class="rc-total">${line('ИТОГО', '$' + d.earned)}</div>
+        <div class="rc-foot">СПАСИБО ЗА ВИЗИТ! ★ ПРИХОДИТЕ ЕЩЁ</div>
+      </div>
+      <div class="sleep-card">
+        <h2>00:00 — отбой</h2>
+        <p>Ты запираешь дверь и ложишься до двух ночи.</p>
+        ${meter(G.stamina, 100, goodCls(G.stamina), '⚡ выносливость', '+' + rest + ' → ' + Math.round(G.stamina))}
+        <div class="dreams">${dreams.length ? dreams.map(t => `<p class="bad">💭 ${t}</p>`).join('') : '<p class="muted">💤 Сон короткий, но крепкий.</p>'}</div>
+        <div class="small muted">База +30 · совесть &lt; 50: −10 · стресс &gt; 50: −8 · подозрения &gt; 60: −5</div>
+        <div class="btns"><button class="b primary" data-a="go">⏰ 02:00 — проснуться</button></div>
+      </div></div>`, { go: () => { UI.close(); G.time = WAKE_TIME; Night.start(); } }, { cls: 'm-close' });
   },
 
   ending(type, text) {
@@ -117,18 +127,39 @@ const Game = {
     prompt('');
     clearSave();
     const e = ENDINGS[type];
-    UI.open(`<div class="title-screen"><h1 class="${e.cls}" style="font-size:16px">${e.title}</h1></div>
-      <p>${text}</p>
-      <h3>Итоги</h3>
-      <div class="stats">
-        <div>Дней: <b>${G.day}</b></div><div>Обслужено: <b>${G.stats.served}</b></div>
-        <div>Заработано: <b>$${Math.floor(G.stats.earned)}</b></div><div>Особых блюд: <b>${G.stats.specialServed}</b></div>
-        <div>Ночных заготовок: <b>${G.stats.kills}</b></div><div>Ресторан: <b>${tierOf(REP_TIERS, G.rep)}</b></div>
-        <div>Мотель: <b>${tierOf(MOTEL_TIERS, G.rumors)}</b></div><div>Совесть: <b>${Math.round(G.conscience)}</b></div>
+    const heads = { legend: 'ЗАКУСОЧНАЯ-ЛЕГЕНДА СМЕНИЛА ХОЗЯИНА', prison: 'ХОЗЯИН МОТЕЛЯ АРЕСТОВАН', flee: 'ВЛАДЕЛЕЦ МОТЕЛЯ ИСЧЕЗ', conscience: 'МОТЕЛЬ НА ШОССЕ ЗАКРЫЛСЯ', death: 'ТРАГЕДИЯ В ПРИДОРОЖНОМ МОТЕЛЕ' };
+    UI.open(`<div class="paper-news ending e-${type}">
+      <div class="masthead">ВЕСТНИК ШОССЕ <span>экстренный выпуск · день ${G.day}</span></div>
+      <div class="headline">${heads[type]}</div>
+      <div class="end-title">${stamp(e.title.toUpperCase(), e.cls || 'gold')}</div>
+      <p class="tw lead">${text}</p>
+      <div class="end-stats">
+        ${kv('Дней', G.day)}${kv('Обслужено', G.stats.served)}${kv('Заработано', '$' + Math.floor(G.stats.earned))}${kv('Особых блюд', G.stats.specialServed)}
+        ${kv('Ночных заготовок', G.stats.kills)}${kv('Ресторан', tierOf(REP_TIERS, G.rep))}${kv('Мотель', tierOf(MOTEL_TIERS, G.rumors))}${kv('Совесть', Math.round(G.conscience))}
       </div>
-      <div class="btns"><button class="b primary" data-a="again">Сыграть снова</button></div>`,
-      { again: () => { UI.close(); newGame(); this.title(); } });
+      <div class="btns"><button class="b primary big" data-a="again">↺ Сыграть снова</button></div></div>`,
+      { again: () => { UI.close(); newGame(); this.title(); } }, { cls: 'm-ending' });
     updateHUD();
+  },
+
+  // журнал: все механики и текущие множители
+  journal() {
+    if (UI.isOpen() || !['day', 'morning'].includes(G.phase)) return;
+    const st = G.stamina, mul = 1 + (100 - st) / 120, err = Kitchen.errorChance();
+    const next = REP_TIERS.find(t => t[0] > G.rep);
+    const sec = (ico, title, body) => `<div class="jsec"><h3>${ico} ${title}</h3>${body}</div>`;
+    UI.open(`${menuHead('<div class="st-badge st-journal"></div>', 'Журнал', 'Как устроены механики и что на тебя сейчас влияет')}
+      <div class="jgrid">
+        ${sec('⚡', 'Выносливость ' + Math.round(st), `${meter(st, 100, goodCls(st))}${kv('Время готовки', '×' + mul.toFixed(2))}${kv('Шанс ошибки', pct(err), err > 0.1 ? 'bad' : '')}${kv('Скорость ходьбы', '×' + (0.6 + st / 250).toFixed(2))}${kv('Окно удара ночью', '−' + Math.round((100 - st) / 10))}<div class="small">Днём −1.3 в час. Сон до 02:00: +30, до утра: +35.</div>`)}
+        ${sec('⭐', 'Репутация', `${meter(G.rep, 100, 'gold', tierOf(REP_TIERS, G.rep), Math.round(G.rep))}${next ? kv('До «' + next[1] + '»', Math.ceil(next[0] - G.rep)) : kv('Статус', 'вершина')}<div class="small">Растёт от качества блюд, падает от злых и ушедших клиентов. Выше репутация — чаще клиенты и богачи.</div>`)}
+        ${sec('👁', 'Подозрения ' + Math.round(G.suspicion), `${meter(G.suspicion, 100, riskCls(G.suspicion))}<div class="small">Источники: слухи (×0.06 в день), незакрытые хвосты (+3), досрочные выезды (+4), неудачные ночи (+8…12), журналисты. 100 — арест. Больше 40 — ночью ездит патруль.</div>`)}
+        ${sec('🗣', 'Слухи ' + Math.round(G.rumors), `${meter(G.rumors, 100, riskCls(G.rumors))}<div class="small">Повышают риск, что клиент распробует особое мясо (+${pct(G.rumors / 500)}). Сами спадают на 3 в день.</div>`)}
+        ${sec('🧽', 'Чистота ' + Math.round(G.cleanliness), `${meter(G.cleanliness, 100, goodCls(G.cleanliness))}<div class="small">Кровь −15, следы и вещи — каждое утро. Ниже 50 — санэпидемстанция и вопросы. Уборщица: +6…12 каждое утро.</div>`)}
+        ${sec('♥', 'Совесть ' + Math.round(G.conscience), `${meter(G.conscience, 100, goodCls(G.conscience))}<div class="small">Заготовка −10, питомец −3. Ниже 50 — кошмары (сон хуже), ниже 40 — призраки и шёпот, 0 — конец.</div>`)}
+        ${sec('🔧', 'Улучшения', Object.entries(UPGRADES).map(([k, u]) => kv(u.name, pips(G.upgrades[k], u.max, 'gold'))).join(''))}
+        ${sec('📊', 'Итоги', kv('Обслужено', G.stats.served) + kv('Заработано', '$' + Math.floor(G.stats.earned)) + kv('Особых блюд', G.stats.specialServed) + kv('Заготовок', G.stats.kills) + kv('Ушли злыми', G.stats.angry))}
+      </div>
+      <div class="btns"><button class="b" data-a="x">Закрыть (J)</button></div>`, { x: () => UI.close() }, { closable: true, cls: 'm-journal' });
   },
 
   update(dt) {

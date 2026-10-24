@@ -82,36 +82,45 @@ const Staff = {
     if (rep) rep.push(`<span class="bad">${msg}</span>`); else toast(msg, 'bad');
   },
 
-  bar(v, c) { return `<b style="color:${c}">${'█'.repeat(Math.round(v / 10))}${'░'.repeat(10 - Math.round(v / 10))}</b>`; },
-
   tabHTML() {
     const d = G.flags.demand;
-    const dem = d ? (() => { const s = G.staff.find(x => x.id === d.id); return s ? `<div class="card" style="border-color:var(--danger)"><h4 class="bad">Шантаж: ${s.name} хочет $${d.amount}</h4>
-      <div class="btns"><button class="b" data-a="demand" data-v="pay" ${G.money < d.amount ? 'disabled' : ''}>Заплатить</button><button class="b danger" data-a="demand" data-v="no">Отказать</button>
-      <button class="b danger" data-a="staff" data-v="${s.id}:dark">«Решить проблему»</button></div></div>` : ''; })() : '';
+    const dem = d ? (() => {
+      const s = G.staff.find(x => x.id === d.id);
+      return s ? `<div class="blackmail">${portraitImg(s.look || PLAYER_LOOK)}<div><div class="bm-title">✉ Шантаж</div><p><b>${s.name}</b> требует <b>$${d.amount}</b> за молчание.</p>
+        <div class="small">Отказ: ${s.susp > 70 ? '<span class="bad">60% — пойдёт к шерифу (арест)</span>' : 'уйдёт, подозрения +' + Math.round(s.susp / 3)}</div>
+        <div class="btns"><button class="b primary" data-a="demand" data-v="pay" ${G.money < d.amount ? 'disabled' : ''}>Заплатить (лояльн. +20)</button><button class="b danger" data-a="demand" data-v="no">Отказать</button>
+        <button class="b danger" data-a="staff" data-v="${s.id}:dark">«Решить проблему»</button></div></div></div>` : '';
+    })() : '';
+    const act = (s, key, name, eff, dis) => `<button class="sact" data-a="staff" data-v="${s.id}:${key}" ${dis ? 'disabled' : ''}><b>${name}</b><em>${eff}</em></button>`;
     const team = G.staff.map(s => {
-      const r = ROLES[s.role];
-      return `<div class="card"><h4>${r.icon} ${s.name} — ${r.name}</h4>
-        <div class="row">Зарплата: $${s.wage}/день · Навык: ${s.skill} · Черта: ${s.days >= 4 ? (HIDDEN[s.hidden] || 'обычный') : '?'}</div>
-        <div class="row">Лояльность ${this.bar(s.loyalty, '#6fbf5a')}</div>
-        <div class="row">Подозрит. ${this.bar(s.susp, '#d6453d')}</div>
-        <div class="btns">
-          <button class="b" data-a="staff" data-v="${s.id}:bonus" ${G.money < 50 ? 'disabled' : ''}>Премия $50</button>
-          <button class="b" data-a="staff" data-v="${s.id}:terms" ${G.money < 100 ? 'disabled' : ''}>Условия $100</button>
-          <button class="b" data-a="staff" data-v="${s.id}:train" ${G.money < 80 || s.skill >= 3 ? 'disabled' : ''}>Обучить $80</button>
-          <button class="b" data-a="staff" data-v="${s.id}:threat">Припугнуть</button>
-          <button class="b" data-a="staff" data-v="${s.id}:fire">Уволить</button>
-          ${s.susp > 40 ? `<button class="b danger" data-a="staff" data-v="${s.id}:dark">«Решить проблему»</button>` : ''}
-        </div></div>`;
+      const r = ROLES[s.role], danger = s.loyalty < 30 && s.susp > 45;
+      return `<div class="empfile ${danger ? 'danger' : ''}">
+        <div class="ef-left">${portraitImg(s.look || PLAYER_LOOK, 'photo')}<span class="role">${r.icon} ${r.name}</span></div>
+        <div class="ef-body"><div class="ef-name"><b>${s.name}</b>${danger ? stamp('УГРОЗА', 'bad') : ''}</div>
+          ${meter(s.loyalty, 100, goodCls(s.loyalty), 'Лояльность', Math.round(s.loyalty))}
+          ${meter(s.susp, 100, riskCls(s.susp), 'Подозрит.', Math.round(s.susp))}
+          <div class="ef-row">${kv('Зарплата', '$' + s.wage + '/д')}${kv('Навык', pips(s.skill, 3, 'gold'))}${kv('Черта', s.days >= 4 ? (HIDDEN[s.hidden] || 'обычный') : '? (через ' + (4 - s.days) + ' дн.)')}</div>
+          <div class="sacts">
+            ${act(s, 'bonus', 'Премия $50', 'лояльн. +15', G.money < 50)}
+            ${act(s, 'terms', 'Условия $100', 'лояльн. +25 · подозр. −5', G.money < 100)}
+            ${act(s, 'train', 'Обучить $80', 'навык +1 · лояльн. +5', G.money < 80 || s.skill >= 3)}
+            ${act(s, 'threat', 'Припугнуть', 'лояльн. +10 · подозр. +12 · ♥ −2', false)}
+            ${act(s, 'fire', 'Уволить', 'город: подозр. +' + Math.round(s.susp / 4), false)}
+            ${s.susp > 40 ? act(s, 'dark', '«Решить проблему»', 'особый +5 · ♥ −15 · подозр. +10', false) : ''}
+          </div></div></div>`;
     }).join('') || '<p class="muted">Ты работаешь один.</p>';
     const cands = G.candidates.filter(c => !hasStaff(c.role)).map(c => {
       const r = ROLES[c.role], cost = c.wage * 3;
-      return `<div class="card"><h4>${r.icon} ${c.name} — ${r.name}</h4><div class="row">${r.desc}</div>
-        <div class="row">Зарплата $${c.wage}/день · Навык ${c.skill} · Лояльность ~${c.loyalty}</div>
-        <div class="btns"><button class="b primary" data-a="hire" data-v="${c.id}" ${G.money < cost ? 'disabled' : ''}>Нанять ($${cost} аванс)</button></div></div>`;
-    }).join('') || '<p class="muted">Новых кандидатов нет. Загляни через пару дней.</p>';
-    return `${dem}<h3>Команда</h3><div class="cards">${team}</div><h3>Кандидаты</h3><div class="cards">${cands}</div>
-      <p class="muted">Если лояльность падает, а подозрительность растёт — сотрудник может саботировать, шантажировать или сдать тебя.</p>`;
+      return `<div class="resume">${portraitImg(c.look, 'photo')}<div class="rs-body"><b>${c.name}</b><span class="role">${r.icon} ${r.name}</span>
+        <p>${r.desc}</p>
+        <div class="ef-row">${kv('Зарплата', '$' + c.wage + '/д')}${kv('Навык', pips(c.skill, 3, 'gold'))}${kv('Лояльность', '~' + c.loyalty)}</div>
+        <button class="b primary" data-a="hire" data-v="${c.id}" ${G.money < cost ? 'disabled' : ''}>Нанять · аванс $${cost}</button></div></div>`;
+    }).join('') || '<p class="muted">Новых кандидатов нет. Объявление обновится через пару дней.</p>';
+    const wages = G.staff.reduce((a, s) => a + s.wage, 0);
+    return `${dem}<div class="staff-sum">${kv('Сотрудников', G.staff.length)}${kv('Зарплаты в день', '$' + wages)}${kv('Падение лояльности', '−2/день')}</div>
+      <h3>Команда</h3><div class="empfiles">${team}</div>
+      <h3>Резюме кандидатов</h3><div class="resumes">${cands}</div>
+      ${tip('Лояльность < 30 и подозрительность > 45 — шантаж. Лояльность ≤ 5 при подозрительности > 70 — донос и арест.')}`;
   },
 
   handlers() {

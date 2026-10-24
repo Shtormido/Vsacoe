@@ -51,31 +51,62 @@ const Night = {
     this.menu();
   },
 
+  // оценка окна удара в мини-игре (как в Stealth.startStrike)
+  strikeZone(g, known) {
+    return clamp(44 + (Atmos.weather === 'rain' ? 6 : 0) + G.upgrades.soundproof * 10 + buildOf(g).zone - g.suspicious / 6 - (known && g.trait === 'double' ? 12 : 0) - (100 - G.stamina) / 10, 14, 80);
+  },
+
   menu() {
+    const restless = G.guests.filter(g => g.trait === 'attentive' || g.suspicious > 40 || g.alarm > 40).length;
+    const awake = clamp(1 + restless - 1 - (hasStaff('caretaker') ? 1 : 0), 0, 3);
+    const W = { rain: ['🌧', 'Ливень', 'Шум дождя глушит возню: окно удара +6'], fog: ['🌫', 'Туман', 'Неспящие видят ближе: обзор 44 вместо 58'], clear: ['🌙', 'Ясно', 'Обычная ночь, без поблажек'] }[Atmos.weather];
     const cards = G.guests.map(g => {
-      const b = buildOf(g);
-      const trait = g.trait && g.revealed ? `<span class="tag warn">${TRAITS[g.trait].name}</span>` : g.revealed ? '<span class="tag">Обычный</span>' : '<span class="tag">Секреты: ?</span>';
-      return `<div class="card"><h4>№${g.room + 1} · ${g.name}</h4>
-        <div class="row">Возраст: ${g.age} · Телосложение: ${b.name}</div>
-        <div class="row">Подозрительность: ${g.suspicious} · Ценность: ~$${g.value}</div>
-        <div class="row">Тревога гостя: ${Math.round(g.alarm)}</div>
-        <div>${trait}${g.pet ? `<span class="tag">🐾 ${g.pet}</span>` : ''}${g.car ? '<span class="tag">🚗 машина</span>' : ''}</div>
-        <div class="btns">
-          <button class="b danger" data-a="target" data-v="${g.id}" ${G.stamina < 15 ? 'disabled' : ''}>Заготовка</button>
-          ${g.pet ? `<button class="b" data-a="pet" data-v="${g.id}">Забрать питомца</button>` : ''}
-        </div></div>`;
+      const b = buildOf(g), known = g.revealed;
+      const zone = this.strikeZone(g, known), diff = zone > 50 ? ['легко', 'good'] : zone > 32 ? ['средне', 'warn'] : ['тяжело', 'bad'];
+      const trait = g.trait && known ? stamp(TRAITS[g.trait].name.toUpperCase(), 'bad') : known ? stamp('ЧИСТО', 'good') : stamp('???', '');
+      const yieldN = b.yield + (hasStaff('helper') ? 1 : 0);
+      return `<div class="dossier">
+        <div class="ds-photo">${portraitImg(g.look, 'photo')}<span class="ds-room">№${g.room + 1}</span></div>
+        <div class="ds-body">
+          <div class="ds-name"><b>${g.name}</b><span>${g.age} лет · ${b.name}</span></div>
+          ${meter(g.suspicious, 100, riskCls(g.suspicious), '👁', g.suspicious)}
+          ${meter(g.alarm, 100, riskCls(g.alarm), '⚠', Math.round(g.alarm))}
+          <div class="ds-row">${chip(icon('ing', 'special', 16) + ' ×' + yieldN, 'dark')}${chip('$' + g.value, 'gold')}${g.pet ? chip('🐾 ' + g.pet) : ''}${g.car ? chip('🚗 хвост') : ''}${chip('⏳ ' + g.nights + ' н.')}</div>
+          ${meter(zone, 80, diff[1], 'удар', diff[0])}
+          ${known && g.trait ? `<div class="ds-trait">${TRAITS[g.trait].desc}</div>` : ''}
+          <div class="btns">
+            <button class="b danger" data-a="target" data-v="${g.id}" ${G.stamina < 15 ? 'disabled' : ''}>🔪 Заготовка</button>
+            ${g.pet ? `<button class="b" data-a="pet" data-v="${g.id}">🐾 Питомец (${pct(0.75 - g.suspicious / 300)})</button>` : ''}
+          </div>
+        </div>${trait}</div>`;
     }).join('') || '<p class="muted">Мотель пуст. Ни одного постояльца.</p>';
-    const hall = G.conscience < 40 ? '<p class="bad">В коридоре кто-то шепчет твоё имя. Там никого нет.</p>' : '';
-    UI.open(`<h2>02:00 — Тихая ночная смена</h2>
-      <p>${{ rain: '🌧 За окном ливень — шум дождя заглушит возню (шире окно удара).', fog: '🌫 Над шоссе туман — неспящие видят ближе.', clear: '🌙 Ясная тихая ночь.' }[Atmos.weather]}</p>
-      <p>Ты просыпаешься. Мотель спит. Особого ресурса в запасе: <b>${G.stock.special}</b>. Выносливость: <b>${Math.round(G.stamina)}</b>.</p>${hall}
-      <div class="cards">${cards}</div>
-      <div class="btns"><button class="b primary" data-a="sleep">Спать до утра (+выносливость)</button></div>`,
+    const hall = G.conscience < 40 ? '<p class="bad whisper">В коридоре кто-то шепчет твоё имя. Там никого нет.</p>' : '';
+    UI.open(`${menuHead('<div class="st-badge st-moon"></div>', '02:00 — Тихая ночная смена', 'Выбери цель. Данные собраны подставным человеком и камерами.',
+      `<div class="mh-stats">${meter(G.stamina, 100, goodCls(G.stamina), '⚡', Math.round(G.stamina))}${kv('Особый ресурс', G.stock.special)}</div>`)}
+      <div class="night-info">
+        <div class="weather w-${Atmos.weather}"><span class="w-ico">${W[0]}</span><div><b>${W[1]}</b><span>${W[2]}</span></div></div>
+        ${kv('Неспящих в коридоре', '≈ ' + awake)}${kv('Патруль', G.suspicion > 40 ? '<span class="bad">ездит</span>' : 'нет')}${kv('Звукоизоляция', pips(G.upgrades.soundproof, 3, 'gold'))}
+      </div>${hall}
+      <div class="dossiers">${cards}</div>
+      ${tip('Шире окно удара — проще мини-игра. Его сужают подозрительность, крупное телосложение, усталость и «двойное дно».')}
+      <div class="btns"><button class="b primary" data-a="sleep">😴 Спать до утра (+35 выносливости)</button></div>`,
       {
         target: id => { UI.close(); Stealth.init(G.guests.find(g => g.id == id)); },
         pet: id => this.takePet(G.guests.find(g => g.id == id)),
         sleep: () => { UI.close(); G.stamina = clamp(G.stamina + 35, 0, 100); G.stress = clamp(G.stress - 15, 0, 100); toast('Ты проспал до семи утра', 'night'); Morning.start(7 * 60); }
-      });
+      }, { cls: 'm-night' });
+  },
+
+  // итог ночи: что получено и что осталось
+  report(ok, title, text, gains, losses, then) {
+    UI.open(`<div class="night-report ${ok ? 'ok' : 'fail'}">
+      <div class="nr-stamp">${stamp(ok ? 'ЗАГОТОВКА' : 'СРЫВ', ok ? 'blood' : 'bad')}</div>
+      <h2>${title}</h2><p class="tw">${text}</p>
+      <div class="nr-cols">
+        <div><h3>${ok ? 'Получено' : 'Последствия'}</h3>${gains}</div>
+        <div><h3>${ok ? 'Цена' : 'Что изменилось'}</h3>${losses}</div>
+      </div>
+      <div class="btns"><button class="b primary" data-a="go">🛏 Вернуться в постель</button></div></div>`, { go: () => { UI.close(); then(); } }, { cls: 'm-report' });
   },
 
   takePet(g) {
@@ -112,9 +143,11 @@ const Night = {
     if (g.trait === 'journalist') { addSuspicion(10); toast('Журналиста будут искать…', 'bad'); }
     if (g.trait === 'knower') toast('Больше он никому ничего не расскажет.', 'night');
     G.guests.forEach(o => o.alarm += 8 - G.upgrades.soundproof * 3);
-    UI.choice('Заготовка завершена', `<p>Номер ${g.room + 1} затих. Добыто особого ресурса: <b>${y}</b>. В вещах нашлось <b>$${g.value}</b>.</p>
-      <p class="muted">Остались «хвосты»: запись в журнале, вещи${g.car ? ', машина на парковке' : ''}, следы в номере. Утром нужно привести бумаги в порядок.</p>`,
-      [{ t: 'Вернуться в постель', cls: 'primary', fn: () => Morning.start(4 * 60 + 30) }]);
+    const tails = G.tails.slice(-(g.car ? 4 : 3)).map(t => `<div class="nr-line">${TAIL_INFO[t.type].icon} ${TAIL_INFO[t.type].name}</div>`).join('');
+    this.report(true, `Номер ${g.room + 1} затих`, `${g.name} больше не проснётся. Утром придётся привести бумаги в порядок.`,
+      `<div class="nr-line">${icon('ing', 'special', 22)} Особый ресурс <b>+${y}</b></div><div class="nr-line">💵 Из вещей <b>+$${g.value}</b></div>`,
+      `<div class="nr-line bad">♥ Совесть −10</div><div class="nr-line bad">🧽 Чистота −15</div><div class="nr-line">⚡ Выносливость −20</div><h3>Хвосты</h3>${tails}`,
+      () => Morning.start(4 * 60 + 30));
   },
 
   fail(g, why) {
@@ -130,7 +163,10 @@ const Night = {
     const text = why === 'woke'
       ? `${g.name} проснулся и закричал. Ты едва успел скрыться в темноте.`
       : 'Тебя заметили в коридоре. Пришлось изображать ночной обход.';
-    UI.choice('Ночь сорвалась', `<p class="bad">${text}</p>`, [{ t: 'Вернуться в постель', fn: () => Morning.start(4 * 60) }]);
+    this.report(false, 'Ночь сорвалась', text,
+      `<div class="nr-line bad">👁 Подозрения +${why === 'woke' ? 12 : 8}</div><div class="nr-line bad">🗣 Слухи +${why === 'woke' ? 8 : 5}</div><div class="nr-line">♥ Совесть −2</div>`,
+      `<div class="nr-line">⚠ Тревога гостя ${g.name}: ${Math.round(g.alarm)}</div><div class="nr-line">⚡ Выносливость −15</div><div class="nr-line muted">Гость может съехать раньше — это поднимет тревогу города.</div>`,
+      () => Morning.start(4 * 60));
   }
 };
 
