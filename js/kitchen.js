@@ -28,6 +28,8 @@ const Kitchen = {
     this.bg = this.bg || buildDinerBG();
     this.player = { x: 160, y: 60, dir: 'down', frame: 0, anim: 0 };
     this.tray = []; this.customers = []; this.spawnT = 6; this.helperT = 6;
+    // дневная норма клиентов: 5 в начале, до 10 при высокой репутации
+    this.quota = Math.min(10, 5 + Math.floor(G.rep / 20)); this.spawned = 0;
     const g = G.upgrades.grill, f = G.upgrades.fryer;
     this.stations = {
       grill:  { slots: Array(2 + g).fill(null), broken: G.equip.grill <= 0 },
@@ -71,11 +73,15 @@ const Kitchen = {
     // спавн клиентов
     this.spawnT -= dt;
     if (this.spawnT <= 0 && G.time < CLOSE_TIME - 30) {
-      // спокойный поток: реже клиенты и не больше 2–5 человек за стойкой (растёт с репутацией)
-      const h = G.time / 60, peak = (h >= 12 && h < 14) || (h >= 18 && h < 20) ? 0.75 : 1;
-      const maxIn = Math.min(5, 2 + Math.floor(G.rep / 30)), inside = this.customers.filter(c => c.state !== 'leave').length;
-      if (inside >= maxIn) this.spawnT = 3;
-      else { this.spawnT = Math.max(7, 15 - G.rep / 12) * peak * rnd(0.8, 1.25); this.spawnCustomer(); }
+      // спокойный поток: клиенты равномерно за день, не больше 2–3 человек за стойкой
+      const maxIn = Math.min(3, 2 + Math.floor(G.rep / 50)), inside = this.customers.filter(c => c.state !== 'leave').length;
+      if (this.spawned >= this.quota) this.spawnT = Infinity;
+      else if (inside >= maxIn) this.spawnT = 3;
+      else {
+        const left = (CLOSE_TIME - 30 - G.time) / MINUTES_PER_SEC;
+        this.spawnT = left / (this.quota - this.spawned) * rnd(0.7, 1.2);
+        this.spawned++; this.spawnCustomer();
+      }
     }
 
     // события
