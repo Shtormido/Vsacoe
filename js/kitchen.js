@@ -60,7 +60,7 @@ const Kitchen = {
       p.x = clamp(p.x + dx / l * sp * dt, DINER.bounds.x1, DINER.bounds.x2);
       p.y = clamp(p.y + dy / l * sp * dt, DINER.bounds.y1, DINER.bounds.y2);
       p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-      p.anim += dt; if (p.anim > 0.15) { p.anim = 0; p.frame++; }
+      p.anim += dt; if (p.anim > 0.15) { p.anim = 0; p.frame++; if (p.frame % 2) Sound.sfx('step', { surface: 'tile' }); }
     } else p.frame = 0;
 
     this.updateStations(dt);
@@ -92,7 +92,7 @@ const Kitchen = {
       this.stations[id].slots.forEach((s, i, arr) => {
         if (!s) return;
         if (!s.done) { s.t += dt; if (s.t >= s.total) { s.done = true; s.over = 0; } }
-        else if (!s.burnt) { s.over += dt; if (s.over > 10) { s.burnt = true; toast(DISHES[s.dish].name + ' сгорел!', 'bad'); } }
+        else if (!s.burnt) { s.over += dt; if (s.over > 10) { s.burnt = true; Sound.sfx('burnt'); toast(DISHES[s.dish].name + ' сгорел!', 'bad'); } }
       });
     });
   },
@@ -112,6 +112,7 @@ const Kitchen = {
     Object.entries(need).forEach(([k, v]) => G.stock[k] -= v);
     const total = DISHES[dish].time * this.cookMul(stId) * (auto ? 1.2 : 1);
     const burnt = !auto && chance(this.errorChance());
+    if (!auto) Sound.sfx('cook');
     this.stations[stId].slots[i] = { dish, meat: DISHES[dish].meat ? meat : null, t: 0, total, done: false, burnt: false, over: 0, preBurnt: burnt };
     G.equip[stId] = Math.max(0, G.equip[stId] - 0.5);
     if (G.equip[stId] <= 0) { this.stations[stId].broken = true; toast(DINER.stations.find(s => s.id === stId).label + ' сломался! Почините утром.', 'bad'); }
@@ -126,6 +127,7 @@ const Kitchen = {
     const s = this.stations[stId].slots[i];
     this.stations[stId].slots[i] = null;
     this.tray.push({ dish: s.dish, meat: s.meat, burnt: s.burnt || s.preBurnt });
+    Sound.sfx('pickup');
   },
 
   cookMenu(stId) {
@@ -145,7 +147,7 @@ const Kitchen = {
   drinksMenu() {
     if (this.tray.length >= trayMax()) { toast('Поднос полон', 'bad'); return; }
     UI.choice('Напитки', '<p class="muted">Самые обычные напитки.</p>',
-      DRINKS.map(k => ({ t: DISHES[k].icon + ' ' + DISHES[k].name, fn: () => { this.tray.push({ dish: k }); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2); } }))
+      DRINKS.map(k => ({ t: DISHES[k].icon + ' ' + DISHES[k].name, fn: () => { this.tray.push({ dish: k }); Sound.sfx('pour'); G.equip.drinks = Math.max(0, G.equip.drinks - 0.2); } }))
         .concat([{ t: 'Отмена', cls: 'danger' }]), { closable: true });
   },
   fridgeInfo() {
@@ -194,6 +196,7 @@ const Kitchen = {
     }
     if (type !== 'ghost' && chance(0.75)) order.push({ dish: pick(DRINKS) });
     if (type === 'ghost') order.push({ dish: pick(MAINS) });
+    Sound.sfx('doorbell');
     this.customers.push({
       id: uid(), type, name: person.name, look, seat, order, state: 'walk',
       x: DINER.door.x, y: DINER.door.y, path: [{ x: DINER.door.x, y: DINER.aisleY }, { x: DINER.seats[seat], y: DINER.aisleY }, { x: DINER.seats[seat], y: DINER.seatY }],
@@ -223,7 +226,7 @@ const Kitchen = {
         if (c.patience <= 0) {
           this.leave(c); c.bubble = '😠'; c.bubbleT = 3;
           addRep(-1.5); G.dayLog.angry++; G.stats.angry++;
-          toast(c.name + ' ушёл, не дождавшись заказа', 'bad');
+          toast(c.name + ' ушёл, не дождавшись заказа', 'bad'); Sound.sfx('angry');
         }
       } else if (c.state === 'eat') {
         c.eatT -= dt;
@@ -250,7 +253,7 @@ const Kitchen = {
       const i = this.tray.findIndex(it => it.dish === o.dish);
       if (i < 0) return;
       const it = this.tray.splice(i, 1)[0];
-      o.done = true; o.item = it; gave++;
+      o.done = true; o.item = it; gave++; Sound.sfx('serve');
     });
     if (!gave) {
       c.bubble = '💬'; c.bubbleT = 3;
@@ -285,6 +288,7 @@ const Kitchen = {
     G.dayLog.served++; G.stats.served++;
     addRep((q - 0.8) * (c.type === 'regular' ? 1.2 : 0.7));
     c.bubble = q >= 1.4 ? '😍' : q >= 0.9 ? '🙂' : '🤢'; c.bubbleT = 3;
+    if (suspicious) Sound.sfx('sus');
     if (suspicious === true) {
       c.bubble = '🤨';
       const lines = ['Странный вкус… что это за мясо?', 'Слишком вкусно для такой дыры. Подозрительно.', 'Мясо какое-то… сладковатое.'];
@@ -299,6 +303,7 @@ const Kitchen = {
       toast(c.name + ' стал постоянным клиентом!', 'good');
     }
     Particles.text(c.x, c.y - 40, '+$' + total, '#ffe070');
+    Sound.sfx('cash');
     if (q >= 1.4) Particles.sparkle(c.x, c.y - 30);
     this.leave(c);
   },
@@ -346,7 +351,7 @@ const Kitchen = {
     const s = this.stations[st.id];
     switch (st.id) {
       case 'fridge': return { hint: 'E — запасы', fn: () => this.fridgeInfo() };
-      case 'trash': return { hint: 'E — выбросить поднос', fn: () => { if (this.tray.length) { this.tray = []; toast('Поднос очищен'); } } };
+      case 'trash': return { hint: 'E — выбросить поднос', fn: () => { if (this.tray.length) { this.tray = []; Sound.sfx('trash'); toast('Поднос очищен'); } } };
       case 'board': return { hint: 'E — заказы', fn: () => this.boardInfo() };
       case 'backdoor': return { hint: 'E — чёрный ход (закрыть пораньше)', fn: () => UI.choice('Закрыть закусочную?', '<p>Закончить смену раньше и пойти спать? Оставшиеся клиенты уйдут.</p>', [{ t: 'Закрыть', cls: 'primary', fn: () => Game.endDay() }, { t: 'Работать дальше' }], { closable: true }) };
       case 'drinks': return s.broken ? { hint: 'Автомат сломан', fn: () => {} } : { hint: 'E — налить напиток', fn: () => this.drinksMenu() };

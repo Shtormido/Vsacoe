@@ -7,6 +7,7 @@ const UI = (() => {
   box.addEventListener('click', e => {
     const el = e.target.closest('[data-a]');
     if (!el || el.disabled) return;
+    Sound.sfx('click');
     const fn = handlers[el.dataset.a];
     if (fn) fn(el.dataset.v, el);
   });
@@ -15,6 +16,7 @@ const UI = (() => {
     // html: разметка, h: { действие: функция }, opts: { closable, onClose }
     open(html, h = {}, opts = {}) {
       handlers = h; closable = !!opts.closable; onClose = opts.onClose || null;
+      if (!this.isOpen()) Sound.sfx('open');
       box.innerHTML = html;
       modal.classList.remove('hidden');
       box.scrollTop = 0;
@@ -40,6 +42,7 @@ const UI = (() => {
 })();
 
 function toast(msg, cls = '') {
+  Sound.sfx(cls === 'bad' ? 'bad' : cls === 'good' ? 'good' : 'toast');
   const t = document.createElement('div');
   t.className = 'toast ' + cls; t.textContent = msg;
   const box = document.getElementById('toasts');

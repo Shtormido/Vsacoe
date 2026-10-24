@@ -18,6 +18,8 @@ const Game = {
   init() {
     newGame();
     Atmos.init();
+    Sound.loadPrefs(); updateSoundBtn();
+    document.getElementById('sound-btn').addEventListener('click', () => { Sound.unlock(); Sound.toggleMute(); });
     this.fit();
     window.addEventListener('resize', () => this.fit());
     this.title();
@@ -37,6 +39,7 @@ const Game = {
     const saved = loadSave();
     UI.open(`<div class="title-screen"><h1>ПРИДОРОЖНЫЙ<br>МОТЕЛЬ</h1>
       <p>Хоррор-кулинарный симулятор с чёрным юмором.</p>
+      <p class="sound-hint">🔊 Включи звук — у каждой фазы своя музыка (M — выключить)</p>
       <p class="muted">Днём ты повар закусочной при мотеле. Ночью — заготавливаешь особый ресурс.</p></div>
       <div class="help">
         <h3>Как играть</h3>
@@ -71,8 +74,10 @@ const Game = {
     if (G.suspicion >= 100) { this.ending('prison', 'Слишком много несостыковок. Шериф приехал прямо к открытию.'); return; }
     G.phase = 'day';
     G.time = OPEN_TIME;
+    Atmos.setWeather('clear');
     Kitchen.startDay();
     toast(`День ${G.day}. Закусочная открыта!`, 'good');
+    Sound.sfx('dayStart');
     if (first) {
       setTimeout(() => toast('Подойди к станции вверху и нажми E, чтобы готовить'), 1200);
       setTimeout(() => toast('Готовое неси к клиентам у стойки (внизу кухни)'), 3500);
@@ -83,6 +88,7 @@ const Game = {
   endDay() {
     if (G.phase !== 'day') return;
     G.phase = 'sleep';
+    Sound.sfx('close');
     prompt('');
     const left = Kitchen.customers.filter(c => c.state === 'wait').length;
     if (left) { addRep(-left * 0.5); }
@@ -107,6 +113,7 @@ const Game = {
 
   ending(type, text) {
     G.phase = 'ending';
+    Sound.sfx({ prison: 'end_prison', death: 'end_death', legend: 'end_good', flee: 'end_good', conscience: 'end_soft' }[type]);
     prompt('');
     clearSave();
     const e = ENDINGS[type];
@@ -174,12 +181,39 @@ const Game = {
     Atmos.grain(ctx, 0.07);
   },
 
+  // музыка и фоновые звуки под текущую сцену
+  updateAudio() {
+    if (!Sound.ready()) return;
+    Music.play(musicFor());
+    const rain = Atmos.weather === 'rain', fog = Atmos.weather === 'fog';
+    const L = { rain: 0, murmur: 0, sizzle: 0, fryer: 0, hum: 0, wind: 0 };
+    if (G.phase === 'day') {
+      const busy = id => Kitchen.stations[id] ? Kitchen.stations[id].slots.filter(s => s && !s.burnt).length : 0;
+      L.murmur = 0.15 + Math.min(1, Kitchen.customers.length / 4) * 0.85;
+      L.sizzle = Math.min(1, (busy('grill') + busy('spit')) / 3);
+      L.fryer = Math.min(1, busy('fryer') / 2);
+      L.hum = 0.5;
+    } else if (G.phase === 'stealth') {
+      const out = Stealth.player && Stealth.player.y > 104 && Stealth.player.x > 136;
+      L.rain = rain ? (out ? 1 : 0.5) : 0; L.wind = fog ? 0.8 : 0.15; L.hum = out ? 0.9 : 0.4;
+    } else if (G.phase === 'morning') {
+      L.wind = 0.25; L.hum = 0.2;
+    } else {
+      L.rain = rain ? 0.6 : 0; L.wind = fog ? 0.6 : 0.15; L.hum = 0.6;
+    }
+    Amb.set(L);
+    if (G.phase !== 'stealth') Sound.danger = 0;
+  },
+
   loop(ts) {
     const t = ts / 1000;
     const dt = Math.min(0.05, t - (this.last || t));
     this.last = t;
     this.update(dt);
     Atmos.update(dt, OUTDOOR);
+    Sound.update(dt);
+    this.audioT = (this.audioT || 0) - dt;
+    if (this.audioT <= 0) { this.audioT = 0.25; this.updateAudio(); }
     this.draw(t);
     updateHUD();
     requestAnimationFrame(x => this.loop(x));

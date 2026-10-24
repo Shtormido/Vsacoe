@@ -25,10 +25,13 @@ function setKey(k, down) {
   Keys[k] = down;
 }
 window.addEventListener('keydown', e => {
+  Sound.unlock();
+  if (e.code === 'KeyM') { Sound.toggleMute(); return; }
   if (e.code === 'Escape') { UI.escape(); return; }
   const k = KEYMAP[e.code];
   if (k) { setKey(k, true); if (!UI.isOpen() || k === 'space') e.preventDefault(); }
 });
+window.addEventListener('pointerdown', () => Sound.unlock());
 window.addEventListener('keyup', e => setKey(KEYMAP[e.code], false));
 document.querySelectorAll('#touch button').forEach(b => {
   const k = b.dataset.k;

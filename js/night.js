@@ -35,6 +35,7 @@ const Night = {
   // ---------- выбор цели ----------
   start() {
     G.phase = 'nightmenu';
+    Sound.sfx('chime');
     Atmos.setWeather(pick(['rain', 'rain', 'fog', 'clear']));
     if (G.flags.knowerGuest) {
       G.flags.knowerGuest = false;
@@ -78,6 +79,7 @@ const Night = {
   },
 
   takePet(g) {
+    Sound.sfx('pet');
     G.stamina = clamp(G.stamina - 10, 0, 100);
     addConscience(-3);
     if (chance(0.75 - g.suspicious / 300)) {
@@ -164,7 +166,7 @@ const Stealth = {
       if (!this.walkable(nx, ny)) { if (this.walkable(nx, p.y)) ny = p.y; else if (this.walkable(p.x, ny)) nx = p.x; else { nx = p.x; ny = p.y; } }
       p.x = nx; p.y = ny;
       p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-      p.anim += dt; if (p.anim > 0.18) { p.anim = 0; p.frame++; }
+      p.anim += dt; if (p.anim > 0.18) { p.anim = 0; p.frame++; if (p.frame % 2) Sound.sfx('step', { surface: p.y > 104 ? (p.x > 136 ? (Atmos.weather === 'rain' ? 'wet' : 'tile') : 'wood') : 'carpet' }); }
     } else p.frame = 0;
 
     // неспящие гуляют по коридору
@@ -222,6 +224,7 @@ const Stealth = {
   caught() {
     if (this.mode !== 'walk') return;
     this.mode = 'done'; prompt('');
+    Sound.sfx('caught');
     Night.fail(this.target, 'seen');
   },
 
@@ -242,12 +245,12 @@ const Stealth = {
     if (s.flash > 0) s.flash -= dt;
     if (consumeSpace() || consumeAct()) {
       if (s.pos >= s.zx && s.pos <= s.zx + s.zone) {
-        s.hits++; s.flash = 0.25; s.speed += 45; s.zone = Math.max(12, s.zone - 6); s.zx = rnd(10, 190 - s.zone);
-        if (s.hits >= 3) { this.mode = 'done'; Night.success(this.target); }
+        s.hits++; s.flash = 0.25; Sound.sfx('hit'); s.speed += 45; s.zone = Math.max(12, s.zone - 6); s.zx = rnd(10, 190 - s.zone);
+        if (s.hits >= 3) { this.mode = 'done'; Sound.sfx('kill'); Night.success(this.target); }
       } else {
-        s.misses++; s.flash = -0.3;
+        s.misses++; s.flash = -0.3; Sound.sfx('creak');
         this.target.alarm += 20;
-        if (s.misses >= 2) { this.mode = 'done'; Night.fail(this.target, 'woke'); }
+        if (s.misses >= 2) { this.mode = 'done'; Sound.sfx('caught'); Night.fail(this.target, 'woke'); }
         else toast('Скрипнула половица…', 'bad');
       }
     }
@@ -308,6 +311,7 @@ const Stealth = {
     Atmos.drawFlash(ctx);
     Atmos.vignette(ctx, 0.5);
     Atmos.pulse(ctx, danger);
+    Sound.danger = this.mode === 'walk' ? danger : 0;
     Atmos.grain(ctx, 0.08);
     // маркер цели
     const by = 12 + Math.round(Math.sin(t * 5) * 2);

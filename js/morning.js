@@ -163,6 +163,7 @@ const Morning = {
     if (a.stamina) G.stamina = clamp(G.stamina - a.stamina, 0, 100);
     if (a.skill) G.forgery = Math.min(5, G.forgery + 0.5);
     const p = clamp(a.p() - (this.haste ? 0.2 : 0) - (G.stamina < 30 ? 0.1 : 0), 0.05, 1);
+    Sound.sfx('paper');
     if (chance(p)) {
       G.tails = G.tails.filter(x => x !== t);
       if (a.gain) G.money += a.gain;
@@ -204,7 +205,7 @@ const Morning = {
       haste: (v, el) => { this.haste = el.checked; this.render(); },
       tail: v => { const [t, a] = v.split(':'); this.doTail(t, a); },
       hauler: v => { G.money -= 40; G.tails = G.tails.filter(x => x.id != v); const h = hasStaff('hauler'); if (h) staffWitness('hauler', 3); toast('Человек «на вывоз» всё забрал', 'good'); this.render(); },
-      buy: v => { const [id, n] = v.split(':'); const s = SHOP.find(x => x.id === id); const cost = s.price * s.pack * n; if (G.money >= cost) { G.money -= cost; G.stock[id] += s.pack * n; this.spend(5); } this.render(); },
+      buy: v => { const [id, n] = v.split(':'); const s = SHOP.find(x => x.id === id); const cost = s.price * s.pack * n; if (G.money >= cost) { G.money -= cost; G.stock[id] += s.pack * n; this.spend(5); Sound.sfx('coin'); } this.render(); },
       repair: k => { const cost = Math.ceil((100 - G.equip[k]) * 1.2); if (G.money >= cost) { G.money -= cost; G.equip[k] = 100; this.spend(20); toast('Починено', 'good'); } this.render(); },
       upgrade: k => { const u = UPGRADES[k], cost = u.cost(G.upgrades[k]); if (G.money >= cost && G.upgrades[k] < u.max) { G.money -= cost; G.upgrades[k]++; toast(u.name + ' улучшено!', 'good'); } this.render(); },
       act: v => {

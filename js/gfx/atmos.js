@@ -53,7 +53,7 @@ const Atmos = {
       this.drops = this.drops.filter(d => !d.dead);
       this.splashes.forEach(s => s.t += dt); this.splashes = this.splashes.filter(s => s.t < 0.25);
       this.flashT -= dt;
-      if (this.flashT <= 0) { this.flash = 1; this.shake = 0.25; this.flashT = rnd(7, 16); if (chance(0.5)) setTimeout(() => { this.flash = 0.8; }, 140); }
+      if (this.flashT <= 0) { this.flash = 1; this.shake = 0.25; setTimeout(() => Sound.sfx('thunder'), rnd(150, 900)); this.flashT = rnd(7, 16); if (chance(0.5)) setTimeout(() => { this.flash = 0.8; }, 140); }
     }
     this.flash = Math.max(0, this.flash - dt * 2.2);
     this.shake = Math.max(0, this.shake - dt);
