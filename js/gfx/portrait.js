@@ -2,7 +2,7 @@
 // mood: neutral | happy | angry | sus | sad
 const PORTRAIT_BG = [['#9cc8e4', '#efe2bc'], ['#e6b894', '#f8e8c8'], ['#a8d09c', '#f2eac4'], ['#c8b0dc', '#f2e2ea'], ['#e8d090', '#faf0d0']];
 
-function buildPortrait(L, mood = 'neutral') {
+function buildPortrait(L, mood = 'neutral', withBg = true) {
   const [c, x] = makeCanvas(64, 64);
   const [f, fx] = makeCanvas(64, 64);          // слой персонажа (потом обводим)
   const r = (X, Y, w, h, col) => { if (w > 0 && h > 0) { fx.fillStyle = col; fx.fillRect(Math.round(X), Math.round(Y), Math.round(w), Math.round(h)); } };
@@ -213,6 +213,7 @@ function buildPortrait(L, mood = 'neutral') {
   }
 
   outlineAuto(f);
+  if (!withBg) return f;
   // фон
   const bg = L.ghost ? ['#2a2238', '#4a3a58'] : PORTRAIT_BG[(L._id || 0) % PORTRAIT_BG.length];
   const g = x.createLinearGradient(0, 0, 0, 64); g.addColorStop(0, bg[0]); g.addColorStop(1, bg[1]);

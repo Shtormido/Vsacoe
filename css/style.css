@@ -473,3 +473,6 @@ button.sact b { font-size: 16px; } .ar-name { font-size: 17px; } .bp-eff { font-
 .mg-keys { color: var(--c-mut); }
 .mg-ico { font-size: 26px; }
 .mg-tag { font-style: normal; margin-right: 4px; }
+.mg-pop { position: absolute; transform: translate(-50%, -50%); font-family: var(--px-head); font-size: 12px; color: #fff; text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; pointer-events: none; white-space: nowrap; animation: mgpop .9s forwards; z-index: 2; }
+.mg-pop.gold { color: #ffe070; } .mg-pop.bad { color: #ff8a7a; }
+@keyframes mgpop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); } 30% { transform: translate(-50%, -55%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -140%); } }
