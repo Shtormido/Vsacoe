@@ -2,7 +2,7 @@
 const UI = (() => {
   const modal = document.getElementById('modal');
   const box = document.getElementById('modal-box');
-  let handlers = {}, closable = false, onClose = null, tw = null;
+  let handlers = {}, closable = false, onClose = null, tw = null, openedAt = 0;
 
   box.addEventListener('click', e => {
     const el = e.target.closest('[data-a]');
@@ -24,6 +24,7 @@ const UI = (() => {
       box.className = theme() + (opts.talk ? ' talk-box' : '') + (opts.cls ? ' ' + opts.cls : '');
       box.innerHTML = html;
       modal.classList.toggle('bottom', !!opts.talk);
+      openedAt = performance.now();
       modal.classList.remove('hidden');
       box.scrollTop = 0;
       Keys.actPressed = false; Keys.spacePressed = false;
@@ -39,6 +40,8 @@ const UI = (() => {
       if (cb) cb();
     },
     isOpen() { return !modal.classList.contains('hidden'); },
+    // сколько мс окно открыто — чтобы одно нажатие E не открывало и не пролистывало диалог сразу
+    age() { return performance.now() - openedAt; },
     escape() { if (this.isOpen() && closable) this.close(); },
 
     // печатающийся текст в элементах .tw

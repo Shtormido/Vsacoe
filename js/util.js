@@ -31,6 +31,8 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Escape') { UI.escape(); return; }
   if (UI.isOpen() && (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') && document.querySelector('#modal-box.talk-box')) {
     e.preventDefault();
+    // зажатая клавиша (автоповтор) не пролистывает реплики — иначе заказ «принимается» сам
+    if (e.repeat || UI.age() < 300) return;
     if (UI.typing()) UI.skipType(); else { const b = document.querySelector('#modal-box .btns .b.primary:not([disabled])') || document.querySelector('#modal-box .btns .b:not([disabled])'); if (b) b.click(); }
     return;
   }
