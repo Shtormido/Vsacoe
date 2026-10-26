@@ -567,7 +567,7 @@
     "id": "cmd",
     "category": "Ограничения пользователя",
     "name": "Запретить командную строку",
-    "description": "ВНИМАНИЕ: при полном запрете перестанет работать Start-PolicyManager.bat — запускайте PolicyManager.ps1 через ПКМ → «Выполнить с помощью PowerShell».",
+    "description": "ВНИМАНИЕ: при полном запрете перестанет работать Start-Zapreshatel3000.bat — запускайте Zapreshatel3000.ps1 через ПКМ → «Выполнить с помощью PowerShell».",
     "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\System",
     "values": [ { "name": "DisableCMD", "type": "DWord" } ],
     "options": [

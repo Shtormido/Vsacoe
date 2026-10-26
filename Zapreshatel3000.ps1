@@ -8,13 +8,13 @@
     готовые наборы настроек — в папке profiles.
 
 .EXAMPLE
-    .\PolicyManager.ps1
-    .\PolicyManager.ps1 -ExportRestrictions D:\restrictions.json
-    .\PolicyManager.ps1 -ImportRestrictions D:\restrictions.json
-    .\PolicyManager.ps1 -List
-    .\PolicyManager.ps1 -Backup C:\backup.json
-    .\PolicyManager.ps1 -Restore C:\backup.json
-    .\PolicyManager.ps1 -ApplyProfile privacy
+    .\Zapreshatel3000.ps1
+    .\Zapreshatel3000.ps1 -ExportRestrictions D:\restrictions.json
+    .\Zapreshatel3000.ps1 -ImportRestrictions D:\restrictions.json
+    .\Zapreshatel3000.ps1 -List
+    .\Zapreshatel3000.ps1 -Backup C:\backup.json
+    .\Zapreshatel3000.ps1 -Restore C:\backup.json
+    .\Zapreshatel3000.ps1 -ApplyProfile privacy
 #>
 [CmdletBinding()]
 param(
@@ -1567,8 +1567,11 @@ $MainWindowXaml = @'
     <Border Background="#111827">
       <DockPanel>
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,22,20,26">
-          <Border Width="38" Height="38" CornerRadius="9" Background="#2563EB">
-            <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Foreground="White" FontSize="19" HorizontalAlignment="Center"/>
+          <Border Width="40" Height="40" CornerRadius="20" Background="#111827" ClipToBounds="True">
+            <Grid>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Foreground="#F87171" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <Image x:Name="imgLogoSide" Stretch="UniformToFill"/>
+            </Grid>
           </Border>
           <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
             <TextBlock Text="Zapreshatel3000Hardcore Edition" Foreground="White" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="170"/>
@@ -1833,7 +1836,7 @@ $MainWindowXaml = @'
                 </Border>
                 <StackPanel Grid.Column="1" Margin="16,0">
                   <TextBlock Style="{StaticResource H2}" Text="Перенос настроек ограничений"/>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" Text="Сохраните программы, сайты и запреты в файл .json и загрузите его в Zapreshatel3000Hardcore Edition на другом компьютере. Без интерфейса: PolicyManager.ps1 -ImportRestrictions файл.json (от администратора)."/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" Text="Сохраните программы, сайты и запреты в файл .json и загрузите его в Zapreshatel3000Hardcore Edition на другом компьютере. Без интерфейса: Zapreshatel3000.ps1 -ImportRestrictions файл.json (от администратора)."/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                   <Button x:Name="btnRExport" Style="{StaticResource Btn}" Content="Сохранить в файл…"/>
@@ -2284,8 +2287,11 @@ $MainWindowXaml = @'
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                  <Border Width="56" Height="56" CornerRadius="12" Background="#2563EB">
-                    <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Foreground="White" FontSize="28" HorizontalAlignment="Center"/>
+                  <Border Width="64" Height="64" CornerRadius="32" Background="#111827" ClipToBounds="True">
+                    <Grid>
+                      <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Foreground="#F87171" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      <Image x:Name="imgLogoAbout" Stretch="UniformToFill"/>
+                    </Grid>
                   </Border>
                   <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="Zapreshatel3000Hardcore Edition" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -2417,6 +2423,30 @@ function Show-MainWindow {
     $os = Get-OSInfo
     [xml]$xml = $MainWindowXaml
     $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xml))
+
+    # Значок окна и логотип из папки assets рядом с программой
+    $assetsDir = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'assets' } else { '' }
+    function Get-ImageSource([string]$File) {
+        try {
+            if (-not $File -or -not (Test-Path -LiteralPath $File)) { return $null }
+            $img = New-Object System.Windows.Media.Imaging.BitmapImage
+            $img.BeginInit()
+            $img.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $img.UriSource = New-Object System.Uri((Resolve-Path -LiteralPath $File).ProviderPath)
+            $img.EndInit()
+            $img.Freeze()
+            return $img
+        } catch { return $null }
+    }
+    if ($assetsDir) {
+        $icoSrc = Get-ImageSource (Join-Path $assetsDir 'icon.ico')
+        if ($icoSrc) { $window.Icon = $icoSrc }
+        $logoSrc = Get-ImageSource (Join-Path $assetsDir 'logo.png')
+        if ($logoSrc) {
+            $logoSide = $window.FindName('imgLogoSide'); if ($logoSide) { $logoSide.Source = $logoSrc }
+            $logoAbout = $window.FindName('imgLogoAbout'); if ($logoAbout) { $logoAbout.Source = $logoSrc }
+        }
+    }
     $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
     $ns.AddNamespace('x', 'http://schemas.microsoft.com/winfx/2006/xaml')
     $ui = @{}

@@ -8,8 +8,10 @@
 ## Запуск
 
 1. Скачайте репозиторий: **Code → Download ZIP** и распакуйте.
-2. Запустите `Start-PolicyManager.bat` (или ПКМ по `PolicyManager.ps1` → «Выполнить с помощью PowerShell»).
+2. Запустите `Start-Zapreshatel3000.bat` (или ПКМ по `Zapreshatel3000.ps1` → «Выполнить с помощью PowerShell»).
 3. Подтвердите запрос UAC — без прав администратора меняются только политики HKCU.
+
+Значок программы берётся из папки `assets` (`icon.ico`, `logo.png`) — держите её рядом с `Zapreshatel3000.ps1`.
 
 ## Ограничение пользователей (раздел «Ограничения»)
 
@@ -28,8 +30,8 @@
 
 **Перенос на другой компьютер:** кнопка «Сохранить в файл…» сохраняет программы, сайты и запреты в `.json`. На другом ПК — «Загрузить из файла…» или без интерфейса (PowerShell от администратора):
 ```powershell
-.\PolicyManager.ps1 -ExportRestrictions D:\restrictions.json   # сохранить текущие
-.\PolicyManager.ps1 -ImportRestrictions D:\restrictions.json   # применить на этом ПК
+.\Zapreshatel3000.ps1 -ExportRestrictions D:\restrictions.json   # сохранить текущие
+.\Zapreshatel3000.ps1 -ImportRestrictions D:\restrictions.json   # применить на этом ПК
 ```
 
 **Проверка:** войдите под обычной учётной записью, попробуйте запустить программу не из списка (появится окно «Операция отменена из-за ограничений») и открыть заблокированный сайт.
@@ -61,10 +63,10 @@ gpupdate /force
 ## Командная строка
 
 ```powershell
-.\PolicyManager.ps1 -List                       # состояние всех политик
-.\PolicyManager.ps1 -Backup D:\policies.json    # резервная копия
-.\PolicyManager.ps1 -Restore D:\policies.json   # восстановление
-.\PolicyManager.ps1 -ApplyProfile privacy       # профиль из папки profiles
+.\Zapreshatel3000.ps1 -List                       # состояние всех политик
+.\Zapreshatel3000.ps1 -Backup D:\policies.json    # резервная копия
+.\Zapreshatel3000.ps1 -Restore D:\policies.json   # восстановление
+.\Zapreshatel3000.ps1 -ApplyProfile privacy       # профиль из папки profiles
 ```
 
 ## Свои политики
