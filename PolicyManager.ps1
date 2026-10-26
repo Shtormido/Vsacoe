@@ -9,6 +9,8 @@
 
 .EXAMPLE
     .\PolicyManager.ps1
+    .\PolicyManager.ps1 -ExportRestrictions D:\restrictions.json
+    .\PolicyManager.ps1 -ImportRestrictions D:\restrictions.json
     .\PolicyManager.ps1 -List
     .\PolicyManager.ps1 -Backup C:\backup.json
     .\PolicyManager.ps1 -Restore C:\backup.json
@@ -20,6 +22,8 @@ param(
     [string]$ApplyProfile,
     [string]$Backup,
     [string]$Restore,
+    [string]$ExportRestrictions,
+    [string]$ImportRestrictions,
     [switch]$NoElevate
 )
 
@@ -29,7 +33,7 @@ $AppName     = 'Policy Manager'
 $AppVersion  = '2.0'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
-$IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore
+$IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore -or $ExportRestrictions -or $ImportRestrictions
 
 $PolicyRoots = @(
     'HKLM:\SOFTWARE\Policies',
@@ -472,6 +476,16 @@ $SiteListKeys      = @(
     'Software\Policies\YandexBrowser\URLBlocklist'
 )
 $FirefoxBlockKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Block'
+$AllowListKeys     = @(
+    'Software\Policies\Microsoft\Edge\URLAllowlist',
+    'Software\Policies\Google\Chrome\URLAllowlist',
+    'Software\Policies\YandexBrowser\URLAllowlist'
+)
+$FirefoxAllowKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Exceptions'
+# Служебные страницы браузеров (настройки, новая вкладка), которые в режиме белого списка остаются доступны
+$BrowserInternalUrls = @('edge://*', 'chrome://*', 'browser://*')
+# Файл с последними настройками ограничений; его же формат используется для переноса на другой компьютер
+$RestrictionsFile  = Join-Path $DataDir 'restrictions.json'
 
 # Системные программы, без которых у пользователя не будут работать Проводник и значки в трее
 $DefaultAllowedPrograms = @('explorer.exe', 'SecurityHealthSystray.exe', 'OneDrive.exe')
@@ -544,7 +558,7 @@ $Lockdowns = @(
 )
 
 # Какие записи Registry.pol принадлежат этой программе (остальные сохраняются без изменений)
-$ManagedPolKeys = @($RestrictRunKey) + $SiteListKeys + @($FirefoxBlockKey)
+$ManagedPolKeys = @($RestrictRunKey) + $SiteListKeys + @($FirefoxBlockKey) + $AllowListKeys + @($FirefoxAllowKey)
 $ManagedPolPairs = @{ "$ExplorerPolicyKey|RestrictRun" = $true }
 foreach ($l in $Lockdowns) { foreach ($v in $l.Values) { $ManagedPolPairs["$($v.Key)|$($v.Name)"] = $true } }
 
@@ -765,6 +779,19 @@ function Get-LocalUserInfo {
 
 function Get-NonAdminRestrictions {
     $entries = Read-PolFile $NonAdminPolFile
+    $applied = @($entries | Where-Object { Test-ManagedPolEntry $_ }).Count -gt 0
+
+    # Последние сохранённые настройки хранят оба списка сайтов, даже если сейчас действует только один
+    if (Test-Path -LiteralPath $RestrictionsFile) {
+        try {
+            $cfg = Import-RestrictionConfig $RestrictionsFile
+            $cfg | Add-Member -NotePropertyName Applied -NotePropertyValue $applied
+            return $cfg
+        } catch {
+            Write-Log "Не удалось прочитать $($RestrictionsFile): $($_.Exception.Message)"
+        }
+    }
+
     $rr = Find-PolEntry $entries $ExplorerPolicyKey 'RestrictRun'
     $lock = @{}
     foreach ($l in $Lockdowns) {
@@ -775,17 +802,87 @@ function Get-NonAdminRestrictions {
         }
         $lock[$l.Id] = $all
     }
-    $sites = Get-PolList $entries $SiteListKeys[0]
-    $hostsSites = Get-HostsBlockedSites
+    $blockRaw = @(Get-PolList $entries $SiteListKeys[0])
+    $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ })
+    $block = @($blockRaw | Where-Object { $_ -ne '*' })
+    $hostsSites = @(Get-HostsBlockedSites)
+    $mode = 'block'
+    if ($blockRaw -contains '*') { $mode = 'allow' }
+    if (-not $block.Count) { $block = $hostsSites }
     [pscustomobject]@{
-        Applied          = @($entries | Where-Object { Test-ManagedPolEntry $_ }).Count -gt 0
+        Applied          = $applied
         WhitelistEnabled = [bool]($rr -and (Get-PolEntryValue $rr) -eq 1)
         Programs         = @(Get-PolList $entries $RestrictRunKey)
-        SitesEnabled     = $sites.Count -gt 0
-        Sites            = $(if ($sites.Count) { $sites } else { $hostsSites })
+        SitesEnabled     = ($blockRaw.Count -gt 0)
+        SitesMode        = $mode
+        BlockSites       = $block
+        AllowSites       = $allow
         HostsEnabled     = $hostsSites.Count -gt 0
         Lockdowns        = $lock
     }
+}
+
+# Файл настроек ограничений: им можно перенести запреты на другой компьютер
+function Export-RestrictionConfig($Config, [string]$File) {
+    $lock = [ordered]@{}
+    foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$Config.Lockdowns[$l.Id] }
+    $obj = [ordered]@{
+        app       = $AppName
+        type      = 'restrictions'
+        version   = 1
+        created   = (Get-Date).ToString('s')
+        computer  = $env:COMPUTERNAME
+        programs  = [ordered]@{ enabled = [bool]$Config.WhitelistEnabled; list = @($Config.Programs) }
+        sites     = [ordered]@{
+            enabled = [bool]$Config.SitesEnabled
+            mode    = [string]$Config.SitesMode
+            block   = @($Config.BlockSites)
+            allow   = @($Config.AllowSites)
+            hosts   = [bool]$Config.HostsEnabled
+        }
+        lockdowns = $lock
+    }
+    $dir = Split-Path -Parent $File
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $obj | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $File -Encoding UTF8
+}
+
+function Import-RestrictionConfig([string]$File) {
+    $j = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($j.type -ne 'restrictions') { throw "Файл не является файлом ограничений $AppName`: $File" }
+    $lock = @{}
+    foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$j.lockdowns.($l.Id) }
+    $mode = 'block'
+    if ($j.sites.mode -eq 'allow') { $mode = 'allow' }
+    $programs = @(Get-UniqueText @(@($j.programs.list) | ForEach-Object { ConvertTo-ExeName $_ }))
+    $block = @(Get-UniqueText @(@($j.sites.block) | ForEach-Object { ConvertTo-Domain $_ }))
+    $allow = @(Get-UniqueText @(@($j.sites.allow) | ForEach-Object { ConvertTo-Domain $_ }))
+    $active = if ($mode -eq 'allow') { $allow } else { $block }
+    [pscustomobject]@{
+        WhitelistEnabled = ([bool]$j.programs.enabled -and $programs.Count -gt 0)
+        Programs         = $programs
+        SitesEnabled     = ([bool]$j.sites.enabled -and $active.Count -gt 0)
+        SitesMode        = $mode
+        BlockSites       = $block
+        AllowSites       = $allow
+        HostsEnabled     = [bool]$j.sites.hosts
+        Lockdowns        = $lock
+    }
+}
+
+function Get-RestrictionSummary($Config) {
+    $lines = @()
+    if ($Config.WhitelistEnabled) { $lines += "• Разрешены только программы из списка ($(@($Config.Programs).Count) шт.)" }
+    else { $lines += '• Запуск программ не ограничен' }
+    if (-not $Config.SitesEnabled) { $lines += '• Сайты не ограничены' }
+    elseif ($Config.SitesMode -eq 'allow') { $lines += "• Белый список: открываются только $(@($Config.AllowSites).Count) сайтов, остальные запрещены" }
+    else {
+        $line = "• Чёрный список: заблокировано сайтов — $(@($Config.BlockSites).Count)"
+        if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
+        $lines += $line
+    }
+    foreach ($l in $Lockdowns) { if ($Config.Lockdowns[$l.Id]) { $lines += "• $($l.Label)" } }
+    return ($lines -join "`r`n")
 }
 
 function Save-NonAdminPol($Entries) {
@@ -808,6 +905,18 @@ function Remove-RegKeyTree([string]$Path) {
     try { $parent.DeleteSubKeyTree($Path.Substring($cut + 1), $false) } finally { $parent.Close() }
 }
 
+function Add-ValueList($Vals, [string]$Key, $Items) {
+    $i = 1
+    foreach ($item in $Items) { $Vals.Add([pscustomobject]@{ Key = $Key; Name = "$i"; Type = 'String'; Data = $item }); $i++ }
+}
+
+# Firefox понимает шаблоны адресов: домен с поддоменами или раздел сайта
+function ConvertTo-FirefoxPatterns($Sites) {
+    return @(foreach ($d in $Sites) {
+        if ($d.Contains('/')) { "*://$d*"; "*://*.$d*" } else { "*://$d/*"; "*://*.$d/*" }
+    })
+}
+
 # Плоский список значений реестра (относительно HKCU), которые задают выбранные ограничения
 function Get-RestrictionValues($Config) {
     $vals = New-Object System.Collections.Generic.List[object]
@@ -817,16 +926,15 @@ function Get-RestrictionValues($Config) {
         foreach ($p in $Config.Programs) { $vals.Add([pscustomobject]@{ Key = $RestrictRunKey; Name = "$i"; Type = 'String'; Data = $p }); $i++ }
     }
     if ($Config.SitesEnabled) {
-        foreach ($k in $SiteListKeys) {
-            $i = 1
-            foreach ($d in $Config.Sites) { $vals.Add([pscustomobject]@{ Key = $k; Name = "$i"; Type = 'String'; Data = $d }); $i++ }
-        }
-        $i = 1
-        foreach ($d in $Config.Sites) {
-            $patterns = if ($d.Contains('/')) { @("*://$d*", "*://*.$d*") } else { @("*://$d/*", "*://*.$d/*") }
-            foreach ($pattern in $patterns) {
-                $vals.Add([pscustomobject]@{ Key = $FirefoxBlockKey; Name = "$i"; Type = 'String'; Data = $pattern }); $i++
-            }
+        if ($Config.SitesMode -eq 'allow') {
+            # Белый список: запрещено всё, кроме перечисленных сайтов
+            foreach ($k in $SiteListKeys) { Add-ValueList $vals $k @('*') }
+            foreach ($k in $AllowListKeys) { Add-ValueList $vals $k (@($Config.AllowSites) + $BrowserInternalUrls) }
+            Add-ValueList $vals $FirefoxBlockKey @('<all_urls>')
+            Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites)
+        } else {
+            foreach ($k in $SiteListKeys) { Add-ValueList $vals $k $Config.BlockSites }
+            Add-ValueList $vals $FirefoxBlockKey (ConvertTo-FirefoxPatterns $Config.BlockSites)
         }
     }
     foreach ($l in $Lockdowns) {
@@ -940,13 +1048,17 @@ function Set-NonAdminRestrictions($Config) {
     # 2. Прямая запись в реестр каждого существующего обычного пользователя
     $userResults = Invoke-ForStandardUsers { param($root) Set-HiveRestrictions $root $values }
 
-    $hostsDomains = @($Config.Sites | Where-Object { -not $_.Contains('/') })
-    if ($Config.SitesEnabled -and $Config.HostsEnabled -and $hostsDomains.Count) { Set-HostsBlock $hostsDomains }
+    # hosts умеет только запрещать домены целиком, поэтому работает лишь в режиме чёрного списка
+    $hostsDomains = @($Config.BlockSites | Where-Object { $_ -and -not $_.Contains('/') })
+    if ($Config.SitesEnabled -and $Config.SitesMode -ne 'allow' -and $Config.HostsEnabled -and $hostsDomains.Count) { Set-HostsBlock $hostsDomains }
     elseif ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
 
+    Export-RestrictionConfig $Config $RestrictionsFile
+
     $on = @($Lockdowns | Where-Object { $Config.Lockdowns[$_.Id] } | ForEach-Object { $_.Id }) -join ', '
-    Write-Log ("Ограничения для не-администраторов: программы={0} [{1}]; сайты={2} [{3}]; hosts={4}; запреты=[{5}]" -f `
-        $Config.WhitelistEnabled, ($Config.Programs -join ' '), $Config.SitesEnabled, ($Config.Sites -join ' '), $Config.HostsEnabled, $on)
+    Write-Log ("Ограничения для не-администраторов: программы={0} [{1}]; сайты={2}, режим={3}, чёрный=[{4}], белый=[{5}]; hosts={6}; запреты=[{7}]" -f `
+        $Config.WhitelistEnabled, ($Config.Programs -join ' '), $Config.SitesEnabled, $Config.SitesMode,
+        (@($Config.BlockSites) -join ' '), (@($Config.AllowSites) -join ' '), $Config.HostsEnabled, $on)
     Write-Log ("Запись в профили пользователей:`r`n" + (Format-UserResults $userResults))
     return , $userResults
 }
@@ -995,6 +1107,20 @@ function Invoke-Cli {
         Write-Host "Профиль «$($r.Name)»: применено $($r.Ok), ошибок $($r.Errors.Count)"
         $r.Errors | ForEach-Object { Write-Warning $_ }
         if ($r.Reboot) { Write-Host 'Для части изменений нужна перезагрузка.' }
+    }
+    if ($ExportRestrictions) {
+        $file = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ExportRestrictions)
+        Export-RestrictionConfig (Get-NonAdminRestrictions) $file
+        Write-Host "Настройки ограничений сохранены: $file"
+    }
+    if ($ImportRestrictions) {
+        if (-not $IsAdmin) { throw 'Для применения ограничений запустите PowerShell от имени администратора.' }
+        $file = (Resolve-Path -LiteralPath $ImportRestrictions).ProviderPath
+        $cfg = Import-RestrictionConfig $file
+        Write-Host (Get-RestrictionSummary $cfg)
+        $results = Set-NonAdminRestrictions $cfg
+        Write-Host "Ограничения из $file применены:"
+        Write-Host (Format-UserResults $results)
     }
 }
 
@@ -1273,6 +1399,29 @@ $MainWindowXaml = @'
       </Setter>
     </Style>
 
+    <Style x:Key="Segment" TargetType="RadioButton">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="#374151"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="bd" Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="8" Padding="12,8">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#F3F4F6"/></Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#EFF6FF"/>
+                <Setter TargetName="bd" Property="BorderBrush" Value="#2563EB"/>
+                <Setter Property="Foreground" Value="#1D4ED8"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <DataTemplate x:Key="StringRow">
       <Grid>
         <Grid.ColumnDefinitions>
@@ -1480,12 +1629,26 @@ $MainWindowXaml = @'
                   <Grid Margin="0,0,0,4">
                     <StackPanel Orientation="Horizontal">
                       <TextBlock Style="{StaticResource Icon}" Text="&#xE774;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
-                      <TextBlock Style="{StaticResource H2}" Text="Заблокированные сайты"/>
+                      <TextBlock Style="{StaticResource H2}" Text="Сайты"/>
                     </StackPanel>
                     <CheckBox x:Name="chkSites" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                   </Grid>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Сайты и все их поддомены не откроются в Edge, Chrome, Яндекс.Браузере и Firefox. Можно указать раздел сайта, например yandex.ru/games — остальной Яндекс будет работать."/>
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
+                    <UniformGrid Columns="2" Margin="0,8,0,10">
+                      <RadioButton x:Name="rbSitesBlock" Style="{StaticResource Segment}" GroupName="sitesmode" IsChecked="True">
+                        <StackPanel>
+                          <TextBlock FontWeight="SemiBold" Text="Чёрный список"/>
+                          <TextBlock FontSize="11" Opacity="0.8" TextWrapping="Wrap" Text="Запретить указанные сайты"/>
+                        </StackPanel>
+                      </RadioButton>
+                      <RadioButton x:Name="rbSitesAllow" Style="{StaticResource Segment}" GroupName="sitesmode" Margin="0">
+                        <StackPanel>
+                          <TextBlock FontWeight="SemiBold" Text="Белый список"/>
+                          <TextBlock FontSize="11" Opacity="0.8" TextWrapping="Wrap" Text="Разрешить только указанные"/>
+                        </StackPanel>
+                      </RadioButton>
+                    </UniformGrid>
+                    <TextBlock x:Name="txtSitesDesc" Style="{StaticResource Muted}" Margin="0,0,0,12"/>
                     <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -1497,7 +1660,14 @@ $MainWindowXaml = @'
                       </Grid>
                       <Button x:Name="btnSiteAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                     </Grid>
-                    <WrapPanel Margin="0,0,0,8">
+                    <WrapPanel x:Name="pnlQuickAllow" Margin="0,0,0,8" Visibility="Collapsed">
+                      <Button x:Name="btnAllowSearch" Style="{StaticResource BtnChip}" Content="+ Поисковики"/>
+                      <Button x:Name="btnAllowStudy" Style="{StaticResource BtnChip}" Content="+ Учёба"/>
+                      <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход Microsoft/Google/Яндекс"/>
+                      <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
+                      <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
+                    </WrapPanel>
+                    <WrapPanel x:Name="pnlQuickBlock" Margin="0,0,0,8">
                       <Button x:Name="btnQuickSocial" Style="{StaticResource BtnChip}" Content="+ Соцсети"/>
                       <Button x:Name="btnQuickVideo" Style="{StaticResource BtnChip}" Content="+ Видео"/>
                       <Button x:Name="btnQuickGames" Style="{StaticResource BtnChip}" Content="+ Игры"/>
@@ -1508,6 +1678,7 @@ $MainWindowXaml = @'
                     <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
                       <ListBox x:Name="lbSites" Height="250" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
                     </Border>
+                    <TextBlock x:Name="txtSitesCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
                     <CheckBox x:Name="chkHosts" Style="{StaticResource Switch}" Margin="0,12,0,0">
                       <TextBlock TextWrapping="Wrap" Text="Также через файл hosts — работает в любом браузере, но и для администратора тоже"/>
                     </CheckBox>
@@ -1525,6 +1696,27 @@ $MainWindowXaml = @'
                 <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14" Text="Закрывают лазейки, через которые можно снять ограничения или запустить запрещённую программу."/>
                 <UniformGrid x:Name="pnlLockdowns" Columns="2"/>
               </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Width="44" Height="44" CornerRadius="10" Background="#EFF6FF" VerticalAlignment="Top">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE8B7;" FontSize="20" Foreground="#2563EB" HorizontalAlignment="Center"/>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="16,0">
+                  <TextBlock Style="{StaticResource H2}" Text="Перенос настроек ограничений"/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" Text="Сохраните программы, сайты и запреты в файл .json и загрузите его в Policy Manager на другом компьютере. Без интерфейса: PolicyManager.ps1 -ImportRestrictions файл.json (от администратора)."/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                  <Button x:Name="btnRExport" Style="{StaticResource Btn}" Content="Сохранить в файл…"/>
+                  <Button x:Name="btnRImport" Style="{StaticResource Btn}" Margin="0" Content="Загрузить из файла…"/>
+                </StackPanel>
+              </Grid>
             </Border>
           </StackPanel>
         </ScrollViewer>
@@ -2032,9 +2224,11 @@ function Show-MainWindow {
     #region Страница «Ограничения»
 
     $progs = New-Object System.Collections.ObjectModel.ObservableCollection[string]
-    $sites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $blockSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $allowSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $script:CurSites = $blockSites
     $ui.lbProg.ItemsSource = $progs
-    $ui.lbSites.ItemsSource = $sites
+    $ui.lbSites.ItemsSource = $blockSites
     Register-Placeholder $ui.txtProgAdd $ui.phProgAdd
     Register-Placeholder $ui.txtSiteAdd $ui.phSiteAdd
 
@@ -2049,7 +2243,61 @@ function Show-MainWindow {
         $Collection.Add($Value)
     }
     function Add-Programs($Names) { foreach ($n in $Names) { Add-UniqueItem $progs (ConvertTo-ExeName $n) } }
-    function Add-Sites($Names) { foreach ($n in $Names) { Add-UniqueItem $sites (ConvertTo-Domain $n) } }
+    function Add-Sites($Names) { foreach ($n in $Names) { Add-UniqueItem $script:CurSites (ConvertTo-Domain $n) } }
+
+    function Update-SitesCount {
+        if ($ui.rbSitesAllow.IsChecked -eq $true) { $ui.txtSitesCount.Text = "Разрешено сайтов: $($allowSites.Count)" }
+        else { $ui.txtSitesCount.Text = "Заблокировано сайтов: $($blockSites.Count)" }
+    }
+    $blockSites.Add_CollectionChanged({ Update-SitesCount })
+    $allowSites.Add_CollectionChanged({ Update-SitesCount })
+
+    function Set-SitesMode([string]$Mode) {
+        if ($Mode -eq 'allow') {
+            $script:CurSites = $allowSites
+            $ui.lbSites.ItemsSource = $allowSites
+            $ui.pnlQuickAllow.Visibility = 'Visible'
+            $ui.pnlQuickBlock.Visibility = 'Collapsed'
+            $ui.chkHosts.Visibility = 'Collapsed'
+            $ui.phSiteAdd.Text = 'Например: uchi.ru'
+            $ui.txtSitesDesc.Text = 'Открываться будут ТОЛЬКО эти сайты (с поддоменами), все остальные запрещены. Не забудьте поисковик и сайты для входа в аккаунты, если они нужны.'
+        } else {
+            $script:CurSites = $blockSites
+            $ui.lbSites.ItemsSource = $blockSites
+            $ui.pnlQuickAllow.Visibility = 'Collapsed'
+            $ui.pnlQuickBlock.Visibility = 'Visible'
+            $ui.chkHosts.Visibility = 'Visible'
+            $ui.phSiteAdd.Text = 'Например: youtube.com'
+            $ui.txtSitesDesc.Text = 'Эти сайты и их поддомены не откроются в Edge, Chrome, Яндекс.Браузере и Firefox. Можно указать раздел сайта, например yandex.ru/games — остальной Яндекс будет работать.'
+        }
+        Update-SitesCount
+    }
+    $ui.rbSitesBlock.Add_Checked({ Invoke-Safe { Set-SitesMode 'block' } })
+    $ui.rbSitesAllow.Add_Checked({ Invoke-Safe { Set-SitesMode 'allow' } })
+
+    $ui.btnAllowSearch.Tag = 'yandex.ru ya.ru google.com google.ru bing.com duckduckgo.com'
+    $ui.btnAllowStudy.Tag = @(
+        'uchi.ru', 'resh.edu.ru', 'edu.ru', 'myschool.edu.ru', 'education.yandex.ru', 'dnevnik.ru', 'school.mos.ru', 'mos.ru',
+        'sferum.ru', 'foxford.ru', 'skysmart.ru', 'yaklass.ru', 'interneturok.ru', 'olimpiada.ru', 'prosv.ru', 'rosuchebnik.ru',
+        'wikipedia.org', 'wiktionary.org', 'gramota.ru', 'khanacademy.org', 'duolingo.com', 'stepik.org', 'translate.yandex.ru', 'translate.google.com'
+    ) -join ' '
+    $ui.btnAllowAccounts.Tag = @(
+        'login.microsoftonline.com', 'login.live.com', 'live.com', 'microsoft.com', 'office.com', 'microsoft365.com',
+        'accounts.google.com', 'gstatic.com', 'googleapis.com', 'passport.yandex.ru', 'id.yandex.ru', 'yastatic.net', 'id.vk.com'
+    ) -join ' '
+    $ui.btnAllowMail.Tag = 'mail.ru e.mail.ru mail.yandex.ru gmail.com mail.google.com outlook.live.com outlook.office.com'
+    $ui.btnAllowGov.Tag = 'gosuslugi.ru esia.gosuslugi.ru nalog.gov.ru mos.ru pfr.gov.ru sfr.gov.ru'
+    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov)) {
+        $b.Add_Click({
+            param($s, $e)
+            Invoke-Safe {
+                $before = $allowSites.Count
+                Add-Sites @($s.Tag -split ' ')
+                $ui.chkSites.IsChecked = $true
+                Show-Toast "Добавлено в белый список: $($allowSites.Count - $before). Не забудьте нажать «Применить ограничения»."
+            }
+        })
+    }
 
     # Кнопки «удалить» внутри списков
     $removeHandler = [System.Windows.RoutedEventHandler] {
@@ -2203,10 +2451,10 @@ function Show-MainWindow {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
-                $before = $sites.Count
+                $before = $blockSites.Count
                 Add-Sites @($s.Tag -split ' ')
                 $ui.chkSites.IsChecked = $true
-                Show-Toast "Добавлено сайтов: $($sites.Count - $before). Не забудьте нажать «Применить ограничения»."
+                Show-Toast "Добавлено сайтов: $($blockSites.Count - $before). Не забудьте нажать «Применить ограничения»."
             }
         })
     }
@@ -2267,74 +2515,107 @@ function Show-MainWindow {
         }
     }
 
-    function Import-RestrictionsToUI {
-        $r = Get-NonAdminRestrictions
+    # Заполняет интерфейс из настроек (текущих или загруженных из файла)
+    function Set-RestrictionsUI($r, [bool]$UseDefaults) {
         $progs.Clear()
-        $sites.Clear()
-        if ($r.Applied) {
+        $blockSites.Clear()
+        $allowSites.Clear()
+        if ($UseDefaults) {
+            $ui.chkWl.IsChecked = $true
+            foreach ($p in $DefaultAllowedPrograms) { Add-UniqueItem $progs $p }
+            $ui.chkSites.IsChecked = $true
+            foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$l.Default }
+        } else {
             $ui.chkWl.IsChecked = $r.WhitelistEnabled
             $list = @($r.Programs)
             if (-not $list.Count) { $list = $DefaultAllowedPrograms }
             foreach ($p in $list) { Add-UniqueItem $progs $p }
             $ui.chkSites.IsChecked = $r.SitesEnabled
             foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$r.Lockdowns[$l.Id] }
-        } else {
-            $ui.chkWl.IsChecked = $true
-            foreach ($p in $DefaultAllowedPrograms) { Add-UniqueItem $progs $p }
-            $ui.chkSites.IsChecked = $true
-            foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$l.Default }
         }
-        foreach ($s in @($r.Sites)) { Add-UniqueItem $sites $s }
-        $ui.chkHosts.IsChecked = $r.HostsEnabled
-        Set-RestrictionState $r.Applied
+        foreach ($x in @($r.BlockSites)) { Add-UniqueItem $blockSites $x }
+        foreach ($x in @($r.AllowSites)) { Add-UniqueItem $allowSites $x }
+        if ($r.SitesMode -eq 'allow') { $ui.rbSitesAllow.IsChecked = $true } else { $ui.rbSitesBlock.IsChecked = $true }
+        Set-SitesMode $(if ($r.SitesMode -eq 'allow') { 'allow' } else { 'block' })
+        $ui.chkHosts.IsChecked = [bool]$r.HostsEnabled
         Update-ListCounters
+    }
+
+    function Import-RestrictionsToUI {
+        $r = Get-NonAdminRestrictions
+        # Если ограничения ни разу не настраивались — предлагаем значения по умолчанию
+        $neverConfigured = -not $r.Applied -and -not (Test-Path -LiteralPath $RestrictionsFile)
+        Set-RestrictionsUI $r $neverConfigured
+        Set-RestrictionState $r.Applied
     }
 
     function Get-RestrictionsFromUI {
         $lock = @{}
         foreach ($l in $Lockdowns) { $lock[$l.Id] = ($lockBoxes[$l.Id].IsChecked -eq $true) }
-        $siteList = @($sites)
+        $mode = 'block'
+        if ($ui.rbSitesAllow.IsChecked -eq $true) { $mode = 'allow' }
+        $block = @($blockSites)
+        $allow = @($allowSites)
+        $active = if ($mode -eq 'allow') { $allow } else { $block }
         [pscustomobject]@{
             WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
             Programs         = @($progs)
-            SitesEnabled     = ($ui.chkSites.IsChecked -eq $true -and $siteList.Count -gt 0)
-            Sites            = $siteList
+            SitesEnabled     = ($ui.chkSites.IsChecked -eq $true -and $active.Count -gt 0)
+            SitesMode        = $mode
+            BlockSites       = $block
+            AllowSites       = $allow
             HostsEnabled     = ($ui.chkHosts.IsChecked -eq $true)
             Lockdowns        = $lock
         }
     }
 
-    $ui.btnRApply.Add_Click({
+    function Invoke-ApplyRestrictions([bool]$AskConfirm = $true) {
+        if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
+        # Текст, введённый в поле, но не добавленный кнопкой, тоже учитываем
+        if ($ui.txtProgAdd.Text) { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' }
+        if ($ui.txtSiteAdd.Text) { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' }
+        $cfg = Get-RestrictionsFromUI
+        if ($cfg.WhitelistEnabled -and -not $cfg.Programs.Count) { Show-Error 'Список разрешённых программ пуст.'; return }
+        if ($cfg.WhitelistEnabled -and $cfg.Programs -notcontains 'explorer.exe') {
+            if (-not (Confirm-Action 'В списке нет explorer.exe — у пользователей могут не открываться папки. Продолжить?')) { return }
+        }
+        if ($ui.chkSites.IsChecked -eq $true -and -not $cfg.SitesEnabled) { Show-Error 'Список сайтов пуст. Добавьте сайты или выключите ограничение сайтов.'; return }
+        if ($AskConfirm -and -not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + (Get-RestrictionSummary $cfg)))) { return }
+
+        Set-Busy $true
+        try { $userResults = Set-NonAdminRestrictions $cfg } finally { Set-Busy $false }
+        Import-RestrictionsToUI
+        Update-UserList
+        $report = Format-UserResults $userResults
+        if (-not $report) { $report = '• Обычных пользователей пока нет — ограничения применятся к новым учётным записям при первом входе.' }
+        Show-Info ("Ограничения применены.`r`n`r`n$report`r`n`r`nЧтобы проверить: выйдите из учётной записи пользователя (Пуск → значок пользователя → Выйти), " +
+            "войдите снова и попробуйте запустить программу не из списка или открыть запрещённый сайт.")
+    }
+
+    $ui.btnRApply.Add_Click({ Invoke-Safe { Invoke-ApplyRestrictions $true } })
+
+    $ui.btnRExport.Add_Click({
         Invoke-Safe {
-            if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
-            # Текст, введённый в поле, но не добавленный кнопкой, тоже учитываем
-            if ($ui.txtProgAdd.Text) { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' }
-            if ($ui.txtSiteAdd.Text) { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' }
-            $cfg = Get-RestrictionsFromUI
-            if ($cfg.WhitelistEnabled -and -not $cfg.Programs.Count) { Show-Error 'Список разрешённых программ пуст.'; return }
-            if ($cfg.WhitelistEnabled -and $cfg.Programs -notcontains 'explorer.exe') {
-                if (-not (Confirm-Action 'В списке нет explorer.exe — у пользователей могут не открываться папки. Продолжить?')) { return }
+            $file = Select-SaveFile 'Настройки ограничений (*.json)|*.json' $BackupDir ('restrictions_{0}_{1:yyyyMMdd}.json' -f $env:COMPUTERNAME, (Get-Date))
+            if ($file) {
+                Export-RestrictionConfig (Get-RestrictionsFromUI) $file
+                Write-Log "Настройки ограничений экспортированы: $file"
+                Show-Toast "Настройки сохранены: $file"
             }
-            if ($ui.chkSites.IsChecked -eq $true -and -not $cfg.SitesEnabled) { Show-Error 'Список сайтов пуст. Добавьте сайты или выключите блокировку.'; return }
-
-            $summary = @()
-            if ($cfg.WhitelistEnabled) { $summary += "• Разрешены только программы из списка ($($cfg.Programs.Count) шт.)" } else { $summary += '• Запуск программ не ограничен' }
-            if ($cfg.SitesEnabled) {
-                $line = "• Заблокировано сайтов: $($cfg.Sites.Count)"
-                if ($cfg.HostsEnabled) { $line += ' (+ файл hosts)' }
-                $summary += $line
+        }
+    })
+    $ui.btnRImport.Add_Click({
+        Invoke-Safe {
+            $files = Select-OpenFile 'Настройки ограничений (*.json)|*.json' $BackupDir
+            if (-not $files) { return }
+            $cfg = Import-RestrictionConfig $files[0]
+            Set-RestrictionsUI $cfg $false
+            Write-Log "Загружены настройки ограничений: $($files[0])"
+            if (Confirm-Action ("Настройки загружены:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nПрименить их сейчас для всех пользователей без прав администратора?")) {
+                Invoke-ApplyRestrictions $false
+            } else {
+                Show-Toast 'Настройки загружены в форму. Проверьте их и нажмите «Применить ограничения».'
             }
-            foreach ($l in $Lockdowns) { if ($cfg.Lockdowns[$l.Id]) { $summary += "• $($l.Label)" } }
-            if (-not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + ($summary -join "`r`n")))) { return }
-
-            Set-Busy $true
-            try { $userResults = Set-NonAdminRestrictions $cfg } finally { Set-Busy $false }
-            Import-RestrictionsToUI
-            Update-UserList
-            $report = Format-UserResults $userResults
-            if (-not $report) { $report = '• Обычных пользователей пока нет — ограничения применятся к новым учётным записям при первом входе.' }
-            Show-Info ("Ограничения применены.`r`n`r`n$report`r`n`r`nЧтобы проверить: выйдите из учётной записи пользователя (Пуск → значок пользователя → Выйти), " +
-                "войдите снова и попробуйте запустить программу не из списка или открыть заблокированный сайт.")
         }
     })
 
