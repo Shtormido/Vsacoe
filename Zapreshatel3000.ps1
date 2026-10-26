@@ -1780,11 +1780,39 @@ $MainWindowXaml = @'
                     </StackPanel>
                     <CheckBox x:Name="chkSites" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                   </Grid>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" Text="Чёрный и белый списки работают вместе: запрещается чёрный список, а белый список — исключения, которые открываются всегда (имеет приоритет). Включите строгий режим, чтобы разрешить только белый список."/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" Text="Сначала применяется белый список (разрешённые сайты открываются всегда, он главнее), затем чёрный (запрещает остальное из списка). Включите строгий режим, чтобы разрешить только белый список."/>
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
                     <CheckBox x:Name="chkStrict" Style="{StaticResource Switch}" Margin="0,0,0,12">
                       <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Text="Строгий режим: разрешать только сайты из белого списка (всё остальное запрещено)"/>
                     </CheckBox>
+
+                    <Border BorderBrush="#86EFAC" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#F0FDF4">
+                      <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="#166534" Text="Белый список — разрешить (исключения)" Margin="0,0,0,8"/>
+                        <Grid Margin="0,0,0,8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <Grid>
+                            <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Например: uchi.ru"/>
+                          </Grid>
+                          <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
+                        </Grid>
+                        <WrapPanel Margin="0,0,0,8">
+                          <Button x:Name="btnAllowSearch" Style="{StaticResource BtnChip}" Content="+ Поисковики"/>
+                          <Button x:Name="btnAllowStudy" Style="{StaticResource BtnChip}" Content="+ Учёба"/>
+                          <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход в аккаунты"/>
+                          <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
+                          <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
+                        </WrapPanel>
+                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
+                          <ListBox x:Name="lbAllow" Height="150" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                        </Border>
+                        <TextBlock x:Name="txtAllowCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
+                      </StackPanel>
+                    </Border>
 
                     <Border BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#FEF2F2">
                       <StackPanel>
@@ -1812,34 +1840,6 @@ $MainWindowXaml = @'
                           <ListBox x:Name="lbBlock" Height="150" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
                         </Border>
                         <TextBlock x:Name="txtBlockCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
-                      </StackPanel>
-                    </Border>
-
-                    <Border BorderBrush="#86EFAC" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#F0FDF4">
-                      <StackPanel>
-                        <TextBlock FontWeight="SemiBold" Foreground="#166534" Text="Белый список — разрешить (исключения)" Margin="0,0,0,8"/>
-                        <Grid Margin="0,0,0,8">
-                          <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                          </Grid.ColumnDefinitions>
-                          <Grid>
-                            <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
-                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Например: uchi.ru"/>
-                          </Grid>
-                          <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
-                        </Grid>
-                        <WrapPanel Margin="0,0,0,8">
-                          <Button x:Name="btnAllowSearch" Style="{StaticResource BtnChip}" Content="+ Поисковики"/>
-                          <Button x:Name="btnAllowStudy" Style="{StaticResource BtnChip}" Content="+ Учёба"/>
-                          <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход в аккаунты"/>
-                          <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
-                          <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
-                        </WrapPanel>
-                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
-                          <ListBox x:Name="lbAllow" Height="150" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-                        </Border>
-                        <TextBlock x:Name="txtAllowCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
                       </StackPanel>
                     </Border>
 
