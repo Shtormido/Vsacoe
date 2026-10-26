@@ -587,20 +587,24 @@ $HostsEnd        = '# <<< Policy Manager'
 $ExplorerPolicyKey = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
 $SystemPolicyKey   = 'Software\Microsoft\Windows\CurrentVersion\Policies\System'
 $RestrictRunKey    = "$ExplorerPolicyKey\RestrictRun"
-$SiteListKeys      = @(
-    'Software\Policies\Microsoft\Edge\URLBlocklist',
-    'Software\Policies\Google\Chrome\URLBlocklist',
-    'Software\Policies\YandexBrowser\URLBlocklist'
+# Корни политик всех браузеров на движке Chromium, которые читают URLBlocklist/URLAllowlist
+$ChromiumPolicyRoots = @(
+    'Software\Policies\Microsoft\Edge',
+    'Software\Policies\Google\Chrome',
+    'Software\Policies\YandexBrowser',
+    'Software\Policies\BraveSoftware\Brave',
+    'Software\Policies\Vivaldi',
+    'Software\Policies\Chromium',
+    'Software\Policies\Mail.Ru\Atom'
 )
+$SiteListKeys      = @($ChromiumPolicyRoots | ForEach-Object { "$_\URLBlocklist" })
+$AllowListKeys     = @($ChromiumPolicyRoots | ForEach-Object { "$_\URLAllowlist" })
 $FirefoxBlockKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Block'
-$AllowListKeys     = @(
-    'Software\Policies\Microsoft\Edge\URLAllowlist',
-    'Software\Policies\Google\Chrome\URLAllowlist',
-    'Software\Policies\YandexBrowser\URLAllowlist'
-)
 $FirefoxAllowKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Exceptions'
+# Фильтры «заблокировать всё» для режима белого списка (несколько форм — для надёжности в разных сборках)
+$BlockAllFilters   = @('*', 'http://*', 'https://*', 'ftp://*', 'file://*')
 # Служебные страницы браузеров (настройки, новая вкладка), которые в режиме белого списка остаются доступны
-$BrowserInternalUrls = @('edge://*', 'chrome://*', 'browser://*')
+$BrowserInternalUrls = @('edge://*', 'chrome://*', 'browser://*', 'brave://*', 'vivaldi://*', 'chrome-extension://*')
 # Файл с последними настройками ограничений; его же формат используется для переноса на другой компьютер
 $RestrictionsFile  = Join-Path $DataDir 'restrictions.json'
 
@@ -924,11 +928,12 @@ function Get-NonAdminRestrictions {
         $lock[$l.Id] = $all
     }
     $blockRaw = @(Get-PolList $entries $SiteListKeys[0])
-    $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ })
-    $block = @($blockRaw | Where-Object { $_ -ne '*' })
+    # На экране показываем только домены пользователя, без служебных фильтров и дублей *.domain
+    $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') })
+    $block = @($blockRaw | Where-Object { $BlockAllFilters -notcontains $_ })
     $hostsSites = @(Get-HostsBlockedSites)
     $mode = 'block'
-    if ($blockRaw -contains '*') { $mode = 'allow' }
+    if ($blockRaw | Where-Object { $BlockAllFilters -contains $_ }) { $mode = 'allow' }
     if (-not $block.Count) { $block = $hostsSites }
     [pscustomobject]@{
         Applied          = $applied
@@ -1049,8 +1054,9 @@ function Get-RestrictionValues($Config) {
     if ($Config.SitesEnabled) {
         if ($Config.SitesMode -eq 'allow') {
             # Белый список: запрещено всё, кроме перечисленных сайтов
-            foreach ($k in $SiteListKeys) { Add-ValueList $vals $k @('*') }
-            foreach ($k in $AllowListKeys) { Add-ValueList $vals $k (@($Config.AllowSites) + $BrowserInternalUrls) }
+            foreach ($k in $SiteListKeys) { Add-ValueList $vals $k $BlockAllFilters }
+            $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
+            foreach ($k in $AllowListKeys) { Add-ValueList $vals $k (@($allowFilters) + $BrowserInternalUrls) }
             Add-ValueList $vals $FirefoxBlockKey @('<all_urls>')
             Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites)
         } else {
