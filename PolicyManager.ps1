@@ -26,7 +26,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Policy Manager'
-$AppVersion  = '1.0'
+$AppVersion  = '2.0'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
 $IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore
@@ -817,929 +817,1311 @@ function Invoke-Cli {
 
 #endregion
 
-#region Графический интерфейс
+#region Графический интерфейс (WPF)
+
+# Класс строки для списков интерфейса: уведомляет WPF об изменениях, поддерживает группировку
+$RowTypeSource = @'
+using System.ComponentModel;
+namespace PolicyManagerUI {
+    public class Row : INotifyPropertyChanged {
+        public event PropertyChangedEventHandler PropertyChanged;
+        private void Set<T>(ref T field, T value, string name) {
+            field = value;
+            PropertyChangedEventHandler h = PropertyChanged;
+            if (h != null) h(this, new PropertyChangedEventArgs(name));
+        }
+        private string _title, _subtitle, _badge, _c1, _c2, _c3;
+        private object _badgeBg, _badgeFg, _rowBg;
+        public string Id { get; set; }
+        public string Group { get; set; }
+        public object Tag { get; set; }
+        public string Title { get { return _title; } set { Set(ref _title, value, "Title"); } }
+        public string Subtitle { get { return _subtitle; } set { Set(ref _subtitle, value, "Subtitle"); } }
+        public string Badge { get { return _badge; } set { Set(ref _badge, value, "Badge"); } }
+        public object BadgeBg { get { return _badgeBg; } set { Set(ref _badgeBg, value, "BadgeBg"); } }
+        public object BadgeFg { get { return _badgeFg; } set { Set(ref _badgeFg, value, "BadgeFg"); } }
+        public object RowBg { get { return _rowBg; } set { Set(ref _rowBg, value, "RowBg"); } }
+        public string C1 { get { return _c1; } set { Set(ref _c1, value, "C1"); } }
+        public string C2 { get { return _c2; } set { Set(ref _c2, value, "C2"); } }
+        public string C3 { get { return _c3; } set { Set(ref _c3, value, "C3"); } }
+    }
+}
+'@
+
+$MainWindowXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Policy Manager" Width="1280" Height="860" MinWidth="1060" MinHeight="660"
+        WindowStartupLocation="CenterScreen" Background="#F3F4F6"
+        FontFamily="Segoe UI" FontSize="13" Foreground="#111827" UseLayoutRounding="True">
+  <Window.Resources>
+    <Style x:Key="Icon" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style x:Key="H2" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style x:Key="Muted" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#6B7280"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="20"/>
+      <Setter Property="Margin" Value="0,0,0,16"/>
+    </Style>
+
+    <Style x:Key="Btn" TargetType="Button">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="#111827"/>
+      <Setter Property="BorderBrush" Value="#D1D5DB"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="14,7"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid>
+              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6"/>
+              <Border x:Name="overlay" Background="Black" Opacity="0" CornerRadius="6"/>
+              <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="overlay" Property="Opacity" Value="0.06"/></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="overlay" Property="Opacity" Value="0.14"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BtnPrimary" TargetType="Button" BasedOn="{StaticResource Btn}">
+      <Setter Property="Background" Value="#2563EB"/>
+      <Setter Property="BorderBrush" Value="#2563EB"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style x:Key="BtnDanger" TargetType="Button" BasedOn="{StaticResource Btn}">
+      <Setter Property="Foreground" Value="#DC2626"/>
+      <Setter Property="BorderBrush" Value="#FCA5A5"/>
+    </Style>
+    <Style x:Key="BtnChip" TargetType="Button" BasedOn="{StaticResource Btn}">
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Margin" Value="0,0,6,6"/>
+      <Setter Property="FontWeight" Value="Normal"/>
+      <Setter Property="Background" Value="#EFF6FF"/>
+      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+      <Setter Property="Foreground" Value="#1D4ED8"/>
+    </Style>
+    <Style x:Key="BtnIcon" TargetType="Button">
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="#9CA3AF"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bd" Background="Transparent" CornerRadius="4" Padding="7">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#FEE2E2"/>
+                <Setter Property="Foreground" Value="#DC2626"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="Tile" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Margin" Value="0,0,16,16"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bd" Background="White" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="10" Padding="20">
+              <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Top"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="#2563EB"/>
+                <Setter TargetName="bd" Property="Background" Value="#F8FAFF"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="Nav" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="#D1D5DB"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Margin" Value="10,2"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="GroupName" Value="nav"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="bd" Background="Transparent" CornerRadius="6" Padding="12,10">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="30"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{TemplateBinding Tag}" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center"/>
+                <ContentPresenter Grid.Column="1" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#1F2937"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#2563EB"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid Background="Transparent">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="track" Width="40" Height="22" CornerRadius="11" Background="#D1D5DB" VerticalAlignment="Top" Margin="0,1,0,0">
+                <Ellipse x:Name="knob" Width="16" Height="16" Fill="White" HorizontalAlignment="Left" Margin="3,0,0,0"/>
+              </Border>
+              <ContentPresenter Grid.Column="1" Margin="10,2,0,0" VerticalAlignment="Top"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="track" Property="Background" Value="#2563EB"/>
+                <Setter TargetName="knob" Property="HorizontalAlignment" Value="Right"/>
+                <Setter TargetName="knob" Property="Margin" Value="0,0,3,0"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="Input" TargetType="TextBox">
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="BorderBrush" Value="#D1D5DB"/>
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="bd" Property="BorderBrush" Value="#2563EB"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="Placeholder" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#9CA3AF"/>
+      <Setter Property="Margin" Value="10,0,0,0"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="IsHitTestVisible" Value="False"/>
+    </Style>
+
+    <Style x:Key="RowItem" TargetType="ListBoxItem">
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}" Margin="0,1">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#F3F4F6"/></Trigger>
+              <Trigger Property="IsSelected" Value="True"><Setter TargetName="bd" Property="Background" Value="#E0EAFF"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ChipItem" TargetType="ListBoxItem">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="#374151"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="bd" Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="14" Padding="12,5" Margin="0,0,6,6">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#F3F4F6"/></Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#2563EB"/>
+                <Setter TargetName="bd" Property="BorderBrush" Value="#2563EB"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <DataTemplate x:Key="StringRow">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Style="{StaticResource Icon}" Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=ListBox}}" Foreground="#9CA3AF" Margin="0,0,10,0"/>
+        <TextBlock Grid.Column="1" Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        <Button Grid.Column="2" Style="{StaticResource BtnIcon}" Tag="{Binding}" ToolTip="Удалить" Content="&#xE711;"/>
+      </Grid>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="240"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- Боковое меню -->
+    <Border Background="#111827">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,22,20,26">
+          <Border Width="38" Height="38" CornerRadius="9" Background="#2563EB">
+            <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Foreground="White" FontSize="19" HorizontalAlignment="Center"/>
+          </Border>
+          <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="Policy Manager" Foreground="White" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock x:Name="txtVersion" Foreground="#9CA3AF" FontSize="11"/>
+          </StackPanel>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="20,0,20,20">
+          <Border x:Name="badgeAdmin" CornerRadius="6" Padding="10,6" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="badgeAdminIcon" Style="{StaticResource Icon}" FontSize="13" Margin="0,0,8,0"/>
+              <TextBlock x:Name="badgeAdminText" FontSize="12" TextWrapping="Wrap" MaxWidth="160"/>
+            </StackPanel>
+          </Border>
+          <TextBlock x:Name="txtOS" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap"/>
+        </StackPanel>
+        <StackPanel>
+          <RadioButton x:Name="navRestrict" Style="{StaticResource Nav}" Tag="&#xE72E;" Content="Ограничения" IsChecked="True"/>
+          <RadioButton x:Name="navPolicies" Style="{StaticResource Nav}" Tag="&#xE713;" Content="Политики"/>
+          <RadioButton x:Name="navRegistry" Style="{StaticResource Nav}" Tag="&#xE71D;" Content="Реестр"/>
+          <RadioButton x:Name="navProfiles" Style="{StaticResource Nav}" Tag="&#xE8F1;" Content="Профили и копии"/>
+          <RadioButton x:Name="navTools" Style="{StaticResource Nav}" Tag="&#xE90F;" Content="Инструменты"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- Основная область -->
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+
+      <Grid Margin="32,24,32,16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel>
+          <TextBlock x:Name="txtPageTitle" FontSize="26" FontWeight="SemiBold"/>
+          <TextBlock x:Name="txtPageSubtitle" Style="{StaticResource Muted}" FontSize="14" Margin="0,4,0,0"/>
+        </StackPanel>
+        <Button x:Name="btnRefresh" Grid.Column="1" Style="{StaticResource Btn}" VerticalAlignment="Center" Margin="0" ToolTip="Перечитать состояние (F5)">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Style="{StaticResource Icon}" Text="&#xE72C;" Margin="0,0,8,0"/>
+            <TextBlock Text="Обновить"/>
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <Border x:Name="bannerAdmin" Grid.Row="1" Margin="32,0,32,16" Background="#FEF3C7" BorderBrush="#FCD34D" BorderThickness="1" CornerRadius="8" Padding="16,10" Visibility="Collapsed">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="#B45309" FontSize="16" Margin="0,0,12,0"/>
+          <TextBlock Grid.Column="1" Foreground="#92400E" TextWrapping="Wrap" VerticalAlignment="Center" Text="Программа запущена без прав администратора — изменить можно только политики текущего пользователя."/>
+          <Button x:Name="btnElevate" Grid.Column="2" Style="{StaticResource BtnPrimary}" Content="Запустить от администратора" Margin="12,0,0,0"/>
+        </Grid>
+      </Border>
+
+      <Grid Grid.Row="2">
+
+        <!-- ===== Ограничения ===== -->
+        <ScrollViewer x:Name="pageRestrict" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="32,0,32,24">
+            <Border x:Name="warnHome" Background="#FEE2E2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="16,10" Margin="0,0,0,16" Visibility="Collapsed">
+              <TextBlock Foreground="#991B1B" TextWrapping="Wrap" Text="Windows Home: локальная политика «Не администраторы» в этой редакции может не применяться. Для этой функции нужна Windows Pro или выше."/>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="stateIconBg" Width="48" Height="48" CornerRadius="24" VerticalAlignment="Center">
+                  <TextBlock x:Name="stateIcon" Style="{StaticResource Icon}" FontSize="22" HorizontalAlignment="Center"/>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="16,0" VerticalAlignment="Center">
+                  <TextBlock x:Name="txtRState" Style="{StaticResource H2}" FontSize="18"/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" Text="Запреты действуют на всех пользователей без прав администратора, в том числе на новые учётные записи. Администраторов они не касаются. Вступают в силу после повторного входа пользователя."/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                  <Button x:Name="btnRClear" Style="{StaticResource BtnDanger}" Content="Снять все"/>
+                  <Button x:Name="btnRApply" Style="{StaticResource BtnPrimary}" Margin="0" Padding="18,9">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Style="{StaticResource Icon}" Text="&#xE73E;" Margin="0,0,8,0"/>
+                      <TextBlock Text="Применить ограничения"/>
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE716;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
+                  <TextBlock Style="{StaticResource H2}" Text="Пользователи этого компьютера"/>
+                </StackPanel>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Ограничения получат только обычные учётные записи. Тип учётной записи меняется в Параметры → Учётные записи → Другие пользователи."/>
+                <ItemsControl x:Name="icUsers">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="12,8,16,8" Margin="0,0,10,10" Background="#F9FAFB">
+                        <StackPanel Orientation="Horizontal">
+                          <Border Width="34" Height="34" CornerRadius="17" Background="{Binding RowBg}">
+                            <TextBlock Text="{Binding C1}" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                          </Border>
+                          <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                            <Border Background="{Binding BadgeBg}" CornerRadius="8" Padding="8,1" HorizontalAlignment="Left" Margin="0,3,0,0">
+                              <TextBlock Text="{Binding Badge}" Foreground="{Binding BadgeFg}" FontSize="11"/>
+                            </Border>
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="txtUsersWarn" Foreground="#B91C1C" TextWrapping="Wrap" Visibility="Collapsed" Text="Нет ни одной обычной учётной записи — ограничения ни на кого не подействуют. Создайте пользователя или смените тип существующего на «Стандартный»."/>
+              </StackPanel>
+            </Border>
+
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+
+              <Border Style="{StaticResource Card}">
+                <StackPanel>
+                  <Grid Margin="0,0,0,4">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Style="{StaticResource Icon}" Text="&#xE71D;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
+                      <TextBlock Style="{StaticResource H2}" Text="Разрешённые программы"/>
+                    </StackPanel>
+                    <CheckBox x:Name="chkWl" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                  </Grid>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Запускаться будут только эти программы. Всё остальное (игры, скачанные .exe, PowerShell) — запрещено."/>
+                  <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkWl}">
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <Grid>
+                        <TextBox x:Name="txtProgAdd" Style="{StaticResource Input}"/>
+                        <TextBlock x:Name="phProgAdd" Style="{StaticResource Placeholder}" Text="Например: steam.exe"/>
+                      </Grid>
+                      <Button x:Name="btnProgAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
+                    </Grid>
+                    <WrapPanel Margin="0,0,0,8">
+                      <Button x:Name="btnProgBrowse" Style="{StaticResource BtnChip}" Content="Выбрать файл .exe…"/>
+                      <Button x:Name="btnProgDefault" Style="{StaticResource BtnChip}" Content="+ Стандартный набор"/>
+                    </WrapPanel>
+                    <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
+                      <ListBox x:Name="lbProg" Height="250" BorderThickness="0" Tag="&#xE7AC;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                    </Border>
+                    <TextBlock x:Name="txtProgCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="2" Style="{StaticResource Card}">
+                <StackPanel>
+                  <Grid Margin="0,0,0,4">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Style="{StaticResource Icon}" Text="&#xE774;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
+                      <TextBlock Style="{StaticResource H2}" Text="Заблокированные сайты"/>
+                    </StackPanel>
+                    <CheckBox x:Name="chkSites" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                  </Grid>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Сайты и все их поддомены не откроются в Edge, Chrome, Яндекс.Браузере и Firefox."/>
+                  <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <Grid>
+                        <TextBox x:Name="txtSiteAdd" Style="{StaticResource Input}"/>
+                        <TextBlock x:Name="phSiteAdd" Style="{StaticResource Placeholder}" Text="Например: youtube.com"/>
+                      </Grid>
+                      <Button x:Name="btnSiteAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
+                    </Grid>
+                    <WrapPanel Margin="0,0,0,8">
+                      <Button x:Name="btnQuickSocial" Style="{StaticResource BtnChip}" Content="+ Соцсети"/>
+                      <Button x:Name="btnQuickVideo" Style="{StaticResource BtnChip}" Content="+ Видео"/>
+                      <Button x:Name="btnQuickGames" Style="{StaticResource BtnChip}" Content="+ Игры"/>
+                    </WrapPanel>
+                    <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
+                      <ListBox x:Name="lbSites" Height="250" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                    </Border>
+                    <CheckBox x:Name="chkHosts" Style="{StaticResource Switch}" Margin="0,12,0,0">
+                      <TextBlock TextWrapping="Wrap" Text="Также через файл hosts — работает в любом браузере, но и для администратора тоже"/>
+                    </CheckBox>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
+                  <TextBlock Style="{StaticResource H2}" Text="Защита от обхода"/>
+                </StackPanel>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,14" Text="Закрывают лазейки, через которые можно снять ограничения или запустить запрещённую программу."/>
+                <UniformGrid x:Name="pnlLockdowns" Columns="2"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- ===== Политики ===== -->
+        <Grid x:Name="pagePolicies" Margin="32,0,32,24" Visibility="Collapsed">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="420"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid>
+              <TextBox x:Name="txtPolSearch" Style="{StaticResource Input}" Padding="34,8,8,8"/>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+              <TextBlock x:Name="phPolSearch" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Поиск политики…"/>
+            </Grid>
+            <TextBlock x:Name="txtPolCount" Grid.Column="1" Style="{StaticResource Muted}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+          </Grid>
+          <ListBox x:Name="lbCats" Grid.Row="1" Background="Transparent" BorderThickness="0" Margin="0,0,0,8" ItemContainerStyle="{StaticResource ChipItem}" DisplayMemberPath="Title" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+          </ListBox>
+          <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="16"/>
+              <ColumnDefinition Width="400"/>
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource Card}" Padding="8" Margin="0">
+              <ListBox x:Name="lbPolicies" BorderThickness="0" ItemContainerStyle="{StaticResource RowItem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                <ListBox.GroupStyle>
+                  <GroupStyle>
+                    <GroupStyle.HeaderTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="11" Foreground="#6B7280" Margin="10,14,0,4"/>
+                      </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                  </GroupStyle>
+                </ListBox.GroupStyle>
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#9CA3AF"/>
+                      </StackPanel>
+                      <Border Grid.Column="1" Background="{Binding BadgeBg}" CornerRadius="10" Padding="10,3" VerticalAlignment="Center" MaxWidth="280">
+                        <TextBlock Text="{Binding Badge}" Foreground="{Binding BadgeFg}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                      </Border>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0">
+              <Grid>
+                <StackPanel x:Name="pnlPolEmpty" VerticalAlignment="Center" HorizontalAlignment="Center">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE713;" FontSize="40" Foreground="#D1D5DB" HorizontalAlignment="Center"/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,12,0,0" Text="Выберите политику в списке"/>
+                </StackPanel>
+                <ScrollViewer x:Name="pnlPolDetails" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                  <StackPanel>
+                    <TextBlock x:Name="txtPolCategory" FontSize="11" FontWeight="Bold" Foreground="#2563EB"/>
+                    <TextBlock x:Name="txtPolName" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,8"/>
+                    <TextBlock x:Name="txtPolDesc" Style="{StaticResource Muted}" FontSize="13"/>
+                    <Border x:Name="pnlPolHint" Background="#FEF3C7" CornerRadius="6" Padding="10,6" Margin="0,12,0,0" Visibility="Collapsed">
+                      <TextBlock x:Name="txtPolHint" Foreground="#92400E" FontSize="12" TextWrapping="Wrap"/>
+                    </Border>
+                    <TextBlock Text="ЗНАЧЕНИЕ" FontSize="11" FontWeight="Bold" Foreground="#6B7280" Margin="0,20,0,6"/>
+                    <ComboBox x:Name="cmbPolValue" DisplayMemberPath="Title" Padding="8,6" FontSize="13"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                      <Button x:Name="btnPolApply" Style="{StaticResource BtnPrimary}" Content="Применить"/>
+                      <Button x:Name="btnPolUnset" Style="{StaticResource Btn}" Content="Не задано"/>
+                    </StackPanel>
+                    <TextBlock Text="ПАРАМЕТРЫ РЕЕСТРА" FontSize="11" FontWeight="Bold" Foreground="#6B7280" Margin="0,24,0,6"/>
+                    <Border Background="#F9FAFB" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="6" Padding="10">
+                      <TextBlock x:Name="txtPolReg" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" Foreground="#374151"/>
+                    </Border>
+                    <WrapPanel Margin="0,10,0,0">
+                      <Button x:Name="btnPolRegedit" Style="{StaticResource BtnChip}" Content="Открыть в regedit"/>
+                      <Button x:Name="btnPolCopy" Style="{StaticResource BtnChip}" Content="Копировать пути"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </Grid>
+            </Border>
+          </Grid>
+        </Grid>
+
+        <!-- ===== Реестр ===== -->
+        <Grid x:Name="pageRegistry" Margin="32,0,32,24" Visibility="Collapsed">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="320"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="btnScan" Style="{StaticResource BtnPrimary}" Content="Сканировать"/>
+              <Button x:Name="btnRegDelete" Style="{StaticResource BtnDanger}" Content="Удалить выбранные"/>
+              <Button x:Name="btnRegOpen" Style="{StaticResource Btn}" Content="Открыть в regedit"/>
+              <Button x:Name="btnRegExport" Style="{StaticResource Btn}" Content="Экспорт в .reg"/>
+            </StackPanel>
+            <Grid Grid.Column="2">
+              <TextBox x:Name="txtRegFilter" Style="{StaticResource Input}" Padding="34,8,8,8"/>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+              <TextBlock x:Name="phRegFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Фильтр…"/>
+            </Grid>
+          </Grid>
+          <TextBlock x:Name="txtRegInfo" Grid.Row="1" Style="{StaticResource Muted}" Margin="0,0,0,10" Text="Серым отмечены системные значения (CurrentVersion\Policies) — их удаление может нарушить работу Windows."/>
+          <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
+            <DataGrid x:Name="dgReg" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#F3F4F6" BorderThickness="0" Background="White"
+                      RowHeight="30" CanUserAddRows="False" CanUserResizeRows="False">
+              <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader">
+                  <Setter Property="Background" Value="#F9FAFB"/>
+                  <Setter Property="Foreground" Value="#6B7280"/>
+                  <Setter Property="FontWeight" Value="SemiBold"/>
+                  <Setter Property="Padding" Value="10,8"/>
+                  <Setter Property="BorderBrush" Value="#E5E7EB"/>
+                  <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                </Style>
+              </DataGrid.ColumnHeaderStyle>
+              <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                  <Setter Property="Background" Value="{Binding RowBg}"/>
+                </Style>
+              </DataGrid.RowStyle>
+              <DataGrid.CellStyle>
+                <Style TargetType="DataGridCell">
+                  <Setter Property="BorderThickness" Value="0"/>
+                  <Setter Property="VerticalContentAlignment" Value="Center"/>
+                </Style>
+              </DataGrid.CellStyle>
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Раздел" Binding="{Binding Title}" Width="*"/>
+                <DataGridTextColumn Header="Параметр" Binding="{Binding Subtitle}" Width="220"/>
+                <DataGridTextColumn Header="Тип" Binding="{Binding C1}" Width="90"/>
+                <DataGridTextColumn Header="Значение" Binding="{Binding C2}" Width="200"/>
+                <DataGridTextColumn Header="В каталоге" Binding="{Binding C3}" Width="90"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Border>
+        </Grid>
+
+        <!-- ===== Профили и копии ===== -->
+        <ScrollViewer x:Name="pageProfiles" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+          <StackPanel Margin="32,0,32,24">
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Готовые профили"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,14" Text="Набор политик применяется в один клик. Перед изменениями автоматически создаётся резервная копия."/>
+                <ItemsControl x:Name="icProfiles">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,10">
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <Border Width="40" Height="40" CornerRadius="8" Background="#EFF6FF">
+                            <TextBlock Style="{StaticResource Icon}" Text="&#xE8F1;" FontSize="18" Foreground="#2563EB" HorizontalAlignment="Center"/>
+                          </Border>
+                          <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"/>
+                            <TextBlock Text="{Binding Subtitle}" Foreground="#6B7280" TextWrapping="Wrap"/>
+                          </StackPanel>
+                          <Button Grid.Column="2" Style="{StaticResource BtnPrimary}" Content="Применить" Tag="{Binding Id}" VerticalAlignment="Center" Margin="0"/>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <WrapPanel Margin="0,6,0,0">
+                  <Button x:Name="btnProfileFile" Style="{StaticResource Btn}" Content="Применить профиль из файла…"/>
+                  <Button x:Name="btnProfileSave" Style="{StaticResource Btn}" Content="Сохранить текущие настройки как профиль…"/>
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Резервные копии"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,14" Text="Сохраняют значения всех политик каталога. Копия также создаётся автоматически перед первым изменением за сеанс."/>
+                <WrapPanel>
+                  <Button x:Name="btnBackup" Style="{StaticResource BtnPrimary}" Content="Создать резервную копию"/>
+                  <Button x:Name="btnRestore" Style="{StaticResource Btn}" Content="Восстановить из копии…"/>
+                  <Button x:Name="btnOpenBackups" Style="{StaticResource Btn}" Content="Открыть папку с копиями"/>
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" BorderBrush="#FCA5A5">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Foreground="#B91C1C" Text="Сброс политик каталога"/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,16,0" Text="Все политики каталога вернутся в состояние «Не задано». Настройки UAC, подписи SMB и длинных путей не затрагиваются."/>
+                </StackPanel>
+                <Button x:Name="btnResetAll" Grid.Column="1" Style="{StaticResource BtnDanger}" VerticalAlignment="Center" Margin="0" Content="Сбросить всё"/>
+              </Grid>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- ===== Инструменты ===== -->
+        <ScrollViewer x:Name="pageTools" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+          <UniformGrid Columns="3" Margin="32,0,16,24" VerticalAlignment="Top">
+            <Button x:Name="btnToolGpupdate" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE895;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="gpupdate /force" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Принудительно применить групповые политики"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="btnToolGpresult" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE9D9;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="Отчёт gpresult" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="HTML-отчёт о применённых политиках"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="btnToolGpedit" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE713;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="Редактор gpedit.msc" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Стандартный редактор локальной групповой политики"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="btnToolExplorer" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE72C;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="Перезапуск Проводника" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Применить изменения интерфейса без выхода из системы"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="btnToolLog" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="Журнал изменений" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Что, когда и как было изменено"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="btnToolData" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE8B7;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="Папка данных" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Резервные копии и журнал"/>
+              </StackPanel>
+            </Button>
+          </UniformGrid>
+        </ScrollViewer>
+      </Grid>
+
+      <!-- Уведомление -->
+      <Border x:Name="toast" Grid.Row="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,32,28"
+              CornerRadius="8" Background="#111827" Padding="16,12" Visibility="Collapsed" MaxWidth="560">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.3"/>
+        </Border.Effect>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock x:Name="toastIcon" Style="{StaticResource Icon}" FontSize="16" Margin="0,0,12,0"/>
+          <TextBlock x:Name="toastText" Foreground="White" TextWrapping="Wrap" MaxWidth="480" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>
+'@
 
 function Show-MainWindow {
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-    [System.Windows.Forms.Application]::EnableVisualStyles()
+    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+    if (-not ('PolicyManagerUI.Row' -as [type])) { Add-Type -TypeDefinition $RowTypeSource -Language CSharp }
 
     $os = Get-OSInfo
-    $script:States = @{}
-    $script:CurrentPolicy = $null
-    $script:ComboKeys = New-Object System.Collections.Generic.List[string]
-
-    $colorSet   = [System.Drawing.Color]::FromArgb(226, 242, 227)
-    $colorOther = [System.Drawing.Color]::FromArgb(255, 239, 213)
-    $colorError = [System.Drawing.Color]::FromArgb(255, 222, 222)
-    $colorSys   = [System.Drawing.Color]::FromArgb(240, 240, 240)
-
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "$AppName $AppVersion — управление политиками Windows"
-    $form.Size = New-Object System.Drawing.Size(1200, 840)
-    $form.MinimumSize = New-Object System.Drawing.Size(900, 600)
-    $form.StartPosition = 'CenterScreen'
-    $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    try { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Join-Path $env:windir 'System32\gpedit.dll')) } catch { }
-
-    #region Вспомогательные функции интерфейса
-
-    function Show-Info([string]$Text) {
-        [void][System.Windows.Forms.MessageBox]::Show($form, $Text, $AppName, 'OK', 'Information')
+    [xml]$xml = $MainWindowXaml
+    $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xml))
+    $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+    $ns.AddNamespace('x', 'http://schemas.microsoft.com/winfx/2006/xaml')
+    $ui = @{}
+    foreach ($node in $xml.SelectNodes('//*[@x:Name]', $ns)) {
+        $name = $node.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml')
+        $el = $window.FindName($name)
+        if ($el) { $ui[$name] = $el }
     }
-    function Show-Error([string]$Text) {
-        [void][System.Windows.Forms.MessageBox]::Show($form, $Text, $AppName, 'OK', 'Error')
+
+    #region Вспомогательные функции
+
+    $brushConverter = New-Object System.Windows.Media.BrushConverter
+    function Get-Brush([string]$Hex) {
+        $b = $brushConverter.ConvertFromString($Hex)
+        $b.Freeze()
+        return $b
     }
+    $brush = @{
+        GrayBg = Get-Brush '#F3F4F6'; GrayFg = Get-Brush '#6B7280'
+        GreenBg = Get-Brush '#DCFCE7'; GreenFg = Get-Brush '#166534'
+        AmberBg = Get-Brush '#FEF3C7'; AmberFg = Get-Brush '#92400E'
+        RedBg = Get-Brush '#FEE2E2'; RedFg = Get-Brush '#991B1B'
+        BlueBg = Get-Brush '#DBEAFE'; BlueFg = Get-Brush '#1E40AF'
+        Accent = Get-Brush '#2563EB'; Slate = Get-Brush '#64748B'; Sys = Get-Brush '#F3F4F6'; White = Get-Brush '#FFFFFF'
+        Green = Get-Brush '#22C55E'; Red = Get-Brush '#F87171'; Amber = Get-Brush '#FBBF24'
+    }
+    foreach ($k in @($brush.Keys)) { $brush[$k] = [System.Windows.Media.Brush]$brush[$k] }
+
+    function Show-Info([string]$Text) { [void][System.Windows.MessageBox]::Show($window, $Text, $AppName, 'OK', 'Information') }
+    function Show-Error([string]$Text) { [void][System.Windows.MessageBox]::Show($window, $Text, $AppName, 'OK', 'Error') }
     function Confirm-Action([string]$Text) {
-        return ([System.Windows.Forms.MessageBox]::Show($form, $Text, $AppName, 'YesNo', 'Warning') -eq 'Yes')
+        return ([System.Windows.MessageBox]::Show($window, $Text, $AppName, 'YesNo', 'Warning') -eq 'Yes')
     }
+
+    $toastTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $toastTimer.Interval = [TimeSpan]::FromSeconds(5)
+    $toastTimer.Add_Tick({ $ui.toast.Visibility = 'Collapsed'; $toastTimer.Stop() })
+    function Show-Toast([string]$Text, [string]$Kind = 'ok') {
+        if ($Kind -eq 'ok') { $ui.toastIcon.Text = [char]0xE73E; $ui.toastIcon.Foreground = $brush.Green }
+        elseif ($Kind -eq 'warn') { $ui.toastIcon.Text = [char]0xE7BA; $ui.toastIcon.Foreground = $brush.Amber }
+        else { $ui.toastIcon.Text = [char]0xE783; $ui.toastIcon.Foreground = $brush.Red }
+        $ui.toastText.Text = $Text
+        $ui.toast.Visibility = 'Visible'
+        $toastTimer.Stop()
+        $toastTimer.Start()
+    }
+
     function Invoke-Safe([scriptblock]$Action) {
         try { & $Action }
         catch {
             $msg = $_.Exception.Message
             if ($_.Exception.InnerException) { $msg = $_.Exception.InnerException.Message }
-            if (-not $IsAdmin) { $msg += "`r`n`r`nПрограмма запущена без прав администратора — политики HKLM изменить нельзя." }
+            if (-not $IsAdmin) { $msg += "`r`n`r`nПрограмма запущена без прав администратора." }
             Write-Log "ОШИБКА: $msg"
             Show-Error $msg
         }
     }
-    function New-ToolButton([string]$Text, [string]$Tip, [scriptblock]$OnClick) {
-        $b = New-Object System.Windows.Forms.ToolStripButton
-        $b.Text = $Text
-        $b.ToolTipText = $Tip
-        $b.add_Click($OnClick)
-        [void]$tool.Items.Add($b)
-        return $b
+    function Set-Busy([bool]$On) {
+        if ($On) { $window.Cursor = [System.Windows.Input.Cursors]::Wait } else { $window.Cursor = $null }
     }
+
+    function Register-Placeholder($TextBox, $Placeholder) {
+        $TextBox.Tag = $Placeholder
+        $TextBox.Add_TextChanged({ param($s, $e) if ($s.Text) { $s.Tag.Visibility = 'Collapsed' } else { $s.Tag.Visibility = 'Visible' } })
+    }
+
     function Open-InRegedit([string]$Path) {
-        $native = ConvertTo-NativeRegPath $Path
         $applet = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Applets\Regedit'
         $prefix = 'Computer\'
         $last = (Get-ItemProperty -LiteralPath $applet -Name LastKey -ErrorAction SilentlyContinue).LastKey
         if ($last -and $last -match '^([^\\]+\\)HKEY_') { $prefix = $Matches[1] }
         if (-not (Test-Path -LiteralPath $applet)) { New-Item -Path $applet -Force | Out-Null }
-        Set-ItemProperty -LiteralPath $applet -Name LastKey -Value ($prefix + $native)
+        Set-ItemProperty -LiteralPath $applet -Name LastKey -Value ($prefix + (ConvertTo-NativeRegPath $Path))
         Get-Process regedit -ErrorAction SilentlyContinue | Stop-Process -Force
         Start-Process regedit.exe
     }
-    function Set-RowColor($Item, $State) {
-        switch ($State.Key) {
-            '_unset' { $Item.BackColor = [System.Drawing.SystemColors]::Window }
-            '_other' { $Item.BackColor = $colorOther }
-            '_error' { $Item.BackColor = $colorError }
-            default  { $Item.BackColor = $colorSet }
+
+    function New-Row([hashtable]$Props) {
+        $r = New-Object PolicyManagerUI.Row
+        foreach ($k in @($Props.Keys)) {
+            $v = $Props[$k]
+            # Кисти передаём как .NET-объекты, иначе WPF не сможет применить цвет из обёртки PowerShell
+            if ($v -is [System.Windows.Media.Brush]) { $r.$k = [System.Windows.Media.Brush]$v } else { $r.$k = $v }
         }
+        return $r
+    }
+
+    function Select-OpenFile([string]$Filter, [string]$Dir, [bool]$Multi = $false) {
+        $dlg = New-Object Microsoft.Win32.OpenFileDialog
+        $dlg.Filter = $Filter
+        $dlg.Multiselect = $Multi
+        if ($Dir -and (Test-Path -LiteralPath $Dir)) { $dlg.InitialDirectory = $Dir }
+        if ($dlg.ShowDialog($window) -eq $true) { return , $dlg.FileNames }
+        return $null
+    }
+    function Select-SaveFile([string]$Filter, [string]$Dir, [string]$Name) {
+        $dlg = New-Object Microsoft.Win32.SaveFileDialog
+        $dlg.Filter = $Filter
+        $dlg.FileName = $Name
+        if ($Dir -and (Test-Path -LiteralPath $Dir)) { $dlg.InitialDirectory = $Dir }
+        if ($dlg.ShowDialog($window) -eq $true) { return $dlg.FileName }
+        return $null
     }
 
     #endregion
 
-    #region Панель инструментов
+    #region Оформление и навигация
 
-    $tool = New-Object System.Windows.Forms.ToolStrip
-    $tool.GripStyle = 'Hidden'
-    $tool.Padding = New-Object System.Windows.Forms.Padding(4, 2, 4, 2)
+    $ui.txtVersion.Text = "версия $AppVersion"
+    $ui.txtOS.Text = $os.Text
+    if ($IsAdmin) {
+        $ui.badgeAdmin.Background = Get-Brush '#14532D'
+        $ui.badgeAdminIcon.Text = [char]0xE7EF; $ui.badgeAdminIcon.Foreground = $brush.Green
+        $ui.badgeAdminText.Text = 'Администратор'; $ui.badgeAdminText.Foreground = Get-Brush '#BBF7D0'
+    } else {
+        $ui.badgeAdmin.Background = Get-Brush '#7F1D1D'
+        $ui.badgeAdminIcon.Text = [char]0xE7BA; $ui.badgeAdminIcon.Foreground = $brush.Red
+        $ui.badgeAdminText.Text = 'Без прав администратора'; $ui.badgeAdminText.Foreground = Get-Brush '#FECACA'
+        $ui.bannerAdmin.Visibility = 'Visible'
+    }
+    if ($os.IsHome) { $ui.warnHome.Visibility = 'Visible' }
 
-    [void](New-ToolButton 'Обновить' 'Перечитать состояние политик из реестра (F5)' { Invoke-Safe { Update-Everything } })
-    [void]$tool.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $pageInfo = [ordered]@{
+        navRestrict = @('pageRestrict', 'Ограничения пользователей', 'Белый список программ и блокировка сайтов для всех, кроме администраторов')
+        navPolicies = @('pagePolicies', 'Политики Windows', 'Конфиденциальность, обновления, безопасность, интерфейс и Microsoft Edge')
+        navRegistry = @('pageRegistry', 'Политики в реестре', 'Все параметры из веток Policies, включая заданные другими программами')
+        navProfiles = @('pageProfiles', 'Профили и резервные копии', 'Готовые наборы настроек, сохранение и восстановление')
+        navTools    = @('pageTools', 'Инструменты', 'Применение и диагностика групповых политик')
+    }
+    $script:RegScanned = $false
 
-    [void](New-ToolButton 'Резервная копия' 'Сохранить текущие значения всех политик каталога в файл' {
-        Invoke-Safe {
-            $dlg = New-Object System.Windows.Forms.SaveFileDialog
-            $dlg.Filter = 'Резервная копия (*.json)|*.json'
-            $dlg.InitialDirectory = $BackupDir
-            $dlg.FileName = 'backup_{0:yyyyMMdd_HHmmss}.json' -f (Get-Date)
-            if ($dlg.ShowDialog($form) -eq 'OK') {
-                Export-PolicyBackup $dlg.FileName
-                Write-Log "Резервная копия: $($dlg.FileName)"
-                Show-Info "Резервная копия сохранена:`r`n$($dlg.FileName)"
-            }
+    function Show-Page([string]$Nav) {
+        foreach ($k in $pageInfo.Keys) {
+            $vis = 'Collapsed'
+            if ($k -eq $Nav) { $vis = 'Visible' }
+            $ui[$pageInfo[$k][0]].Visibility = $vis
         }
-    })
-
-    [void](New-ToolButton 'Восстановить' 'Вернуть значения политик из резервной копии' {
-        Invoke-Safe {
-            $dlg = New-Object System.Windows.Forms.OpenFileDialog
-            $dlg.Filter = 'Резервная копия (*.json)|*.json'
-            $dlg.InitialDirectory = $BackupDir
-            if ($dlg.ShowDialog($form) -eq 'OK' -and (Confirm-Action "Восстановить политики из файла?`r`n$($dlg.FileName)")) {
-                $errors = Import-PolicyBackup $dlg.FileName
-                Update-Everything
-                if ($errors) { Show-Error "Восстановлено с ошибками: $errors. Подробности в журнале." }
-                else { Show-Info 'Политики восстановлены.' }
-            }
-        }
-    })
-
-    $ddProfiles = New-Object System.Windows.Forms.ToolStripDropDownButton
-    $ddProfiles.Text = 'Профили'
-    $ddProfiles.ToolTipText = 'Применить готовый набор настроек'
-    [void]$ddProfiles.DropDownItems.Add('...')
-    [void]$tool.Items.Add($ddProfiles)
-    $ddProfiles.add_DropDownOpening({
-        $ddProfiles.DropDownItems.Clear()
-        if (Test-Path -LiteralPath $ProfilesDir) {
-            foreach ($f in Get-ChildItem -LiteralPath $ProfilesDir -Filter *.json | Sort-Object Name) {
-                $title = $f.BaseName
-                try {
-                    $pj = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-                    if ($pj.name) { $title = $pj.name }
-                    if ($pj.description) { $title += ' — ' + $pj.description }
-                } catch { }
-                $mi = New-Object System.Windows.Forms.ToolStripMenuItem($title)
-                $mi.Tag = $f.FullName
-                $mi.add_Click({
-                    param($s, $e)
-                    Invoke-Safe {
-                        if (Confirm-Action "Применить профиль?`r`n$($s.Text)`r`n`r`nПеред изменениями будет создана резервная копия.") {
-                            $r = Invoke-PolicyProfile $s.Tag
-                            Update-Everything
-                            $msg = "Профиль «$($r.Name)»: применено политик — $($r.Ok)."
-                            if ($r.Errors.Count) { $msg += "`r`n`r`nОшибки:`r`n" + ($r.Errors -join "`r`n") }
-                            if ($r.Reboot) { $msg += "`r`n`r`nДля части изменений нужна перезагрузка." }
-                            Show-Info $msg
-                        }
-                    }
-                })
-                [void]$ddProfiles.DropDownItems.Add($mi)
-            }
-        }
-        [void]$ddProfiles.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-        $miOpen = New-Object System.Windows.Forms.ToolStripMenuItem('Применить профиль из файла...')
-        $miOpen.add_Click({
-            Invoke-Safe {
-                $dlg = New-Object System.Windows.Forms.OpenFileDialog
-                $dlg.Filter = 'Профиль (*.json)|*.json'
-                if ($dlg.ShowDialog($form) -eq 'OK') {
-                    $r = Invoke-PolicyProfile $dlg.FileName
-                    Update-Everything
-                    $msg = "Применено политик — $($r.Ok)."
-                    if ($r.Errors.Count) { $msg += "`r`n`r`nОшибки:`r`n" + ($r.Errors -join "`r`n") }
-                    Show-Info $msg
-                }
-            }
-        })
-        [void]$ddProfiles.DropDownItems.Add($miOpen)
-        $miSave = New-Object System.Windows.Forms.ToolStripMenuItem('Сохранить текущие настройки как профиль...')
-        $miSave.add_Click({
-            Invoke-Safe {
-                $dlg = New-Object System.Windows.Forms.SaveFileDialog
-                $dlg.Filter = 'Профиль (*.json)|*.json'
-                $dlg.InitialDirectory = $ProfilesDir
-                $dlg.FileName = 'my-profile.json'
-                if ($dlg.ShowDialog($form) -eq 'OK') {
-                    Export-CurrentAsProfile $dlg.FileName ([IO.Path]::GetFileNameWithoutExtension($dlg.FileName))
-                    Show-Info "Профиль сохранён:`r`n$($dlg.FileName)"
-                }
-            }
-        })
-        [void]$ddProfiles.DropDownItems.Add($miSave)
-    })
-
-    [void](New-ToolButton 'Сбросить всё' 'Вернуть все политики каталога в состояние «Не задано»' {
-        Invoke-Safe {
-            if (Confirm-Action "Сбросить все политики каталога в «Не задано»?`r`n(UAC, подпись SMB и длинные пути не затрагиваются.)`r`n`r`nПеред изменениями будет создана резервная копия.") {
-                $n = Reset-AllPolicies
-                Update-Everything
-                Show-Info "Сброшено политик: $n"
-            }
-        }
-    })
-    [void]$tool.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-
-    [void](New-ToolButton 'gpupdate /force' 'Принудительно применить групповые политики' {
-        Invoke-Safe { Start-Process cmd.exe -ArgumentList '/c', 'gpupdate /force & pause' }
-    })
-    [void](New-ToolButton 'Отчёт gpresult' 'HTML-отчёт о применённых групповых политиках' {
-        Invoke-Safe {
-            $file = Join-Path $env:TEMP ('gpresult_{0:yyyyMMdd_HHmmss}.html' -f (Get-Date))
-            $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-            try {
-                $proc = Start-Process gpresult.exe -ArgumentList '/h', "`"$file`"", '/f' -Wait -PassThru -WindowStyle Hidden
-            } finally { $form.Cursor = [System.Windows.Forms.Cursors]::Default }
-            if ($proc.ExitCode -eq 0 -and (Test-Path -LiteralPath $file)) { Start-Process $file }
-            else { Show-Error "gpresult завершился с кодом $($proc.ExitCode)." }
-        }
-    })
-    [void](New-ToolButton 'gpedit.msc' 'Открыть редактор локальной групповой политики' {
-        Invoke-Safe {
-            if (Test-Path -LiteralPath (Join-Path $env:windir 'System32\gpedit.msc')) { Start-Process mmc.exe -ArgumentList 'gpedit.msc' }
-            else { Show-Info 'gpedit.msc отсутствует (редакция Home). Эта программа работает с политиками напрямую через реестр.' }
-        }
-    })
-    [void](New-ToolButton 'Перезапуск Проводника' 'Применить изменения интерфейса без выхода из системы' {
-        Invoke-Safe {
-            Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
-            # Windows перезапускает Проводник сама; запускаем вручную, только если этого не произошло
-            for ($i = 0; $i -lt 10 -and -not (Get-Process explorer -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
-            if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
-        }
-    })
-    [void]$tool.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-    [void](New-ToolButton 'Журнал' 'Открыть журнал изменений' {
-        Invoke-Safe {
-            if (-not (Test-Path -LiteralPath $LogFile)) { Write-Log 'Журнал создан' }
-            Start-Process notepad.exe -ArgumentList "`"$LogFile`""
-        }
-    })
-    [void](New-ToolButton 'Папка данных' 'Резервные копии и журнал' { Invoke-Safe { Start-Process explorer.exe -ArgumentList "`"$DataDir`"" } })
-
-    if (-not $IsAdmin) {
-        $btnElevate = New-ToolButton 'Запустить от администратора' 'Перезапустить программу с правами администратора' {
-            Invoke-Safe { Start-Elevated; $form.Close() }
-        }
-        $btnElevate.ForeColor = [System.Drawing.Color]::DarkRed
-        $btnElevate.Alignment = 'Right'
+        $ui.txtPageTitle.Text = $pageInfo[$Nav][1]
+        $ui.txtPageSubtitle.Text = $pageInfo[$Nav][2]
+        if ($Nav -eq 'navRegistry' -and -not $script:RegScanned) { Update-RegistryScan }
+        if ($Nav -eq 'navProfiles') { Update-ProfileList }
+    }
+    foreach ($k in $pageInfo.Keys) {
+        $ui[$k].Add_Checked({ param($s, $e) Invoke-Safe { Show-Page $s.Name } })
     }
 
     #endregion
 
-    #region Вкладка «Каталог политик»
+    #region Страница «Ограничения»
 
-    $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Dock = 'Fill'
-    $tabCatalog = New-Object System.Windows.Forms.TabPage('Каталог политик')
-    $tabRegistry = New-Object System.Windows.Forms.TabPage('Все политики в реестре')
-    $tabRestrict = New-Object System.Windows.Forms.TabPage('Ограничения пользователей')
-    $tabs.TabPages.Add($tabRestrict)
-    $tabs.TabPages.Add($tabCatalog)
-    $tabs.TabPages.Add($tabRegistry)
+    $progs = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $sites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $ui.lbProg.ItemsSource = $progs
+    $ui.lbSites.ItemsSource = $sites
+    Register-Placeholder $ui.txtProgAdd $ui.phProgAdd
+    Register-Placeholder $ui.txtSiteAdd $ui.phSiteAdd
 
-    $split = New-Object System.Windows.Forms.SplitContainer
-    $split.Dock = 'Fill'
-    $split.FixedPanel = 'Panel1'
-    $tabCatalog.Controls.Add($split)
-
-    # Левая панель: поиск и категории
-    $left = New-Object System.Windows.Forms.TableLayoutPanel
-    $left.Dock = 'Fill'
-    $left.ColumnCount = 1
-    $left.RowCount = 4
-    [void]$left.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$left.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$left.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$left.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-    $split.Panel1.Controls.Add($left)
-
-    $lblSearch = New-Object System.Windows.Forms.Label
-    $lblSearch.Text = 'Поиск:'
-    $lblSearch.AutoSize = $true
-    $lblSearch.Margin = New-Object System.Windows.Forms.Padding(3, 6, 3, 0)
-    $left.Controls.Add($lblSearch, 0, 0)
-
-    $txtSearch = New-Object System.Windows.Forms.TextBox
-    $txtSearch.Dock = 'Fill'
-    $left.Controls.Add($txtSearch, 0, 1)
-
-    $lblCat = New-Object System.Windows.Forms.Label
-    $lblCat.Text = 'Категории:'
-    $lblCat.AutoSize = $true
-    $lblCat.Margin = New-Object System.Windows.Forms.Padding(3, 8, 3, 0)
-    $left.Controls.Add($lblCat, 0, 2)
-
-    $lbCat = New-Object System.Windows.Forms.ListBox
-    $lbCat.Dock = 'Fill'
-    $lbCat.IntegralHeight = $false
-    $lbCat.ItemHeight = 20
-    $left.Controls.Add($lbCat, 0, 3)
-
-    $script:CategoryKeys = New-Object System.Collections.Generic.List[string]
-    [void]$lbCat.Items.Add('Все политики');  $script:CategoryKeys.Add('_all')
-    [void]$lbCat.Items.Add('Настроенные');   $script:CategoryKeys.Add('_configured')
-    foreach ($c in ($script:Catalog | ForEach-Object { $_.Category } | Select-Object -Unique)) {
-        [void]$lbCat.Items.Add($c); $script:CategoryKeys.Add($c)
+    function Update-ListCounters {
+        $ui.txtProgCount.Text = "Разрешено программ: $($progs.Count)"
     }
+    $progs.Add_CollectionChanged({ Update-ListCounters })
 
-    # Правая часть: список и подробности
-    $split2 = New-Object System.Windows.Forms.SplitContainer
-    $split2.Dock = 'Fill'
-    $split2.Orientation = 'Horizontal'
-    $split2.FixedPanel = 'Panel2'
-    $split.Panel2.Controls.Add($split2)
+    function Add-UniqueItem($Collection, [string]$Value) {
+        if (-not $Value) { return }
+        foreach ($x in $Collection) { if ($x -eq $Value) { return } }
+        $Collection.Add($Value)
+    }
+    function Add-Programs($Names) { foreach ($n in $Names) { Add-UniqueItem $progs (ConvertTo-ExeName $n) } }
+    function Add-Sites($Names) { foreach ($n in $Names) { Add-UniqueItem $sites (ConvertTo-Domain $n) } }
 
-    $lv = New-Object System.Windows.Forms.ListView
-    $lv.Dock = 'Fill'
-    $lv.View = 'Details'
-    $lv.FullRowSelect = $true
-    $lv.MultiSelect = $false
-    $lv.HideSelection = $false
-    $lv.ShowGroups = $true
-    [void]$lv.Columns.Add('Политика', 430)
-    [void]$lv.Columns.Add('Текущее состояние', 330)
-    [void]$lv.Columns.Add('Область', 90)
-    $split2.Panel1.Controls.Add($lv)
+    # Кнопки «удалить» внутри списков
+    $removeHandler = [System.Windows.RoutedEventHandler] {
+        param($s, $e)
+        $btn = $e.OriginalSource
+        if ($btn -is [System.Windows.Controls.Button] -and $btn.Tag) { [void]$s.ItemsSource.Remove([string]$btn.Tag) }
+    }
+    $ui.lbProg.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
+    $ui.lbSites.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
 
-    $ctx = New-Object System.Windows.Forms.ContextMenuStrip
-    $miReg = New-Object System.Windows.Forms.ToolStripMenuItem('Открыть раздел в regedit')
-    $miCopy = New-Object System.Windows.Forms.ToolStripMenuItem('Копировать пути реестра')
-    [void]$ctx.Items.Add($miReg)
-    [void]$ctx.Items.Add($miCopy)
-    $lv.ContextMenuStrip = $ctx
-    $miReg.add_Click({ Invoke-Safe { if ($script:CurrentPolicy) { Open-InRegedit $script:CurrentPolicy.Values[0].Path } } })
-    $miCopy.add_Click({
+    $ui.btnProgAdd.Add_Click({ Invoke-Safe { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' } })
+    $ui.txtProgAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' } } })
+    $ui.btnSiteAdd.Add_Click({ Invoke-Safe { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' } })
+    $ui.txtSiteAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' } } })
+    $ui.btnProgBrowse.Add_Click({
         Invoke-Safe {
-            if ($script:CurrentPolicy) {
-                $text = ($script:CurrentPolicy.Values | ForEach-Object { (ConvertTo-NativeRegPath $_.Path) + '\' + $_.Name }) -join "`r`n"
-                [System.Windows.Forms.Clipboard]::SetText($text)
-            }
+            $files = Select-OpenFile 'Программы (*.exe)|*.exe' $env:ProgramFiles $true
+            if ($files) { Add-Programs @($files | ForEach-Object { [IO.Path]::GetFileName($_) }) }
         }
     })
+    $ui.btnProgDefault.Add_Click({ Invoke-Safe { Add-Programs $DefaultAllowedPrograms } })
 
-    $det = New-Object System.Windows.Forms.TableLayoutPanel
-    $det.Dock = 'Fill'
-    $det.ColumnCount = 1
-    $det.RowCount = 4
-    $det.Padding = New-Object System.Windows.Forms.Padding(4)
-    [void]$det.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$det.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 50)))
-    [void]$det.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 50)))
-    [void]$det.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    $split2.Panel2.Controls.Add($det)
-
-    $lblName = New-Object System.Windows.Forms.Label
-    $lblName.AutoSize = $true
-    $lblName.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
-    $lblName.Text = 'Выберите политику в списке'
-    $det.Controls.Add($lblName, 0, 0)
-
-    $txtDesc = New-Object System.Windows.Forms.TextBox
-    $txtDesc.Multiline = $true
-    $txtDesc.ReadOnly = $true
-    $txtDesc.ScrollBars = 'Vertical'
-    $txtDesc.Dock = 'Fill'
-    $txtDesc.BackColor = [System.Drawing.SystemColors]::Window
-    $det.Controls.Add($txtDesc, 0, 1)
-
-    $txtReg = New-Object System.Windows.Forms.TextBox
-    $txtReg.Multiline = $true
-    $txtReg.ReadOnly = $true
-    $txtReg.ScrollBars = 'Both'
-    $txtReg.WordWrap = $false
-    $txtReg.Dock = 'Fill'
-    $txtReg.Font = New-Object System.Drawing.Font('Consolas', 9)
-    $det.Controls.Add($txtReg, 0, 2)
-
-    $flow = New-Object System.Windows.Forms.FlowLayoutPanel
-    $flow.AutoSize = $true
-    $flow.Dock = 'Fill'
-    $flow.WrapContents = $true
-    $det.Controls.Add($flow, 0, 3)
-
-    $lblValue = New-Object System.Windows.Forms.Label
-    $lblValue.Text = 'Значение:'
-    $lblValue.AutoSize = $true
-    $lblValue.Margin = New-Object System.Windows.Forms.Padding(3, 8, 3, 3)
-    $flow.Controls.Add($lblValue)
-
-    $cmb = New-Object System.Windows.Forms.ComboBox
-    $cmb.DropDownStyle = 'DropDownList'
-    $cmb.Width = 460
-    $cmb.Margin = New-Object System.Windows.Forms.Padding(3, 4, 3, 3)
-    $flow.Controls.Add($cmb)
-
-    $btnApply = New-Object System.Windows.Forms.Button
-    $btnApply.Text = 'Применить'
-    $btnApply.AutoSize = $true
-    $flow.Controls.Add($btnApply)
-
-    $btnUnset = New-Object System.Windows.Forms.Button
-    $btnUnset.Text = 'Не задано'
-    $btnUnset.AutoSize = $true
-    $flow.Controls.Add($btnUnset)
-
-    $lblHint = New-Object System.Windows.Forms.Label
-    $lblHint.AutoSize = $true
-    $lblHint.ForeColor = [System.Drawing.Color]::DarkRed
-    $lblHint.Margin = New-Object System.Windows.Forms.Padding(8, 8, 3, 3)
-    $flow.Controls.Add($lblHint)
-
-    $cmb.Enabled = $false; $btnApply.Enabled = $false; $btnUnset.Enabled = $false
-
-    #endregion
-
-    #region Вкладка «Все политики в реестре»
-
-    $regLayout = New-Object System.Windows.Forms.TableLayoutPanel
-    $regLayout.Dock = 'Fill'
-    $regLayout.ColumnCount = 1
-    $regLayout.RowCount = 2
-    [void]$regLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$regLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-    $tabRegistry.Controls.Add($regLayout)
-
-    $regBar = New-Object System.Windows.Forms.FlowLayoutPanel
-    $regBar.AutoSize = $true
-    $regBar.Dock = 'Fill'
-    $regLayout.Controls.Add($regBar, 0, 0)
-
-    $btnScan = New-Object System.Windows.Forms.Button
-    $btnScan.Text = 'Сканировать'
-    $btnScan.AutoSize = $true
-    $regBar.Controls.Add($btnScan)
-
-    $btnRegDelete = New-Object System.Windows.Forms.Button
-    $btnRegDelete.Text = 'Удалить выбранные'
-    $btnRegDelete.AutoSize = $true
-    $regBar.Controls.Add($btnRegDelete)
-
-    $btnRegOpen = New-Object System.Windows.Forms.Button
-    $btnRegOpen.Text = 'Открыть в regedit'
-    $btnRegOpen.AutoSize = $true
-    $regBar.Controls.Add($btnRegOpen)
-
-    $btnRegExport = New-Object System.Windows.Forms.Button
-    $btnRegExport.Text = 'Экспорт в .reg'
-    $btnRegExport.AutoSize = $true
-    $regBar.Controls.Add($btnRegExport)
-
-    $lblRegFilter = New-Object System.Windows.Forms.Label
-    $lblRegFilter.Text = 'Фильтр:'
-    $lblRegFilter.AutoSize = $true
-    $lblRegFilter.Margin = New-Object System.Windows.Forms.Padding(12, 8, 3, 3)
-    $regBar.Controls.Add($lblRegFilter)
-
-    $txtRegFilter = New-Object System.Windows.Forms.TextBox
-    $txtRegFilter.Width = 300
-    $txtRegFilter.Margin = New-Object System.Windows.Forms.Padding(3, 5, 3, 3)
-    $regBar.Controls.Add($txtRegFilter)
-
-    $lblRegInfo = New-Object System.Windows.Forms.Label
-    $lblRegInfo.AutoSize = $true
-    $lblRegInfo.ForeColor = [System.Drawing.Color]::DimGray
-    $lblRegInfo.Margin = New-Object System.Windows.Forms.Padding(12, 8, 3, 3)
-    $lblRegInfo.Text = 'Серым — системные значения (CurrentVersion\Policies), их удаление может нарушить работу Windows.'
-    $regBar.Controls.Add($lblRegInfo)
-
-    $lv2 = New-Object System.Windows.Forms.ListView
-    $lv2.Dock = 'Fill'
-    $lv2.View = 'Details'
-    $lv2.FullRowSelect = $true
-    $lv2.MultiSelect = $true
-    $lv2.HideSelection = $false
-    [void]$lv2.Columns.Add('Раздел', 560)
-    [void]$lv2.Columns.Add('Параметр', 240)
-    [void]$lv2.Columns.Add('Тип', 90)
-    [void]$lv2.Columns.Add('Значение', 180)
-    [void]$lv2.Columns.Add('В каталоге', 80)
-    $regLayout.Controls.Add($lv2, 0, 1)
-
-    $script:RegScan = @()
-
-    #endregion
-
-    #region Вкладка «Ограничения пользователей»
-
-    function New-Label([string]$Text) {
-        $l = New-Object System.Windows.Forms.Label
-        $l.Text = $Text
-        $l.AutoSize = $true
-        $l.Margin = New-Object System.Windows.Forms.Padding(3, 6, 3, 3)
-        return $l
-    }
-    function New-Button([string]$Text) {
-        $b = New-Object System.Windows.Forms.Button
-        $b.Text = $Text
-        $b.AutoSize = $true
-        return $b
-    }
-    function New-ListBox {
-        $t = New-Object System.Windows.Forms.TextBox
-        $t.Multiline = $true
-        $t.AcceptsReturn = $true
-        $t.ScrollBars = 'Vertical'
-        $t.Dock = 'Fill'
-        $t.Font = New-Object System.Drawing.Font('Consolas', 10)
-        return $t
+    $ui.btnQuickSocial.Tag = 'vk.com ok.ru tiktok.com instagram.com facebook.com x.com twitter.com'
+    $ui.btnQuickVideo.Tag = 'youtube.com rutube.ru vkvideo.ru twitch.tv kick.com'
+    $ui.btnQuickGames.Tag = 'roblox.com steampowered.com steamcommunity.com epicgames.com poki.com crazygames.com miniclip.com'
+    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames)) {
+        $b.Add_Click({ param($s, $e) Invoke-Safe { Add-Sites @($s.Tag -split ' ') } })
     }
 
-    $rl = New-Object System.Windows.Forms.TableLayoutPanel
-    $rl.Dock = 'Fill'
-    $rl.ColumnCount = 2
-    $rl.RowCount = 5
-    $rl.Padding = New-Object System.Windows.Forms.Padding(4)
-    [void]$rl.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 50)))
-    [void]$rl.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 50)))
-    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 56)))
-    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 120)))
-    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 175)))
-    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    $tabRestrict.Controls.Add($rl)
-
-    $lblRInfo = New-Object System.Windows.Forms.Label
-    $lblRInfo.Dock = 'Fill'
-    $lblRInfo.Text = 'Ограничения действуют на всех пользователей БЕЗ прав администратора (локальная групповая политика «Не администраторы»), в том числе на учётные записи, созданные позже. Администраторы не затрагиваются. Изменения вступают в силу, когда пользователь выйдет из системы и войдёт снова.'
-    if ($os.IsHome) {
-        $lblRInfo.Text = 'ВНИМАНИЕ: в Windows Home политика «Не администраторы» может не применяться. ' + $lblRInfo.Text
-        $lblRInfo.ForeColor = [System.Drawing.Color]::DarkRed
+    $lockBoxes = @{}
+    foreach ($l in $Lockdowns) {
+        $cb = New-Object System.Windows.Controls.CheckBox
+        $cb.Style = $window.FindResource('Switch')
+        $cb.Margin = New-Object System.Windows.Thickness(0, 0, 24, 14)
+        $tb = New-Object System.Windows.Controls.TextBlock
+        $tb.Text = $l.Label
+        $tb.TextWrapping = 'Wrap'
+        $cb.Content = $tb
+        [void]$ui.pnlLockdowns.Children.Add($cb)
+        $lockBoxes[$l.Id] = $cb
     }
-    $rl.Controls.Add($lblRInfo, 0, 0)
-    $rl.SetColumnSpan($lblRInfo, 2)
-
-    $lvUsers = New-Object System.Windows.Forms.ListView
-    $lvUsers.Dock = 'Fill'
-    $lvUsers.View = 'Details'
-    $lvUsers.FullRowSelect = $true
-    [void]$lvUsers.Columns.Add('Пользователь', 260)
-    [void]$lvUsers.Columns.Add('Тип учётной записи', 200)
-    [void]$lvUsers.Columns.Add('Ограничения', 300)
-    $rl.Controls.Add($lvUsers, 0, 1)
-    $rl.SetColumnSpan($lvUsers, 2)
-
-    # Программы
-    $gbProg = New-Object System.Windows.Forms.GroupBox
-    $gbProg.Text = 'Программы'
-    $gbProg.Dock = 'Fill'
-    $tlProg = New-Object System.Windows.Forms.TableLayoutPanel
-    $tlProg.Dock = 'Fill'
-    $tlProg.ColumnCount = 1
-    $tlProg.RowCount = 3
-    [void]$tlProg.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$tlProg.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-    [void]$tlProg.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    $gbProg.Controls.Add($tlProg)
-    $chkWl = New-Object System.Windows.Forms.CheckBox
-    $chkWl.Text = 'Разрешить запуск ТОЛЬКО этих программ (имя .exe, по одной на строку)'
-    $chkWl.AutoSize = $true
-    $tlProg.Controls.Add($chkWl, 0, 0)
-    $txtProg = New-ListBox
-    $tlProg.Controls.Add($txtProg, 0, 1)
-    $flProg = New-Object System.Windows.Forms.FlowLayoutPanel
-    $flProg.AutoSize = $true
-    $flProg.Dock = 'Fill'
-    $btnAddProg = New-Button 'Добавить программу...'
-    $btnDefProg = New-Button 'Добавить стандартный набор'
-    $flProg.Controls.Add($btnAddProg)
-    $flProg.Controls.Add($btnDefProg)
-    $tlProg.Controls.Add($flProg, 0, 2)
-    $rl.Controls.Add($gbProg, 0, 2)
-
-    # Сайты
-    $gbSites = New-Object System.Windows.Forms.GroupBox
-    $gbSites.Text = 'Сайты'
-    $gbSites.Dock = 'Fill'
-    $tlSites = New-Object System.Windows.Forms.TableLayoutPanel
-    $tlSites.Dock = 'Fill'
-    $tlSites.ColumnCount = 1
-    $tlSites.RowCount = 3
-    [void]$tlSites.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    [void]$tlSites.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-    [void]$tlSites.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-    $gbSites.Controls.Add($tlSites)
-    $chkSites = New-Object System.Windows.Forms.CheckBox
-    $chkSites.Text = 'Блокировать сайты (по одному на строку, например vk.com) — Edge, Chrome, Яндекс, Firefox'
-    $chkSites.AutoSize = $true
-    $tlSites.Controls.Add($chkSites, 0, 0)
-    $txtSites = New-ListBox
-    $tlSites.Controls.Add($txtSites, 0, 1)
-    $chkHosts = New-Object System.Windows.Forms.CheckBox
-    $chkHosts.Text = 'Также через файл hosts (все браузеры, но и для администратора тоже)'
-    $chkHosts.AutoSize = $true
-    $tlSites.Controls.Add($chkHosts, 0, 2)
-    $rl.Controls.Add($gbSites, 1, 2)
-
-    # Дополнительные запреты
-    $gbLock = New-Object System.Windows.Forms.GroupBox
-    $gbLock.Text = 'Дополнительные запреты (чтобы ограничения нельзя было обойти)'
-    $gbLock.Dock = 'Fill'
-    $clbLock = New-Object System.Windows.Forms.CheckedListBox
-    $clbLock.Dock = 'Fill'
-    $clbLock.CheckOnClick = $true
-    $clbLock.IntegralHeight = $false
-    foreach ($l in $Lockdowns) { [void]$clbLock.Items.Add($l.Label, $l.Default) }
-    $gbLock.Controls.Add($clbLock)
-    $rl.Controls.Add($gbLock, 0, 3)
-    $rl.SetColumnSpan($gbLock, 2)
-
-    $flR = New-Object System.Windows.Forms.FlowLayoutPanel
-    $flR.AutoSize = $true
-    $flR.Dock = 'Fill'
-    $btnRApply = New-Button 'Применить ограничения'
-    $btnRApply.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-    $btnRClear = New-Button 'Снять все ограничения'
-    $btnRReload = New-Button 'Обновить'
-    $lblRState = New-Label ''
-    $lblRState.Margin = New-Object System.Windows.Forms.Padding(12, 8, 3, 3)
-    $flR.Controls.Add($btnRApply)
-    $flR.Controls.Add($btnRClear)
-    $flR.Controls.Add($btnRReload)
-    $flR.Controls.Add($lblRState)
-    $rl.Controls.Add($flR, 0, 4)
-    $rl.SetColumnSpan($flR, 2)
 
     function Update-UserList {
-        $lvUsers.Items.Clear()
-        $users = @(Get-LocalUserInfo)
-        foreach ($u in $users) {
-            $item = New-Object System.Windows.Forms.ListViewItem($u.Name)
+        $rows = New-Object System.Collections.Generic.List[object]
+        $standard = 0
+        foreach ($u in @(Get-LocalUserInfo)) {
+            $initial = if ($u.Name) { $u.Name.Substring(0, 1).ToUpper() } else { '?' }
             if ($u.IsAdmin) {
-                [void]$item.SubItems.Add('Администратор')
-                [void]$item.SubItems.Add('не действуют')
+                $rows.Add((New-Row @{ Title = $u.Name; C1 = $initial; Badge = 'Администратор · без ограничений'; BadgeBg = $brush.BlueBg; BadgeFg = $brush.BlueFg; RowBg = $brush.Slate }))
             } else {
-                [void]$item.SubItems.Add('Обычный пользователь')
-                [void]$item.SubItems.Add('действуют')
-                $item.BackColor = $colorOther
+                $standard++
+                $rows.Add((New-Row @{ Title = $u.Name; C1 = $initial; Badge = 'Обычный · ограничения действуют'; BadgeBg = $brush.AmberBg; BadgeFg = $brush.AmberFg; RowBg = $brush.Accent }))
             }
-            [void]$lvUsers.Items.Add($item)
         }
-        if (-not @($users | Where-Object { -not $_.IsAdmin }).Count) {
-            $item = New-Object System.Windows.Forms.ListViewItem('Нет обычных пользователей — ограничения ни на кого не подействуют.')
-            [void]$item.SubItems.Add('Сделайте учётку обычной: Параметры → Учётные записи → Другие пользователи → Изменить тип учётной записи')
-            $item.ForeColor = [System.Drawing.Color]::DarkRed
-            [void]$lvUsers.Items.Add($item)
+        $ui.icUsers.ItemsSource = $rows
+        $vis = 'Collapsed'
+        if ($standard -eq 0) { $vis = 'Visible' }
+        $ui.txtUsersWarn.Visibility = $vis
+    }
+
+    function Set-RestrictionState([bool]$Applied) {
+        if ($Applied) {
+            $ui.txtRState.Text = 'Ограничения включены'
+            $ui.stateIcon.Text = [char]0xE72E; $ui.stateIcon.Foreground = $brush.GreenFg; $ui.stateIconBg.Background = $brush.GreenBg
+        } else {
+            $ui.txtRState.Text = 'Ограничения не применены'
+            $ui.stateIcon.Text = [char]0xE785; $ui.stateIcon.Foreground = $brush.GrayFg; $ui.stateIconBg.Background = $brush.GrayBg
         }
     }
 
     function Import-RestrictionsToUI {
         $r = Get-NonAdminRestrictions
+        $progs.Clear()
+        $sites.Clear()
         if ($r.Applied) {
-            $chkWl.Checked = $r.WhitelistEnabled
-            $programs = @($r.Programs)
-            if (-not $programs.Count) { $programs = $DefaultAllowedPrograms }
-            $txtProg.Text = $programs -join "`r`n"
-            $chkSites.Checked = $r.SitesEnabled
-            for ($i = 0; $i -lt $Lockdowns.Count; $i++) { $clbLock.SetItemChecked($i, [bool]$r.Lockdowns[$Lockdowns[$i].Id]) }
-            $lblRState.Text = 'Состояние: ограничения применены'
-            $lblRState.ForeColor = [System.Drawing.Color]::DarkGreen
+            $ui.chkWl.IsChecked = $r.WhitelistEnabled
+            $list = @($r.Programs)
+            if (-not $list.Count) { $list = $DefaultAllowedPrograms }
+            foreach ($p in $list) { Add-UniqueItem $progs $p }
+            $ui.chkSites.IsChecked = $r.SitesEnabled
+            foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$r.Lockdowns[$l.Id] }
         } else {
-            $chkWl.Checked = $true
-            $txtProg.Text = $DefaultAllowedPrograms -join "`r`n"
-            $chkSites.Checked = $true
-            for ($i = 0; $i -lt $Lockdowns.Count; $i++) { $clbLock.SetItemChecked($i, [bool]$Lockdowns[$i].Default) }
-            $lblRState.Text = 'Состояние: ограничения не применены'
-            $lblRState.ForeColor = [System.Drawing.Color]::DarkRed
+            $ui.chkWl.IsChecked = $true
+            foreach ($p in $DefaultAllowedPrograms) { Add-UniqueItem $progs $p }
+            $ui.chkSites.IsChecked = $true
+            foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$l.Default }
         }
-        $txtSites.Text = @($r.Sites) -join "`r`n"
-        $chkHosts.Checked = $r.HostsEnabled
+        foreach ($s in @($r.Sites)) { Add-UniqueItem $sites $s }
+        $ui.chkHosts.IsChecked = $r.HostsEnabled
+        Set-RestrictionState $r.Applied
+        Update-ListCounters
     }
 
     function Get-RestrictionsFromUI {
-        $programs = Get-UniqueText @($txtProg.Lines | ForEach-Object { ConvertTo-ExeName $_ })
-        $sites = Get-UniqueText @($txtSites.Lines | ForEach-Object { ConvertTo-Domain $_ })
         $lock = @{}
-        for ($i = 0; $i -lt $Lockdowns.Count; $i++) { $lock[$Lockdowns[$i].Id] = $clbLock.GetItemChecked($i) }
+        foreach ($l in $Lockdowns) { $lock[$l.Id] = ($lockBoxes[$l.Id].IsChecked -eq $true) }
+        $siteList = @($sites)
         [pscustomobject]@{
-            WhitelistEnabled = $chkWl.Checked
-            Programs         = @($programs)
-            SitesEnabled     = ($chkSites.Checked -and @($sites).Count -gt 0)
-            Sites            = @($sites)
-            HostsEnabled     = $chkHosts.Checked
+            WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
+            Programs         = @($progs)
+            SitesEnabled     = ($ui.chkSites.IsChecked -eq $true -and $siteList.Count -gt 0)
+            Sites            = $siteList
+            HostsEnabled     = ($ui.chkHosts.IsChecked -eq $true)
             Lockdowns        = $lock
         }
     }
 
-    $btnAddProg.add_Click({
-        Invoke-Safe {
-            $dlg = New-Object System.Windows.Forms.OpenFileDialog
-            $dlg.Filter = 'Программы (*.exe)|*.exe'
-            $dlg.Multiselect = $true
-            if ($dlg.ShowDialog($form) -eq 'OK') {
-                $names = @($txtProg.Lines) + @($dlg.FileNames | ForEach-Object { [IO.Path]::GetFileName($_) })
-                $txtProg.Text = (Get-UniqueText @($names | ForEach-Object { ConvertTo-ExeName $_ })) -join "`r`n"
-            }
-        }
-    })
-    $btnDefProg.add_Click({
-        Invoke-Safe {
-            $names = @($txtProg.Lines) + $DefaultAllowedPrograms
-            $txtProg.Text = (Get-UniqueText @($names | ForEach-Object { ConvertTo-ExeName $_ })) -join "`r`n"
-        }
-    })
-    $btnRReload.add_Click({ Invoke-Safe { Update-UserList; Import-RestrictionsToUI } })
-
-    $btnRApply.add_Click({
+    $ui.btnRApply.Add_Click({
         Invoke-Safe {
             if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
+            # Текст, введённый в поле, но не добавленный кнопкой, тоже учитываем
+            if ($ui.txtProgAdd.Text) { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' }
+            if ($ui.txtSiteAdd.Text) { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' }
             $cfg = Get-RestrictionsFromUI
             if ($cfg.WhitelistEnabled -and -not $cfg.Programs.Count) { Show-Error 'Список разрешённых программ пуст.'; return }
             if ($cfg.WhitelistEnabled -and $cfg.Programs -notcontains 'explorer.exe') {
                 if (-not (Confirm-Action 'В списке нет explorer.exe — у пользователей могут не открываться папки. Продолжить?')) { return }
             }
-            if ($chkSites.Checked -and -not $cfg.SitesEnabled) { Show-Error 'Список сайтов пуст.'; return }
+            if ($ui.chkSites.IsChecked -eq $true -and -not $cfg.SitesEnabled) { Show-Error 'Список сайтов пуст. Добавьте сайты или выключите блокировку.'; return }
 
             $summary = @()
-            if ($cfg.WhitelistEnabled) { $summary += "• Разрешены только программы: $($cfg.Programs.Count) шт." } else { $summary += '• Запуск программ не ограничен' }
-            if ($cfg.SitesEnabled) { $summary += "• Заблокировано сайтов: $($cfg.Sites.Count)" + $(if ($cfg.HostsEnabled) { ' (+ hosts)' } else { '' }) }
+            if ($cfg.WhitelistEnabled) { $summary += "• Разрешены только программы из списка ($($cfg.Programs.Count) шт.)" } else { $summary += '• Запуск программ не ограничен' }
+            if ($cfg.SitesEnabled) {
+                $line = "• Заблокировано сайтов: $($cfg.Sites.Count)"
+                if ($cfg.HostsEnabled) { $line += ' (+ файл hosts)' }
+                $summary += $line
+            }
             foreach ($l in $Lockdowns) { if ($cfg.Lockdowns[$l.Id]) { $summary += "• $($l.Label)" } }
             if (-not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + ($summary -join "`r`n")))) { return }
 
-            Set-NonAdminRestrictions $cfg
+            Set-Busy $true
+            try { Set-NonAdminRestrictions $cfg } finally { Set-Busy $false }
             Import-RestrictionsToUI
-            Show-Info ("Ограничения сохранены.`r`n`r`nОни начнут действовать, когда пользователь выйдет из системы и войдёт снова " +
-                "(или сами в течение ~90 минут).`r`n`r`nПроверьте: войдите под обычной учётной записью и попробуйте запустить запрещённую программу и открыть запрещённый сайт.")
+            Show-Toast 'Ограничения сохранены. Они начнут действовать после повторного входа пользователя.'
         }
     })
 
-    $btnRClear.add_Click({
+    $ui.btnRClear.Add_Click({
         Invoke-Safe {
             if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
             if (-not (Confirm-Action 'Снять все ограничения для пользователей без прав администратора?')) { return }
-            Clear-NonAdminRestrictions
+            Set-Busy $true
+            try { Clear-NonAdminRestrictions } finally { Set-Busy $false }
             Import-RestrictionsToUI
-            Show-Info 'Ограничения сняты. Изменения вступят в силу после повторного входа пользователей.'
+            Show-Toast 'Ограничения сняты. Изменения вступят в силу после повторного входа пользователей.'
         }
     })
 
     #endregion
 
-    #region Строка состояния
+    #region Страница «Политики»
 
-    $status = New-Object System.Windows.Forms.StatusStrip
-    $stOS = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $stOS.Text = $os.Text
-    $stAdmin = New-Object System.Windows.Forms.ToolStripStatusLabel
-    if ($IsAdmin) { $stAdmin.Text = 'Администратор' }
-    else { $stAdmin.Text = 'Без прав администратора: доступны только политики HKCU'; $stAdmin.ForeColor = [System.Drawing.Color]::DarkRed }
-    $stCount = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $stCount.Spring = $true
-    $stCount.TextAlign = 'MiddleRight'
-    [void]$status.Items.Add($stOS)
-    [void]$status.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-    [void]$status.Items.Add($stAdmin)
-    if ($os.IsHome) {
-        $stHome = New-Object System.Windows.Forms.ToolStripStatusLabel
-        $stHome.Text = 'Home: часть политик Pro/Enterprise игнорируется'
-        $stHome.ForeColor = [System.Drawing.Color]::DarkOrange
-        [void]$status.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-        [void]$status.Items.Add($stHome)
+    $policyRows = New-Object System.Collections.Generic.List[object]
+    foreach ($p in $script:Catalog) {
+        $scope = Get-PolicyScope $p
+        $scopeText = switch ($scope) { 'HKLM' { 'Для всего компьютера' } 'HKCU' { 'Для текущего пользователя' } default { 'Компьютер и пользователь' } }
+        $haystack = '{0} {1} {2} {3}' -f $p.Name, $p.Description, $p.Id, (($p.Values | ForEach-Object { $_.Name }) -join ' ')
+        $policyRows.Add((New-Row @{ Id = $p.Id; Title = $p.Name; Subtitle = $scopeText; Group = $p.Category; Tag = $p; C2 = $haystack }))
     }
-    [void]$status.Items.Add($stCount)
-
-    #endregion
-
-    #region Логика интерфейса
-
-    function Update-StatusCount {
-        $configured = @($script:Catalog | Where-Object { $script:States[$_.Id].Key -ne '_unset' }).Count
-        $stCount.Text = "Политик в каталоге: $($script:Catalog.Count), настроено: $configured, показано: $($lv.Items.Count)"
+    $policyView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($policyRows)
+    [void]$policyView.GroupDescriptions.Add((New-Object System.Windows.Data.PropertyGroupDescription 'Group'))
+    $script:PolFilterCat = '_all'
+    $script:PolFilterText = ''
+    $policyView.Filter = [Predicate[object]] {
+        param($row)
+        if ($script:PolFilterCat -eq '_configured') { if ($row.C1 -eq '_unset') { return $false } }
+        elseif ($script:PolFilterCat -ne '_all' -and $row.Group -ne $script:PolFilterCat) { return $false }
+        if ($script:PolFilterText -and $row.C2.IndexOf($script:PolFilterText, [StringComparison]::OrdinalIgnoreCase) -lt 0) { return $false }
+        return $true
     }
+    $ui.lbPolicies.ItemsSource = $policyView
 
-    function Update-PolicyList {
-        $sel = $lbCat.SelectedIndex
-        $filter = if ($sel -ge 0) { $script:CategoryKeys[$sel] } else { '_all' }
-        $q = $txtSearch.Text.Trim()
-        $selectedId = if ($script:CurrentPolicy) { $script:CurrentPolicy.Id } else { $null }
+    $catRows = New-Object System.Collections.Generic.List[object]
+    $catRows.Add((New-Row @{ Id = '_all'; Title = 'Все' }))
+    $catRows.Add((New-Row @{ Id = '_configured'; Title = 'Настроенные' }))
+    foreach ($c in ($script:Catalog | ForEach-Object { $_.Category } | Select-Object -Unique)) { $catRows.Add((New-Row @{ Id = $c; Title = $c })) }
+    $ui.lbCats.ItemsSource = $catRows
+    $ui.lbCats.SelectedIndex = 0
+    Register-Placeholder $ui.txtPolSearch $ui.phPolSearch
 
-        $lv.BeginUpdate()
-        $lv.Items.Clear()
-        $lv.Groups.Clear()
-        $groups = @{}
-        foreach ($p in $script:Catalog) {
-            $st = $script:States[$p.Id]
-            if ($filter -eq '_configured') { if ($st.Key -eq '_unset') { continue } }
-            elseif ($filter -ne '_all' -and $p.Category -ne $filter) { continue }
-            if ($q) {
-                $hay = '{0} {1} {2} {3}' -f $p.Name, $p.Description, $p.Id, (($p.Values | ForEach-Object { $_.Name }) -join ' ')
-                if ($hay.IndexOf($q, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
-            }
-            if (-not $groups.ContainsKey($p.Category)) {
-                $g = New-Object System.Windows.Forms.ListViewGroup($p.Category, $p.Category)
-                [void]$lv.Groups.Add($g)
-                $groups[$p.Category] = $g
-            }
-            $item = New-Object System.Windows.Forms.ListViewItem($p.Name)
-            [void]$item.SubItems.Add($st.Label)
-            [void]$item.SubItems.Add((Get-PolicyScope $p))
-            $item.Tag = $p
-            $item.Group = $groups[$p.Category]
-            $item.ToolTipText = $p.Description
-            Set-RowColor $item $st
-            [void]$lv.Items.Add($item)
-            if ($p.Id -eq $selectedId) { $item.Selected = $true }
+    function Set-RowState($Row, $State) {
+        $Row.C1 = $State.Key
+        $Row.Badge = $State.Label
+        switch ($State.Key) {
+            '_unset' { $Row.BadgeBg = $brush.GrayBg; $Row.BadgeFg = $brush.GrayFg }
+            '_other' { $Row.BadgeBg = $brush.AmberBg; $Row.BadgeFg = $brush.AmberFg }
+            '_error' { $Row.BadgeBg = $brush.RedBg; $Row.BadgeFg = $brush.RedFg }
+            default  { $Row.BadgeBg = $brush.GreenBg; $Row.BadgeFg = $brush.GreenFg }
         }
-        $lv.EndUpdate()
-        Update-StatusCount
     }
 
-    function Show-Details($p) {
-        $script:CurrentPolicy = $p
-        $lblName.Text = $p.Name
-        $txtDesc.Text = $p.Description
+    function Update-PolicyCounter {
+        $configured = @($policyRows | Where-Object { $_.C1 -ne '_unset' }).Count
+        $ui.txtPolCount.Text = "Настроено $configured из $($policyRows.Count)"
+    }
+
+    function Update-PolicyStates {
+        foreach ($row in $policyRows) { Set-RowState $row (Get-SafePolicyState $row.Tag) }
+        $policyView.Refresh()
+        Update-PolicyCounter
+        if ($ui.lbPolicies.SelectedItem) { Show-PolicyDetails $ui.lbPolicies.SelectedItem }
+    }
+
+    function Show-PolicyDetails($Row) {
+        $p = $Row.Tag
+        $ui.pnlPolEmpty.Visibility = 'Collapsed'
+        $ui.pnlPolDetails.Visibility = 'Visible'
+        $ui.txtPolCategory.Text = $p.Category.ToUpper()
+        $ui.txtPolName.Text = $p.Name
+        $ui.txtPolDesc.Text = $p.Description
         $lines = foreach ($v in $p.Values) {
             $c = Get-RegValue $v.Path $v.Name
-            $cur = if ($c) { '= ' + (Format-RegData $c.Kind $c.Data) } else { '(отсутствует)' }
+            $cur = if ($c) { '= ' + (Format-RegData $c.Kind $c.Data) } else { '(нет)' }
             '{0}\{1}  [{2}]  {3}' -f (ConvertTo-NativeRegPath $v.Path), $v.Name, $v.Type, $cur
         }
-        $txtReg.Text = ($lines -join "`r`n")
+        $ui.txtPolReg.Text = ($lines -join "`r`n")
 
-        $cmb.Items.Clear()
-        $script:ComboKeys.Clear()
-        if (-not $p.NoUnset) { [void]$cmb.Items.Add('Не задано (удалить параметры)'); $script:ComboKeys.Add('_unset') }
-        foreach ($o in $p.Options) { [void]$cmb.Items.Add($o.Label); $script:ComboKeys.Add($o.Key) }
-        $cmb.SelectedIndex = $script:ComboKeys.IndexOf($script:States[$p.Id].Key)
+        $opts = New-Object System.Collections.Generic.List[object]
+        if (-not $p.NoUnset) { $opts.Add((New-Row @{ Id = '_unset'; Title = 'Не задано (удалить параметры)' })) }
+        foreach ($o in $p.Options) { $opts.Add((New-Row @{ Id = $o.Key; Title = $o.Label })) }
+        $ui.cmbPolValue.ItemsSource = $opts
+        $ui.cmbPolValue.SelectedIndex = -1
+        for ($i = 0; $i -lt $opts.Count; $i++) { if ($opts[$i].Id -eq $Row.C1) { $ui.cmbPolValue.SelectedIndex = $i } }
+        $ui.btnPolUnset.IsEnabled = -not $p.NoUnset
 
         $hints = @()
-        if ($p.Reboot) { $hints += 'Требуется перезагрузка' }
-        if ((Get-PolicyScope $p) -like '*HKCU*') { $hints += 'Действует для текущего пользователя' }
-        if (-not $IsAdmin -and (Get-PolicyScope $p) -like '*HKLM*') { $hints += 'Нужны права администратора' }
-        $lblHint.Text = $hints -join ' · '
-
-        $cmb.Enabled = $true
-        $btnApply.Enabled = $true
-        $btnUnset.Enabled = -not $p.NoUnset
+        if ($p.Reboot) { $hints += 'Требуется перезагрузка.' }
+        if ($Row.Subtitle -ne 'Для всего компьютера') { $hints += 'Часть параметров действует только для пользователя, от имени которого запущена программа.' }
+        if (-not $IsAdmin -and (Get-PolicyScope $p) -like '*HKLM*') { $hints += 'Нужны права администратора.' }
+        $ui.txtPolHint.Text = $hints -join ' '
+        $vis = 'Collapsed'
+        if ($hints.Count) { $vis = 'Visible' }
+        $ui.pnlPolHint.Visibility = $vis
     }
 
-    function Update-CurrentItem {
-        $p = $script:CurrentPolicy
-        $st = Get-SafePolicyState $p
-        $script:States[$p.Id] = $st
-        foreach ($item in $lv.Items) {
-            if ($item.Tag.Id -eq $p.Id) {
-                $item.SubItems[1].Text = $st.Label
-                Set-RowColor $item $st
-            }
-        }
-        Show-Details $p
-        Update-StatusCount
-    }
-
-    function Invoke-ApplyCurrent([string]$Key) {
-        $p = $script:CurrentPolicy
-        if (-not $p) { return }
+    function Invoke-ApplyPolicy([string]$Key) {
+        $row = $ui.lbPolicies.SelectedItem
+        if (-not $row) { return }
+        $p = $row.Tag
         if ($p.Description -match 'ВНИМАНИЕ' -and $Key -ne '_unset') {
             if (-not (Confirm-Action "$($p.Description)`r`n`r`nПродолжить?")) { return }
         }
         try {
             Set-PolicyOption $p $Key
         } finally {
-            Update-CurrentItem
+            Set-RowState $row (Get-SafePolicyState $p)
+            Update-PolicyCounter
+            Show-PolicyDetails $row
         }
+        Show-Toast "«$($p.Name)»: $($row.Badge)"
         if ($p.Reboot) { Show-Info 'Изменение вступит в силу после перезагрузки.' }
     }
 
-    function Update-Everything {
-        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        try {
-            foreach ($p in $script:Catalog) { $script:States[$p.Id] = Get-SafePolicyState $p }
-            Update-PolicyList
-            if ($script:CurrentPolicy) { Show-Details $script:CurrentPolicy }
-            if ($script:RegScan.Count) { Update-RegistryScan }
-        } finally {
-            $form.Cursor = [System.Windows.Forms.Cursors]::Default
+    $ui.lbCats.Add_SelectionChanged({
+        Invoke-Safe {
+            if ($ui.lbCats.SelectedItem) { $script:PolFilterCat = $ui.lbCats.SelectedItem.Id; $policyView.Refresh() }
         }
-    }
-
-    function Update-RegistryList {
-        $q = $txtRegFilter.Text.Trim()
-        $known = @{}
-        foreach ($p in $script:Catalog) { foreach ($v in $p.Values) { $known[("$($v.Path)|$($v.Name)").ToLowerInvariant()] = $true } }
-        $lv2.BeginUpdate()
-        $lv2.Items.Clear()
-        foreach ($r in $script:RegScan) {
-            if ($q -and ("$($r.Path) $($r.Name) $($r.Data)").IndexOf($q, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
-            $name = if ($r.Name -eq '') { '(По умолчанию)' } else { $r.Name }
-            $item = New-Object System.Windows.Forms.ListViewItem((ConvertTo-NativeRegPath $r.Path))
-            [void]$item.SubItems.Add($name)
-            [void]$item.SubItems.Add($r.Kind)
-            [void]$item.SubItems.Add($r.Data)
-            $inCatalog = $known.ContainsKey(("$($r.Path)|$($r.Name)").ToLowerInvariant())
-            [void]$item.SubItems.Add($(if ($inCatalog) { 'да' } else { '' }))
-            if ($r.Path -match 'CurrentVersion\\Policies') { $item.BackColor = $colorSys }
-            $item.Tag = $r
-            [void]$lv2.Items.Add($item)
+    })
+    $ui.txtPolSearch.Add_TextChanged({ Invoke-Safe { $script:PolFilterText = $ui.txtPolSearch.Text.Trim(); $policyView.Refresh() } })
+    $ui.lbPolicies.Add_SelectionChanged({ Invoke-Safe { if ($ui.lbPolicies.SelectedItem) { Show-PolicyDetails $ui.lbPolicies.SelectedItem } } })
+    $ui.btnPolApply.Add_Click({
+        Invoke-Safe {
+            if (-not $ui.cmbPolValue.SelectedItem) { Show-Info 'Выберите значение.'; return }
+            Invoke-ApplyPolicy $ui.cmbPolValue.SelectedItem.Id
         }
-        $lv2.EndUpdate()
-        $tabRegistry.Text = "Все политики в реестре ($($lv2.Items.Count))"
-    }
-
-    function Update-RegistryScan {
-        $script:RegScan = @(Get-AllRegistryPolicies)
-        Update-RegistryList
-    }
+    })
+    $ui.btnPolUnset.Add_Click({ Invoke-Safe { Invoke-ApplyPolicy '_unset' } })
+    $ui.btnPolRegedit.Add_Click({ Invoke-Safe { if ($ui.lbPolicies.SelectedItem) { Open-InRegedit $ui.lbPolicies.SelectedItem.Tag.Values[0].Path } } })
+    $ui.btnPolCopy.Add_Click({
+        Invoke-Safe {
+            if ($ui.lbPolicies.SelectedItem) {
+                $text = ($ui.lbPolicies.SelectedItem.Tag.Values | ForEach-Object { (ConvertTo-NativeRegPath $_.Path) + '\' + $_.Name }) -join "`r`n"
+                [System.Windows.Clipboard]::SetText($text)
+                Show-Toast 'Пути скопированы в буфер обмена'
+            }
+        }
+    })
 
     #endregion
 
-    #region События
+    #region Страница «Реестр»
 
-    $lbCat.add_SelectedIndexChanged({ Invoke-Safe { Update-PolicyList } })
-    $txtSearch.add_TextChanged({ Invoke-Safe { Update-PolicyList } })
-    $lv.add_SelectedIndexChanged({
-        Invoke-Safe { if ($lv.SelectedItems.Count -gt 0) { Show-Details $lv.SelectedItems[0].Tag } }
-    })
-    $lv.ShowItemToolTips = $true
+    $script:RegScan = @()
+    Register-Placeholder $ui.txtRegFilter $ui.phRegFilter
 
-    $btnApply.add_Click({
-        Invoke-Safe {
-            if ($cmb.SelectedIndex -lt 0) { Show-Info 'Выберите значение.'; return }
-            Invoke-ApplyCurrent $script:ComboKeys[$cmb.SelectedIndex]
+    function Update-RegistryList {
+        $q = $ui.txtRegFilter.Text.Trim()
+        $known = @{}
+        foreach ($p in $script:Catalog) { foreach ($v in $p.Values) { $known["$($v.Path)|$($v.Name)"] = $true } }
+        $rows = New-Object System.Collections.Generic.List[object]
+        foreach ($r in $script:RegScan) {
+            if ($q -and ("$($r.Path) $($r.Name) $($r.Data)").IndexOf($q, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+            $name = $r.Name
+            if ($name -eq '') { $name = '(По умолчанию)' }
+            $bg = $brush.White
+            if ($r.Path -match 'CurrentVersion\\Policies') { $bg = $brush.Sys }
+            $inCatalog = ''
+            if ($known.ContainsKey("$($r.Path)|$($r.Name)")) { $inCatalog = 'да' }
+            $rows.Add((New-Row @{ Title = (ConvertTo-NativeRegPath $r.Path); Subtitle = $name; C1 = $r.Kind; C2 = $r.Data; C3 = $inCatalog; RowBg = $bg; Tag = $r }))
         }
-    })
-    $btnUnset.add_Click({ Invoke-Safe { Invoke-ApplyCurrent '_unset' } })
+        $ui.dgReg.ItemsSource = $rows
+        $ui.txtRegInfo.Text = "Найдено параметров: $($rows.Count). Серым отмечены системные значения (CurrentVersion\Policies) — их удаление может нарушить работу Windows."
+    }
 
-    $btnScan.add_Click({ Invoke-Safe { $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor; try { Update-RegistryScan } finally { $form.Cursor = [System.Windows.Forms.Cursors]::Default } } })
-    $txtRegFilter.add_TextChanged({ Invoke-Safe { Update-RegistryList } })
+    function Update-RegistryScan {
+        Set-Busy $true
+        try {
+            $script:RegScan = @(Get-AllRegistryPolicies)
+            $script:RegScanned = $true
+            Update-RegistryList
+        } finally { Set-Busy $false }
+    }
 
-    $btnRegOpen.add_Click({
-        Invoke-Safe { if ($lv2.SelectedItems.Count -gt 0) { Open-InRegedit $lv2.SelectedItems[0].Tag.Path } }
-    })
-    $lv2.add_DoubleClick({ Invoke-Safe { if ($lv2.SelectedItems.Count -gt 0) { Open-InRegedit $lv2.SelectedItems[0].Tag.Path } } })
+    $ui.btnScan.Add_Click({ Invoke-Safe { Update-RegistryScan; Show-Toast "Сканирование завершено: $($script:RegScan.Count) параметров" } })
+    $ui.txtRegFilter.Add_TextChanged({ Invoke-Safe { Update-RegistryList } })
+    $ui.btnRegOpen.Add_Click({ Invoke-Safe { if ($ui.dgReg.SelectedItem) { Open-InRegedit $ui.dgReg.SelectedItem.Tag.Path } } })
+    $ui.dgReg.Add_MouseDoubleClick({ Invoke-Safe { if ($ui.dgReg.SelectedItem) { Open-InRegedit $ui.dgReg.SelectedItem.Tag.Path } } })
 
-    $btnRegDelete.add_Click({
+    $ui.btnRegDelete.Add_Click({
         Invoke-Safe {
-            $sel = @($lv2.SelectedItems | ForEach-Object { $_.Tag })
+            $sel = @($ui.dgReg.SelectedItems | ForEach-Object { $_.Tag })
             if (-not $sel.Count) { Show-Info 'Выберите параметры для удаления.'; return }
             $msg = "Удалить выбранные параметры ($($sel.Count))?`r`n`r`n" + (($sel | Select-Object -First 15 | ForEach-Object { (ConvertTo-NativeRegPath $_.Path) + '\' + $_.Name }) -join "`r`n")
             if ($sel | Where-Object { $_.Path -match 'CurrentVersion\\Policies' }) {
-                $msg += "`r`n`r`nВНИМАНИЕ: среди них есть системные значения CurrentVersion\Policies (например, настройки UAC). Удаляйте их, только если точно понимаете последствия."
+                $msg += "`r`n`r`nВНИМАНИЕ: среди них есть системные значения CurrentVersion\Policies (например, настройки UAC)."
             }
             if (-not (Confirm-Action $msg)) { return }
             Invoke-AutoBackup
@@ -1747,53 +2129,181 @@ function Show-MainWindow {
                 Remove-RegValue $r.Path $r.Name
                 Write-Log "Удалён параметр $(ConvertTo-NativeRegPath $r.Path)\$($r.Name) (было: $($r.Data))"
             }
-            Update-Everything
+            Update-RegistryScan
+            Update-PolicyStates
+            Show-Toast "Удалено параметров: $($sel.Count)"
         }
     })
 
-    $btnRegExport.add_Click({
+    $ui.btnRegExport.Add_Click({
         Invoke-Safe {
-            $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-            $dlg.Description = 'Папка для .reg-файлов со всеми ветками политик'
-            $dlg.SelectedPath = $BackupDir
-            if ($dlg.ShowDialog($form) -ne 'OK') { return }
-            $stamp = '{0:yyyyMMdd_HHmmss}' -f (Get-Date)
-            $saved = @()
+            $dir = Join-Path $BackupDir ('reg_{0:yyyyMMdd_HHmmss}' -f (Get-Date))
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            $saved = 0
             foreach ($root in $PolicyRoots) {
                 $native = ConvertTo-NativeRegPath $root
-                $file = Join-Path $dlg.SelectedPath (($native -replace '^HKEY_LOCAL_MACHINE', 'HKLM' -replace '^HKEY_CURRENT_USER', 'HKCU' -replace '\\', '_') + "_$stamp.reg")
+                $file = Join-Path $dir (($native -replace '^HKEY_LOCAL_MACHINE', 'HKLM' -replace '^HKEY_CURRENT_USER', 'HKCU' -replace '\\', '_') + '.reg')
                 $proc = Start-Process reg.exe -ArgumentList 'export', "`"$native`"", "`"$file`"", '/y' -Wait -PassThru -WindowStyle Hidden
-                if ($proc.ExitCode -eq 0) { $saved += $file }
+                if ($proc.ExitCode -eq 0) { $saved++ }
             }
-            Show-Info ("Сохранено файлов: $($saved.Count)`r`n" + ($saved -join "`r`n"))
+            Start-Process explorer.exe -ArgumentList "`"$dir`""
+            Show-Toast "Сохранено .reg-файлов: $saved"
         }
     })
 
-    $form.KeyPreview = $true
-    $form.add_KeyDown({
+    #endregion
+
+    #region Страница «Профили и копии»
+
+    function Update-ProfileList {
+        $rows = New-Object System.Collections.Generic.List[object]
+        if (Test-Path -LiteralPath $ProfilesDir) {
+            foreach ($f in Get-ChildItem -LiteralPath $ProfilesDir -Filter *.json | Sort-Object Name) {
+                $title = $f.BaseName
+                $desc = ''
+                try {
+                    $pj = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($pj.name) { $title = $pj.name }
+                    $count = @($pj.policies.PSObject.Properties).Count
+                    $desc = "$($pj.description) · политик: $count"
+                } catch { $desc = 'Не удалось прочитать файл' }
+                $rows.Add((New-Row @{ Id = $f.FullName; Title = $title; Subtitle = $desc }))
+            }
+        }
+        $ui.icProfiles.ItemsSource = $rows
+    }
+
+    function Invoke-ProfileFile([string]$File, [string]$Title) {
+        if (-not (Confirm-Action "Применить профиль «$Title»?`r`n`r`nПеред изменениями будет создана резервная копия.")) { return }
+        Set-Busy $true
+        try { $r = Invoke-PolicyProfile $File } finally { Set-Busy $false }
+        Update-PolicyStates
+        if ($r.Errors.Count) { Show-Error ("Применено политик: $($r.Ok). Ошибки:`r`n" + ($r.Errors -join "`r`n")) }
+        else { Show-Toast "Профиль «$($r.Name)» применён: политик — $($r.Ok)" }
+        if ($r.Reboot) { Show-Info 'Для части изменений нужна перезагрузка.' }
+    }
+
+    $ui.icProfiles.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, [System.Windows.RoutedEventHandler] {
         param($s, $e)
-        if ($e.KeyCode -eq 'F5') { Invoke-Safe { Update-Everything } }
+        $btn = $e.OriginalSource
+        if ($btn -is [System.Windows.Controls.Button] -and $btn.Tag) {
+            Invoke-Safe { Invoke-ProfileFile ([string]$btn.Tag) $btn.DataContext.Title }
+        }
+    })
+    $ui.btnProfileFile.Add_Click({
+        Invoke-Safe {
+            $files = Select-OpenFile 'Профиль (*.json)|*.json' $ProfilesDir
+            if ($files) { Invoke-ProfileFile $files[0] ([IO.Path]::GetFileNameWithoutExtension($files[0])) }
+        }
+    })
+    $ui.btnProfileSave.Add_Click({
+        Invoke-Safe {
+            $file = Select-SaveFile 'Профиль (*.json)|*.json' $ProfilesDir 'my-profile.json'
+            if ($file) {
+                Export-CurrentAsProfile $file ([IO.Path]::GetFileNameWithoutExtension($file))
+                Update-ProfileList
+                Show-Toast "Профиль сохранён: $file"
+            }
+        }
+    })
+    $ui.btnBackup.Add_Click({
+        Invoke-Safe {
+            $file = Select-SaveFile 'Резервная копия (*.json)|*.json' $BackupDir ('backup_{0:yyyyMMdd_HHmmss}.json' -f (Get-Date))
+            if ($file) {
+                Export-PolicyBackup $file
+                Write-Log "Резервная копия: $file"
+                Show-Toast "Резервная копия сохранена: $file"
+            }
+        }
+    })
+    $ui.btnRestore.Add_Click({
+        Invoke-Safe {
+            $files = Select-OpenFile 'Резервная копия (*.json)|*.json' $BackupDir
+            if ($files -and (Confirm-Action "Восстановить политики из файла?`r`n$($files[0])")) {
+                Set-Busy $true
+                try { $errors = Import-PolicyBackup $files[0] } finally { Set-Busy $false }
+                Update-PolicyStates
+                if ($errors) { Show-Error "Восстановлено с ошибками: $errors. Подробности в журнале." }
+                else { Show-Toast 'Политики восстановлены из резервной копии' }
+            }
+        }
+    })
+    $ui.btnOpenBackups.Add_Click({ Invoke-Safe { Start-Process explorer.exe -ArgumentList "`"$BackupDir`"" } })
+    $ui.btnResetAll.Add_Click({
+        Invoke-Safe {
+            if (-not (Confirm-Action "Сбросить все политики каталога в «Не задано»?`r`n`r`nПеред изменениями будет создана резервная копия.")) { return }
+            Set-Busy $true
+            try { $n = Reset-AllPolicies } finally { Set-Busy $false }
+            Update-PolicyStates
+            Show-Toast "Сброшено политик: $n"
+        }
     })
 
-    $form.add_Shown({
+    #endregion
+
+    #region Страница «Инструменты»
+
+    $ui.btnToolGpupdate.Add_Click({ Invoke-Safe { Start-Process cmd.exe -ArgumentList '/c', 'gpupdate /force & pause' } })
+    $ui.btnToolGpresult.Add_Click({
         Invoke-Safe {
-            $split.SplitterDistance = 230
-            $split2.SplitterDistance = [Math]::Max(200, $split2.Height - 260)
-            $lbCat.SelectedIndex = 0
-            Update-Everything
+            $file = Join-Path $env:TEMP ('gpresult_{0:yyyyMMdd_HHmmss}.html' -f (Get-Date))
+            Set-Busy $true
+            try { $proc = Start-Process gpresult.exe -ArgumentList '/h', "`"$file`"", '/f' -Wait -PassThru -WindowStyle Hidden } finally { Set-Busy $false }
+            if ($proc.ExitCode -eq 0 -and (Test-Path -LiteralPath $file)) { Start-Process $file }
+            else { Show-Error "gpresult завершился с кодом $($proc.ExitCode)." }
         }
+    })
+    $ui.btnToolGpedit.Add_Click({
+        Invoke-Safe {
+            if (Test-Path -LiteralPath (Join-Path (Get-System32Dir) 'gpedit.msc')) { Start-Process mmc.exe -ArgumentList 'gpedit.msc' }
+            else { Show-Info 'gpedit.msc отсутствует (редакция Home). Эта программа работает с политиками напрямую через реестр.' }
+        }
+    })
+    $ui.btnToolExplorer.Add_Click({
+        Invoke-Safe {
+            Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
+            # Windows перезапускает Проводник сама; запускаем вручную, только если этого не произошло
+            for ($i = 0; $i -lt 10 -and -not (Get-Process explorer -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
+            if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
+            Show-Toast 'Проводник перезапущен'
+        }
+    })
+    $ui.btnToolLog.Add_Click({
+        Invoke-Safe {
+            if (-not (Test-Path -LiteralPath $LogFile)) { Write-Log 'Журнал создан' }
+            Start-Process notepad.exe -ArgumentList "`"$LogFile`""
+        }
+    })
+    $ui.btnToolData.Add_Click({ Invoke-Safe { Start-Process explorer.exe -ArgumentList "`"$DataDir`"" } })
+
+    #endregion
+
+    #region Общие события
+
+    $ui.btnElevate.Add_Click({ Invoke-Safe { Start-Elevated; $window.Close() } })
+
+    function Update-Everything {
+        Set-Busy $true
+        try {
+            Update-PolicyStates
+            Update-UserList
+            Import-RestrictionsToUI
+            if ($script:RegScanned) { Update-RegistryScan }
+        } finally { Set-Busy $false }
+    }
+    $ui.btnRefresh.Add_Click({ Invoke-Safe { Update-Everything; Show-Toast 'Состояние обновлено' } })
+    $window.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'F5') { Invoke-Safe { Update-Everything } } })
+
+    $window.Add_ContentRendered({
+        Invoke-Safe { Show-Page 'navRestrict' }
+        Invoke-Safe { Update-PolicyStates }
         Invoke-Safe { Update-UserList }
         Invoke-Safe { Import-RestrictionsToUI }
     })
 
     #endregion
 
-    $form.Controls.Add($tabs)
-    $form.Controls.Add($status)
-    $form.Controls.Add($tool)
-
-    [void]$form.ShowDialog()
-    $form.Dispose()
+    [void]$window.ShowDialog()
 }
 
 #endregion
@@ -1809,8 +2319,9 @@ try {
     }
 } catch {
     if ($IsCli) { throw }
-    Add-Type -AssemblyName System.Windows.Forms
-    [void][System.Windows.Forms.MessageBox]::Show("Ошибка запуска:`r`n$($_.Exception.Message)", $AppName, 'OK', 'Error')
+    Write-Log "Ошибка запуска: $($_.Exception.Message)"
+    Add-Type -AssemblyName PresentationFramework
+    [void][System.Windows.MessageBox]::Show("Ошибка запуска:`r`n$($_.Exception.Message)", $AppName, 'OK', 'Error')
 }
 
 #endregion
