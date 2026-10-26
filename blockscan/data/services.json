@@ -1,0 +1,903 @@
+{
+ "version": 1,
+ "services": [
+  {
+   "name": "Facebook",
+   "category": "social",
+   "domains": [
+    "facebook.com",
+    "fbcdn.net",
+    "fb.com",
+    "facebook.net",
+    "fbsbx.com"
+   ],
+   "probe": [
+    "www.facebook.com",
+    "static.xx.fbcdn.net",
+    "connect.facebook.net"
+   ],
+   "quic": true
+  },
+  {
+   "name": "Instagram",
+   "category": "social",
+   "domains": [
+    "instagram.com",
+    "cdninstagram.com"
+   ],
+   "probe": [
+    "www.instagram.com",
+    "static.cdninstagram.com"
+   ],
+   "quic": true
+  },
+  {
+   "name": "X (Twitter)",
+   "category": "social",
+   "domains": [
+    "twitter.com",
+    "x.com",
+    "twimg.com",
+    "t.co"
+   ],
+   "probe": [
+    "x.com",
+    "twitter.com",
+    "abs.twimg.com",
+    "pbs.twimg.com"
+   ]
+  },
+  {
+   "name": "LinkedIn",
+   "category": "social",
+   "domains": [
+    "linkedin.com",
+    "licdn.com"
+   ],
+   "probe": [
+    "www.linkedin.com",
+    "static.licdn.com"
+   ]
+  },
+  {
+   "name": "Reddit",
+   "category": "social",
+   "domains": [
+    "reddit.com",
+    "redd.it",
+    "redditmedia.com",
+    "redditstatic.com"
+   ],
+   "probe": [
+    "www.reddit.com",
+    "www.redditstatic.com"
+   ]
+  },
+  {
+   "name": "Threads",
+   "category": "social",
+   "domains": [
+    "threads.net",
+    "threads.com"
+   ],
+   "probe": [
+    "www.threads.net"
+   ],
+   "quic": true
+  },
+  {
+   "name": "Pinterest",
+   "category": "social",
+   "domains": [
+    "pinterest.com",
+    "pinimg.com"
+   ],
+   "probe": [
+    "www.pinterest.com",
+    "i.pinimg.com"
+   ]
+  },
+  {
+   "name": "TikTok",
+   "category": "social",
+   "domains": [
+    "tiktok.com",
+    "tiktokcdn.com",
+    "tiktokv.com",
+    "byteoversea.com",
+    "ttwstatic.com"
+   ],
+   "probe": [
+    "www.tiktok.com"
+   ]
+  },
+  {
+   "name": "Tumblr",
+   "category": "social",
+   "domains": [
+    "tumblr.com"
+   ],
+   "probe": [
+    "www.tumblr.com"
+   ]
+  },
+  {
+   "name": "Telegram",
+   "category": "messengers",
+   "domains": [
+    "telegram.org",
+    "t.me",
+    "telegram.me",
+    "telesco.pe",
+    "tdesktop.com",
+    "telegra.ph",
+    "cdn-telegram.org"
+   ],
+   "probe": [
+    "telegram.org",
+    "web.telegram.org",
+    "t.me",
+    "telegra.ph"
+   ],
+   "endpoints": [
+    "149.154.175.50:443",
+    "149.154.167.51:443",
+    "149.154.175.100:443",
+    "149.154.167.91:443",
+    "91.108.56.130:443"
+   ]
+  },
+  {
+   "name": "WhatsApp",
+   "category": "messengers",
+   "domains": [
+    "whatsapp.com",
+    "whatsapp.net",
+    "wa.me"
+   ],
+   "probe": [
+    "www.whatsapp.com",
+    "web.whatsapp.com",
+    "g.whatsapp.net",
+    "mmg.whatsapp.net"
+   ]
+  },
+  {
+   "name": "Signal",
+   "category": "messengers",
+   "domains": [
+    "signal.org",
+    "whispersystems.org",
+    "signal.art",
+    "signal.me"
+   ],
+   "probe": [
+    "signal.org",
+    "chat.signal.org",
+    "updates.signal.org"
+   ]
+  },
+  {
+   "name": "Discord",
+   "category": "messengers",
+   "domains": [
+    "discord.com",
+    "discord.gg",
+    "discordapp.com",
+    "discordapp.net",
+    "discord.media",
+    "discord.co",
+    "discordstatus.com",
+    "discord.dev"
+   ],
+   "probe": [
+    "discord.com",
+    "gateway.discord.gg",
+    "cdn.discordapp.com",
+    "media.discordapp.net",
+    "discord.gg"
+   ],
+   "quic": true
+  },
+  {
+   "name": "Viber",
+   "category": "messengers",
+   "domains": [
+    "viber.com"
+   ],
+   "probe": [
+    "www.viber.com",
+    "dl-media.viber.com"
+   ]
+  },
+  {
+   "name": "Skype",
+   "category": "messengers",
+   "domains": [
+    "skype.com",
+    "skype.net"
+   ],
+   "probe": [
+    "www.skype.com"
+   ]
+  },
+  {
+   "name": "Element / Matrix",
+   "category": "messengers",
+   "domains": [
+    "matrix.org",
+    "element.io"
+   ],
+   "probe": [
+    "matrix.org",
+    "app.element.io"
+   ]
+  },
+  {
+   "name": "YouTube",
+   "category": "video",
+   "domains": [
+    "youtube.com",
+    "youtu.be",
+    "googlevideo.com",
+    "ytimg.com",
+    "ggpht.com",
+    "youtube-nocookie.com",
+    "youtubei.googleapis.com",
+    "yt3.ggpht.com",
+    "wide-youtube.l.google.com"
+   ],
+   "probe": [
+    "www.youtube.com",
+    "youtu.be",
+    "i.ytimg.com",
+    "yt3.ggpht.com",
+    "youtubei.googleapis.com",
+    "redirector.googlevideo.com"
+   ],
+   "quic": true
+  },
+  {
+   "name": "Twitch",
+   "category": "video",
+   "domains": [
+    "twitch.tv",
+    "ttvnw.net",
+    "jtvnw.net",
+    "twitchcdn.net"
+   ],
+   "probe": [
+    "www.twitch.tv",
+    "static.twitchcdn.net",
+    "usher.ttvnw.net"
+   ]
+  },
+  {
+   "name": "Netflix",
+   "category": "video",
+   "domains": [
+    "netflix.com",
+    "nflxvideo.net",
+    "nflximg.net",
+    "nflxext.com"
+   ],
+   "probe": [
+    "www.netflix.com",
+    "assets.nflxext.com"
+   ]
+  },
+  {
+   "name": "Spotify",
+   "category": "video",
+   "domains": [
+    "spotify.com",
+    "scdn.co",
+    "spotifycdn.com"
+   ],
+   "probe": [
+    "open.spotify.com",
+    "www.spotify.com"
+   ]
+  },
+  {
+   "name": "Vimeo",
+   "category": "video",
+   "domains": [
+    "vimeo.com",
+    "vimeocdn.com"
+   ],
+   "probe": [
+    "vimeo.com",
+    "f.vimeocdn.com"
+   ]
+  },
+  {
+   "name": "SoundCloud",
+   "category": "video",
+   "domains": [
+    "soundcloud.com",
+    "sndcdn.com"
+   ],
+   "probe": [
+    "soundcloud.com"
+   ]
+  },
+  {
+   "name": "Rumble",
+   "category": "video",
+   "domains": [
+    "rumble.com"
+   ],
+   "probe": [
+    "rumble.com"
+   ]
+  },
+  {
+   "name": "BBC",
+   "category": "news",
+   "domains": [
+    "bbc.com",
+    "bbc.co.uk",
+    "bbci.co.uk"
+   ],
+   "probe": [
+    "www.bbc.com",
+    "www.bbc.co.uk"
+   ]
+  },
+  {
+   "name": "Deutsche Welle",
+   "category": "news",
+   "domains": [
+    "dw.com"
+   ],
+   "probe": [
+    "www.dw.com"
+   ]
+  },
+  {
+   "name": "Медуза",
+   "category": "news",
+   "domains": [
+    "meduza.io"
+   ],
+   "probe": [
+    "meduza.io"
+   ]
+  },
+  {
+   "name": "Радио Свобода",
+   "category": "news",
+   "domains": [
+    "svoboda.org",
+    "rferl.org"
+   ],
+   "probe": [
+    "www.svoboda.org",
+    "www.rferl.org"
+   ]
+  },
+  {
+   "name": "Настоящее время",
+   "category": "news",
+   "domains": [
+    "currenttime.tv"
+   ],
+   "probe": [
+    "www.currenttime.tv"
+   ]
+  },
+  {
+   "name": "Новая газета Европа",
+   "category": "news",
+   "domains": [
+    "novayagazeta.eu"
+   ],
+   "probe": [
+    "novayagazeta.eu"
+   ]
+  },
+  {
+   "name": "The Insider",
+   "category": "news",
+   "domains": [
+    "theins.ru",
+    "theins.press"
+   ],
+   "probe": [
+    "theins.ru"
+   ]
+  },
+  {
+   "name": "Euronews",
+   "category": "news",
+   "domains": [
+    "euronews.com"
+   ],
+   "probe": [
+    "www.euronews.com"
+   ]
+  },
+  {
+   "name": "Reuters",
+   "category": "news",
+   "domains": [
+    "reuters.com"
+   ],
+   "probe": [
+    "www.reuters.com"
+   ]
+  },
+  {
+   "name": "Tor Project",
+   "category": "vpn",
+   "domains": [
+    "torproject.org"
+   ],
+   "probe": [
+    "www.torproject.org",
+    "bridges.torproject.org"
+   ]
+  },
+  {
+   "name": "Proton VPN",
+   "category": "vpn",
+   "domains": [
+    "protonvpn.com",
+    "proton.me",
+    "protonmail.com"
+   ],
+   "probe": [
+    "protonvpn.com",
+    "proton.me",
+    "account.proton.me"
+   ]
+  },
+  {
+   "name": "NordVPN",
+   "category": "vpn",
+   "domains": [
+    "nordvpn.com"
+   ],
+   "probe": [
+    "nordvpn.com"
+   ]
+  },
+  {
+   "name": "ExpressVPN",
+   "category": "vpn",
+   "domains": [
+    "expressvpn.com"
+   ],
+   "probe": [
+    "www.expressvpn.com"
+   ]
+  },
+  {
+   "name": "Psiphon",
+   "category": "vpn",
+   "domains": [
+    "psiphon.ca",
+    "psiphon3.com"
+   ],
+   "probe": [
+    "psiphon.ca"
+   ]
+  },
+  {
+   "name": "Outline",
+   "category": "vpn",
+   "domains": [
+    "getoutline.org"
+   ],
+   "probe": [
+    "getoutline.org"
+   ]
+  },
+  {
+   "name": "Windscribe",
+   "category": "vpn",
+   "domains": [
+    "windscribe.com"
+   ],
+   "probe": [
+    "windscribe.com"
+   ]
+  },
+  {
+   "name": "Mullvad",
+   "category": "vpn",
+   "domains": [
+    "mullvad.net"
+   ],
+   "probe": [
+    "mullvad.net"
+   ]
+  },
+  {
+   "name": "Lantern",
+   "category": "vpn",
+   "domains": [
+    "lantern.io",
+    "getlantern.org"
+   ],
+   "probe": [
+    "lantern.io"
+   ]
+  },
+  {
+   "name": "WireGuard",
+   "category": "vpn",
+   "domains": [
+    "wireguard.com"
+   ],
+   "probe": [
+    "www.wireguard.com"
+   ]
+  },
+  {
+   "name": "RuTracker",
+   "category": "torrents",
+   "domains": [
+    "rutracker.org",
+    "rutracker.cc",
+    "t-ru.org"
+   ],
+   "probe": [
+    "rutracker.org"
+   ]
+  },
+  {
+   "name": "The Pirate Bay",
+   "category": "torrents",
+   "domains": [
+    "thepiratebay.org"
+   ],
+   "probe": [
+    "thepiratebay.org"
+   ]
+  },
+  {
+   "name": "NNM-Club",
+   "category": "torrents",
+   "domains": [
+    "nnmclub.to",
+    "nnm-club.me"
+   ],
+   "probe": [
+    "nnmclub.to"
+   ]
+  },
+  {
+   "name": "Rutor",
+   "category": "torrents",
+   "domains": [
+    "rutor.info",
+    "rutor.is"
+   ],
+   "probe": [
+    "rutor.info"
+   ]
+  },
+  {
+   "name": "1337x",
+   "category": "torrents",
+   "domains": [
+    "1337x.to"
+   ],
+   "probe": [
+    "1337x.to"
+   ]
+  },
+  {
+   "name": "Kinozal",
+   "category": "torrents",
+   "domains": [
+    "kinozal.tv"
+   ],
+   "probe": [
+    "kinozal.tv"
+   ]
+  },
+  {
+   "name": "GitHub",
+   "category": "dev",
+   "domains": [
+    "github.com",
+    "githubusercontent.com",
+    "githubassets.com",
+    "github.io",
+    "ghcr.io"
+   ],
+   "probe": [
+    "github.com",
+    "api.github.com",
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "github.githubassets.com",
+    "ghcr.io"
+   ]
+  },
+  {
+   "name": "GitLab",
+   "category": "dev",
+   "domains": [
+    "gitlab.com"
+   ],
+   "probe": [
+    "gitlab.com"
+   ]
+  },
+  {
+   "name": "Docker Hub",
+   "category": "dev",
+   "domains": [
+    "docker.com",
+    "docker.io"
+   ],
+   "probe": [
+    "hub.docker.com",
+    "registry-1.docker.io",
+    "auth.docker.io",
+    "production.cloudflare.docker.com"
+   ]
+  },
+  {
+   "name": "npm",
+   "category": "dev",
+   "domains": [
+    "npmjs.org",
+    "npmjs.com"
+   ],
+   "probe": [
+    "registry.npmjs.org",
+    "www.npmjs.com"
+   ]
+  },
+  {
+   "name": "PyPI",
+   "category": "dev",
+   "domains": [
+    "pypi.org",
+    "pythonhosted.org"
+   ],
+   "probe": [
+    "pypi.org",
+    "files.pythonhosted.org"
+   ]
+  },
+  {
+   "name": "Stack Overflow",
+   "category": "dev",
+   "domains": [
+    "stackoverflow.com",
+    "stackexchange.com",
+    "sstatic.net"
+   ],
+   "probe": [
+    "stackoverflow.com"
+   ]
+  },
+  {
+   "name": "JetBrains",
+   "category": "dev",
+   "domains": [
+    "jetbrains.com"
+   ],
+   "probe": [
+    "www.jetbrains.com",
+    "plugins.jetbrains.com"
+   ]
+  },
+  {
+   "name": "Google Cloud / Google APIs",
+   "category": "dev",
+   "domains": [
+    "googleapis.com",
+    "gstatic.com",
+    "google.com"
+   ],
+   "probe": [
+    "www.google.com",
+    "www.gstatic.com",
+    "fonts.googleapis.com"
+   ],
+   "quic": true
+  },
+  {
+   "name": "Cloudflare",
+   "category": "dev",
+   "domains": [
+    "cloudflare.com",
+    "cloudflare-dns.com",
+    "workers.dev",
+    "pages.dev"
+   ],
+   "probe": [
+    "www.cloudflare.com",
+    "cloudflare-dns.com"
+   ],
+   "quic": true
+  },
+  {
+   "name": "AI-сервисы",
+   "category": "dev",
+   "domains": [
+    "openai.com",
+    "chatgpt.com",
+    "claude.ai",
+    "anthropic.com",
+    "gemini.google.com"
+   ],
+   "probe": [
+    "chatgpt.com",
+    "claude.ai",
+    "gemini.google.com"
+   ]
+  },
+  {
+   "name": "Steam",
+   "category": "games",
+   "domains": [
+    "steampowered.com",
+    "steamcommunity.com",
+    "steamstatic.com",
+    "steamcontent.com",
+    "steamserver.net"
+   ],
+   "probe": [
+    "store.steampowered.com",
+    "steamcommunity.com",
+    "api.steampowered.com"
+   ]
+  },
+  {
+   "name": "Epic Games",
+   "category": "games",
+   "domains": [
+    "epicgames.com",
+    "unrealengine.com",
+    "epicgames.dev"
+   ],
+   "probe": [
+    "store.epicgames.com",
+    "www.epicgames.com"
+   ]
+  },
+  {
+   "name": "Battle.net",
+   "category": "games",
+   "domains": [
+    "battle.net",
+    "blizzard.com"
+   ],
+   "probe": [
+    "battle.net",
+    "www.blizzard.com"
+   ]
+  },
+  {
+   "name": "Roblox",
+   "category": "games",
+   "domains": [
+    "roblox.com",
+    "rbxcdn.com"
+   ],
+   "probe": [
+    "www.roblox.com"
+   ]
+  },
+  {
+   "name": "PlayStation",
+   "category": "games",
+   "domains": [
+    "playstation.com",
+    "playstation.net",
+    "sonyentertainmentnetwork.com"
+   ],
+   "probe": [
+    "www.playstation.com"
+   ]
+  },
+  {
+   "name": "Xbox",
+   "category": "games",
+   "domains": [
+    "xbox.com",
+    "xboxlive.com"
+   ],
+   "probe": [
+    "www.xbox.com"
+   ]
+  },
+  {
+   "name": "Nintendo",
+   "category": "games",
+   "domains": [
+    "nintendo.com",
+    "nintendo.net"
+   ],
+   "probe": [
+    "www.nintendo.com"
+   ]
+  },
+  {
+   "name": "EA",
+   "category": "games",
+   "domains": [
+    "ea.com"
+   ],
+   "probe": [
+    "www.ea.com"
+   ]
+  },
+  {
+   "name": "Wikipedia",
+   "category": "other",
+   "domains": [
+    "wikipedia.org",
+    "wikimedia.org"
+   ],
+   "probe": [
+    "ru.wikipedia.org",
+    "upload.wikimedia.org"
+   ]
+  },
+  {
+   "name": "Patreon",
+   "category": "other",
+   "domains": [
+    "patreon.com"
+   ],
+   "probe": [
+    "www.patreon.com"
+   ]
+  },
+  {
+   "name": "Medium",
+   "category": "other",
+   "domains": [
+    "medium.com"
+   ],
+   "probe": [
+    "medium.com"
+   ]
+  },
+  {
+   "name": "Internet Archive",
+   "category": "other",
+   "domains": [
+    "archive.org"
+   ],
+   "probe": [
+    "archive.org",
+    "web.archive.org"
+   ]
+  },
+  {
+   "name": "Notion",
+   "category": "other",
+   "domains": [
+    "notion.so",
+    "notion.site"
+   ],
+   "probe": [
+    "www.notion.so"
+   ]
+  },
+  {
+   "name": "Microsoft",
+   "category": "other",
+   "domains": [
+    "microsoft.com",
+    "live.com",
+    "office.com",
+    "windowsupdate.com"
+   ],
+   "probe": [
+    "www.microsoft.com",
+    "login.live.com"
+   ]
+  }
+ ]
+}
