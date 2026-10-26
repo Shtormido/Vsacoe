@@ -1,0 +1,3 @@
+# Файлы для Windows хранятся как есть: CRLF и UTF-8 с BOM (нужно для PowerShell 5.1)
+*.ps1 -text
+*.bat -text

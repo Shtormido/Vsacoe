@@ -1,0 +1,19 @@
+{
+  "name": "Усиленная безопасность",
+  "description": "Защита от типовых атак: флешки, скрипты, LLMNR, нежелательное ПО",
+  "policies": {
+    "uac_admin": "2",
+    "uac_secure_desktop": "on",
+    "autorun": "off",
+    "smartscreen": "warn",
+    "defender_pua": "1",
+    "lockscreen_camera": "off",
+    "remote_assistance": "off",
+    "wsh": "off",
+    "llmnr": "off",
+    "insecure_guest": "deny",
+    "smb_signing": "on",
+    "ctrl_alt_del": "require",
+    "last_username": "hide"
+  }
+}

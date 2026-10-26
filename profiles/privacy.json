@@ -1,0 +1,26 @@
+{
+  "name": "Конфиденциальность",
+  "description": "Минимум телеметрии, рекламы и ИИ-функций",
+  "policies": {
+    "telemetry": "1",
+    "feedback_notifications": "off",
+    "advertising_id": "off",
+    "activity_history": "off",
+    "location": "off",
+    "input_personalization": "off",
+    "error_reporting": "off",
+    "cortana": "off",
+    "web_search": "off",
+    "consumer_features": "off",
+    "tips": "off",
+    "spotlight": "off",
+    "copilot": "off",
+    "recall": "off",
+    "widgets": "off",
+    "news_feeds": "off",
+    "edge_shopping": "off",
+    "edge_personalization": "off",
+    "edge_startup_boost": "off",
+    "edge_background": "off"
+  }
+}

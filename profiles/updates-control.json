@@ -1,0 +1,11 @@
+{
+  "name": "Контроль обновлений",
+  "description": "Обновления скачиваются, но ставятся по согласию; без драйверов и без авто-перезагрузки",
+  "policies": {
+    "wu_auto": "download",
+    "wu_no_reboot": "on",
+    "wu_drivers": "off",
+    "wu_defer_feature": "90",
+    "delivery_optimization": "0"
+  }
+}
