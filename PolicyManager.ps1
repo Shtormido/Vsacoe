@@ -450,6 +450,67 @@ function Get-OSInfo {
 
 #endregion
 
+#region Журнал запуска приложений (аудит процессов)
+
+# Включает запись события 4688 (создание процесса) в журнал «Безопасность» и добавление в него командной строки
+$AuditCmdLineKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit'
+
+function Test-ProcessAuditEnabled {
+    try {
+        $out = & auditpol /get /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /r 2>$null
+        return (($out -join "`n") -match 'Success')
+    } catch { return $false }
+}
+
+function Enable-ProcessAudit {
+    # Аудит по GUID подкатегории — не зависит от языка Windows
+    & auditpol /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:enable | Out-Null
+    if (-not (Test-Path -LiteralPath $AuditCmdLineKey)) { New-Item -Path $AuditCmdLineKey -Force | Out-Null }
+    Set-ItemProperty -LiteralPath $AuditCmdLineKey -Name 'ProcessCreationIncludeCmdLine_Enabled' -Type DWord -Value 1
+    Write-Log 'Включён аудит запуска приложений (событие 4688)'
+}
+
+function Disable-ProcessAudit {
+    & auditpol /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:disable | Out-Null
+    Set-ItemProperty -LiteralPath $AuditCmdLineKey -Name 'ProcessCreationIncludeCmdLine_Enabled' -Type DWord -Value 0 -ErrorAction SilentlyContinue
+    Write-Log 'Отключён аудит запуска приложений'
+}
+
+# Читает последние запуски приложений из журнала «Безопасность»
+function Get-ProcessLog([int]$MaxEvents = 500, [string]$Filter = '') {
+    $filterXml = @"
+<QueryList>
+  <Query Id="0" Path="Security">
+    <Select Path="Security">*[System[(EventID=4688)]]</Select>
+  </Query>
+</QueryList>
+"@
+    $events = Get-WinEvent -FilterXml $filterXml -MaxEvents $MaxEvents -ErrorAction Stop
+    foreach ($e in $events) {
+        $x = [xml]$e.ToXml()
+        $d = @{}
+        foreach ($node in $x.Event.EventData.Data) { $d[$node.Name] = $node.'#text' }
+        $exe = $d['NewProcessName']
+        if (-not $exe) { continue }
+        $name = [IO.Path]::GetFileName($exe)
+        # Служебные процессы входа/аудита самой системы пропускаем, чтобы не засорять список
+        $user = $d['SubjectUserName']
+        if ($user -match '\$$' -or $user -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { continue }
+        if ($Filter) {
+            $hay = "$name $exe $user"
+            if ($hay.IndexOf($Filter, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        }
+        [pscustomobject]@{
+            Time    = $e.TimeCreated
+            Program = $name
+            User    = $user
+            Path    = $exe
+        }
+    }
+}
+
+#endregion
+
 #region Ограничения для пользователей без прав администратора
 
 # Локальная групповая политика «Не администраторы» (MLGPO, Windows Pro и выше):
@@ -1473,6 +1534,7 @@ $MainWindowXaml = @'
           <RadioButton x:Name="navRegistry" Style="{StaticResource Nav}" Tag="&#xE71D;" Content="Реестр"/>
           <RadioButton x:Name="navProfiles" Style="{StaticResource Nav}" Tag="&#xE8F1;" Content="Профили и копии"/>
           <RadioButton x:Name="navTools" Style="{StaticResource Nav}" Tag="&#xE90F;" Content="Инструменты"/>
+          <RadioButton x:Name="navAudit" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="Журнал запусков"/>
           <RadioButton x:Name="navAbout" Style="{StaticResource Nav}" Tag="&#xE946;" Content="О программе"/>
         </StackPanel>
       </DockPanel>
@@ -1991,8 +2053,89 @@ $MainWindowXaml = @'
                 <TextBlock Style="{StaticResource Muted}" Text="Резервные копии и журнал"/>
               </StackPanel>
             </Button>
+            <Button x:Name="btnToolAudit" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
+                <TextBlock Text="Журнал запуска приложений" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Какие программы и когда запускались на ПК"/>
+              </StackPanel>
+            </Button>
           </UniformGrid>
         </ScrollViewer>
+
+        <!-- ===== Журнал запусков ===== -->
+        <Grid x:Name="pageAudit" Margin="32,0,32,24" Visibility="Collapsed">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <Border Grid.Row="0" x:Name="bannerAudit" Style="{StaticResource Card}" Margin="0,0,0,12" BorderBrush="#FCD34D" Background="#FFFBEB" Visibility="Collapsed">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="#B45309" FontSize="18" Margin="0,0,14,0" VerticalAlignment="Center"/>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock FontWeight="SemiBold" Foreground="#92400E" Text="Запись запусков выключена"/>
+                <TextBlock Foreground="#92400E" FontSize="12" TextWrapping="Wrap" Text="Windows пока не ведёт журнал запуска программ. Включите запись — и дальше здесь будет видно, кто и когда что запускал. Прошлые запуски до включения не сохраняются."/>
+              </StackPanel>
+              <Button x:Name="btnAuditEnable" Grid.Column="2" Style="{StaticResource BtnPrimary}" Margin="12,0,0,0" Content="Включить запись запусков"/>
+            </Grid>
+          </Border>
+          <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="320"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="btnAuditRefresh" Style="{StaticResource BtnPrimary}" Content="Обновить"/>
+              <Button x:Name="btnAuditDisable" Style="{StaticResource Btn}" Content="Выключить запись"/>
+            </StackPanel>
+            <Grid Grid.Column="2">
+              <TextBox x:Name="txtAuditFilter" Style="{StaticResource Input}" Padding="34,8,8,8"/>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+              <TextBlock x:Name="phAuditFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Фильтр: программа или пользователь…"/>
+            </Grid>
+          </Grid>
+          <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
+            <Grid>
+              <DataGrid x:Name="dgAudit" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                        GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#F3F4F6" BorderThickness="0" Background="White"
+                        RowHeight="30" CanUserAddRows="False" CanUserResizeRows="False">
+                <DataGrid.ColumnHeaderStyle>
+                  <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#F9FAFB"/>
+                    <Setter Property="Foreground" Value="#6B7280"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Padding" Value="10,8"/>
+                    <Setter Property="BorderBrush" Value="#E5E7EB"/>
+                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                  </Style>
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.CellStyle>
+                  <Style TargetType="DataGridCell">
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                  </Style>
+                </DataGrid.CellStyle>
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="Время" Binding="{Binding C1}" Width="170"/>
+                  <DataGridTextColumn Header="Программа" Binding="{Binding Title}" Width="220"/>
+                  <DataGridTextColumn Header="Пользователь" Binding="{Binding Subtitle}" Width="160"/>
+                  <DataGridTextColumn Header="Путь" Binding="{Binding C2}" Width="*"/>
+                </DataGrid.Columns>
+              </DataGrid>
+              <StackPanel x:Name="pnlAuditEmpty" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="40" Foreground="#D1D5DB" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="txtAuditEmpty" Style="{StaticResource Muted}" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+              </StackPanel>
+            </Grid>
+          </Border>
+        </Grid>
 
         <!-- ===== О программе ===== -->
         <ScrollViewer x:Name="pageAbout" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
@@ -2268,6 +2411,7 @@ function Show-MainWindow {
         navRegistry = @('pageRegistry', 'Политики в реестре', 'Все параметры из веток Policies, включая заданные другими программами')
         navProfiles = @('pageProfiles', 'Профили и резервные копии', 'Готовые наборы настроек, сохранение и восстановление')
         navTools    = @('pageTools', 'Инструменты', 'Применение и диагностика групповых политик')
+        navAudit    = @('pageAudit', 'Журнал запуска приложений', 'Какие программы и когда запускались на компьютере')
         navAbout    = @('pageAbout', 'О программе', 'Сведения о Policy Manager и разработчике')
     }
     $script:RegScanned = $false
@@ -2282,6 +2426,7 @@ function Show-MainWindow {
         $ui.txtPageSubtitle.Text = $pageInfo[$Nav][2]
         if ($Nav -eq 'navRegistry' -and -not $script:RegScanned) { Update-RegistryScan }
         if ($Nav -eq 'navProfiles') { Update-ProfileList }
+        if ($Nav -eq 'navAudit') { Update-AuditView }
     }
     foreach ($k in $pageInfo.Keys) {
         $ui[$k].Add_Checked({ param($s, $e) Invoke-Safe { Show-Page $s.Name } })
@@ -3031,6 +3176,66 @@ function Show-MainWindow {
         }
     })
     $ui.btnToolData.Add_Click({ Invoke-Safe { Start-Process explorer.exe -ArgumentList "`"$DataDir`"" } })
+    $ui.btnToolAudit.Add_Click({ $ui.navAudit.IsChecked = $true })
+
+    #endregion
+
+    #region Страница «Журнал запусков»
+
+    $script:AuditLoaded = $false
+    Register-Placeholder $ui.txtAuditFilter $ui.phAuditFilter
+
+    function Update-AuditView {
+        if (-not $IsAdmin) {
+            $ui.dgAudit.ItemsSource = $null
+            $ui.bannerAudit.Visibility = 'Collapsed'
+            $ui.pnlAuditEmpty.Visibility = 'Visible'
+            $ui.txtAuditEmpty.Text = 'Журнал запусков доступен только с правами администратора. Нажмите «Запустить от администратора».'
+            return
+        }
+        $enabled = Test-ProcessAuditEnabled
+        $ui.bannerAudit.Visibility = $(if ($enabled) { 'Collapsed' } else { 'Visible' })
+        Set-Busy $true
+        try {
+            $rows = New-Object System.Collections.Generic.List[object]
+            $err = $null
+            try {
+                foreach ($r in @(Get-ProcessLog 500 $ui.txtAuditFilter.Text.Trim())) {
+                    $rows.Add((New-Row @{ Title = $r.Program; Subtitle = $r.User; C1 = $r.Time.ToString('dd.MM.yyyy HH:mm:ss'); C2 = $r.Path }))
+                }
+            } catch { $err = $_.Exception.Message }
+            $ui.dgAudit.ItemsSource = $rows
+            if ($rows.Count) {
+                $ui.pnlAuditEmpty.Visibility = 'Collapsed'
+            } else {
+                $ui.pnlAuditEmpty.Visibility = 'Visible'
+                if ($err) { $ui.txtAuditEmpty.Text = 'Не удалось прочитать журнал: ' + $err }
+                elseif (-not $enabled) { $ui.txtAuditEmpty.Text = 'Пока нет записей. Включите запись запусков — и они начнут появляться здесь.' }
+                else { $ui.txtAuditEmpty.Text = 'Записей нет. Запустите какую-нибудь программу и нажмите «Обновить».' }
+            }
+        } finally { Set-Busy $false }
+        $script:AuditLoaded = $true
+    }
+
+    $ui.btnAuditEnable.Add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора.'; return }
+            Enable-ProcessAudit
+            Update-AuditView
+            Show-Toast 'Запись запусков включена. Записываются программы, запущенные после этого момента.'
+        }
+    })
+    $ui.btnAuditDisable.Add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора.'; return }
+            if (-not (Confirm-Action 'Выключить запись запуска приложений?')) { return }
+            Disable-ProcessAudit
+            Update-AuditView
+            Show-Toast 'Запись запусков выключена'
+        }
+    })
+    $ui.btnAuditRefresh.Add_Click({ Invoke-Safe { Update-AuditView; Show-Toast 'Журнал обновлён' } })
+    $ui.txtAuditFilter.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Update-AuditView } } })
 
     #endregion
 
