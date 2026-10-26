@@ -8,3 +8,4 @@ blockscan-*.html
 blockscan-*.csv
 blockscan-*.json
 zapret-lists/
+*.spec

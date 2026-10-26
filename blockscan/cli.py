@@ -514,6 +514,11 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8")  # консоль Windows
         except (AttributeError, ValueError):
             pass
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv and getattr(sys, "frozen", False):
+        # blockscan.exe запущен двойным щелчком — открываем веб-интерфейс.
+        argv = ["web"]
     args = build_parser().parse_args(argv)
     _setup_logging(args.verbose)
     return args.func(args)

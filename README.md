@@ -19,6 +19,13 @@ python -m blockscan --help
 Сканер сам открывает TCP/UDP-соединения, поэтому запускайте его на машине,
 где zapret/VPN **выключены** (иначе вы проверите обход, а не провайдера).
 
+### Windows: готовый exe
+
+`blockscan.exe` не требует Python. Двойной щелчок запускает веб-интерфейс в браузере.
+Из консоли работают все команды: `blockscan.exe scan`, `blockscan.exe show` и т.д.
+Собрать самому: `packaging\build_exe.bat` (нужен Python), либо запустить workflow
+«Windows exe» в GitHub Actions.
+
 ## Быстрый старт
 
 ```bash
