@@ -940,8 +940,9 @@ function Get-NonAdminRestrictions {
     $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') })
     $block = @($blockRaw | Where-Object { $BlockAllFilters -notcontains $_ })
     $hostsSites = @(Get-HostsBlockedSites)
-    $mode = 'block'
-    if ($blockRaw | Where-Object { $BlockAllFilters -contains $_ }) { $mode = 'allow' }
+    $strict = [bool]($blockRaw | Where-Object { $BlockAllFilters -contains $_ })
+    if (-not $strict) { $mode = 'block' }
+    elseif ($block.Count) { $mode = 'combined' } else { $mode = 'allow' }
     if (-not $block.Count) { $block = $hostsSites }
     [pscustomobject]@{
         Applied          = $applied
@@ -1008,14 +1009,18 @@ function Get-RestrictionSummary($Config) {
     $lines = @()
     if ($Config.WhitelistEnabled) { $lines += "• Разрешены только программы из списка ($(@($Config.Programs).Count) шт.)" }
     else { $lines += '• Запуск программ не ограничен' }
+    $nb = @($Config.BlockSites).Count
+    $nw = @($Config.AllowSites).Count
     if (-not $Config.SitesEnabled) { $lines += '• Сайты не ограничены' }
     elseif ($Config.SitesMode -eq 'allow') {
-        $lines += "• Строгий режим: открываются только сайты из белого списка ($(@($Config.AllowSites).Count) шт.), остальное запрещено"
-        if (@($Config.BlockSites).Count) { $lines += "  (чёрный список тоже задан: $(@($Config.BlockSites).Count))" }
+        $lines += "• Белый список: открываются только разрешённые сайты ($nw шт.), остальное запрещено"
+    }
+    elseif ($Config.SitesMode -eq 'combined') {
+        $lines += "• Совмещённый: открыт только белый список ($nw шт.), чёрный список ($nb) запрещает внутри него"
     }
     else {
-        $line = "• Чёрный список: заблокировано — $(@($Config.BlockSites).Count)"
-        if (@($Config.AllowSites).Count) { $line += "; белый список (исключения): $(@($Config.AllowSites).Count)" }
+        $line = "• Чёрный список: заблокировано — $nb"
+        if ($nw) { $line += "; белый список (исключения): $nw" }
         if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
         $lines += $line
     }
@@ -1064,18 +1069,24 @@ function Get-RestrictionValues($Config) {
         foreach ($p in $Config.Programs) { $vals.Add([pscustomobject]@{ Key = $RestrictRunKey; Name = "$i"; Type = 'String'; Data = $p }); $i++ }
     }
     if ($Config.SitesEnabled) {
-        $strict = ($Config.SitesMode -eq 'allow')
-        # Чёрный список + (в строгом режиме) запрет всего остального. Белый список — исключения, у него приоритет.
-        $blockList = @($Config.BlockSites)
-        if ($strict) { $blockList += $BlockAllFilters }
-        $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
-        if ($strict) { $allowFilters += $BrowserInternalUrls }
+        # Режимы: block — всё открыто кроме чёрного (белый = исключения);
+        #         allow — открыт только белый список; combined — открыт только белый, чёрный режет внутри него.
+        # В Chromium более точный фильтр побеждает: '*' (запрет всего) < 'youtube.com' (белый) < 'youtube.com/shorts' (чёрный).
+        $strict   = ($Config.SitesMode -in @('allow', 'combined'))   # по умолчанию всё запрещено
+        $useBlack = ($Config.SitesMode -in @('block', 'combined'))   # чёрный список активен
 
-        if ($blockList.Count) { foreach ($k in $SiteListKeys) { Add-ValueList $vals $k $blockList } }
+        $blockList = @()
+        if ($useBlack) { $blockList += @($Config.BlockSites) }
+        if ($strict)   { $blockList += $BlockAllFilters }
+        $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
+        if ($strict)   { $allowFilters += $BrowserInternalUrls }
+
+        if ($blockList.Count)    { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
         if ($allowFilters.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowFilters } }
 
-        $fxBlock = @(ConvertTo-FirefoxPatterns $Config.BlockSites)
-        if ($strict) { $fxBlock += '<all_urls>' }
+        $fxBlock = @()
+        if ($useBlack) { $fxBlock += @(ConvertTo-FirefoxPatterns $Config.BlockSites) }
+        if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
         if (@($Config.AllowSites).Count) { Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites) }
     }
@@ -1780,11 +1791,14 @@ $MainWindowXaml = @'
                     </StackPanel>
                     <CheckBox x:Name="chkSites" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                   </Grid>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" Text="Сначала применяется белый список (разрешённые сайты открываются всегда, он главнее), затем чёрный (запрещает остальное из списка). Включите строгий режим, чтобы разрешить только белый список."/>
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
-                    <CheckBox x:Name="chkStrict" Style="{StaticResource Switch}" Margin="0,0,0,12">
-                      <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Text="Строгий режим: разрешать только сайты из белого списка (всё остальное запрещено)"/>
-                    </CheckBox>
+                    <TextBlock FontWeight="SemiBold" Margin="0,4,0,6" Text="Режим работы списков"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" Content="Чёрный список"/>
+                      <RadioButton x:Name="rbModeWhite" Style="{StaticResource Segment}" GroupName="sitemode" Content="Белый список"/>
+                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Совмещённый"/>
+                    </StackPanel>
+                    <TextBlock x:Name="txtModeDesc" Style="{StaticResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
                     <Border BorderBrush="#86EFAC" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#F0FDF4">
                       <StackPanel>
@@ -2676,6 +2690,21 @@ function Show-MainWindow {
     $blockSites.Add_CollectionChanged({ Update-SitesCount })
     $allowSites.Add_CollectionChanged({ Update-SitesCount })
 
+    function Get-SiteMode {
+        if ($ui.rbModeWhite.IsChecked -eq $true) { return 'allow' }
+        if ($ui.rbModeBlack.IsChecked -eq $true) { return 'block' }
+        return 'combined'
+    }
+    function Update-ModeDesc {
+        $t = switch (Get-SiteMode) {
+            'block'    { 'Открыто всё, кроме чёрного списка. Белый список — исключения, которые открываются всегда (даже если попали под чёрный).' }
+            'allow'    { 'Открыт только белый список, всё остальное запрещено. Чёрный список не применяется.' }
+            default    { 'Открыт только белый список, всё остальное запрещено. Чёрный список дополнительно запрещает разделы внутри разрешённых сайтов (например, разрешить youtube.com, но запретить youtube.com/shorts).' }
+        }
+        $ui.txtModeDesc.Text = $t
+    }
+    foreach ($rb in @($ui.rbModeBlack, $ui.rbModeWhite, $ui.rbModeCombo)) { $rb.Add_Checked({ Invoke-Safe { Update-ModeDesc } }) }
+
     $ui.btnAllowSearch.Tag = 'yandex.ru ya.ru google.com google.ru bing.com duckduckgo.com'
     $ui.btnAllowStudy.Tag = @(
         'uchi.ru', 'resh.edu.ru', 'edu.ru', 'myschool.edu.ru', 'education.yandex.ru', 'dnevnik.ru', 'school.mos.ru', 'mos.ru',
@@ -2941,10 +2970,15 @@ function Show-MainWindow {
         }
         foreach ($x in @($r.BlockSites)) { Add-UniqueItem $blockSites $x }
         foreach ($x in @($r.AllowSites)) { Add-UniqueItem $allowSites $x }
-        $ui.chkStrict.IsChecked = ($r.SitesMode -eq 'allow')
+        switch ($r.SitesMode) {
+            'allow'    { $ui.rbModeWhite.IsChecked = $true }
+            'combined' { $ui.rbModeCombo.IsChecked = $true }
+            default    { $ui.rbModeBlack.IsChecked = $true }
+        }
         $ui.chkHosts.IsChecked = [bool]$r.HostsEnabled
         Update-ListCounters
         Update-SitesCount
+        Update-ModeDesc
     }
 
     function Import-RestrictionsToUI {
@@ -2958,12 +2992,11 @@ function Show-MainWindow {
     function Get-RestrictionsFromUI {
         $lock = @{}
         foreach ($l in $Lockdowns) { $lock[$l.Id] = ($lockBoxes[$l.Id].IsChecked -eq $true) }
-        $strict = ($ui.chkStrict.IsChecked -eq $true)
-        $mode = if ($strict) { 'allow' } else { 'block' }
+        $mode = Get-SiteMode
         $block = @($blockSites)
         $allow = @($allowSites)
-        # В строгом режиме достаточно белого списка; иначе должен быть хотя бы один список
-        $hasSites = if ($strict) { $allow.Count -gt 0 } else { ($block.Count -gt 0 -or $allow.Count -gt 0) }
+        # В белом/совмещённом режиме нужен белый список; в чёрном — хотя бы один список
+        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0) } else { $allow.Count -gt 0 }
         [pscustomobject]@{
             WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
             Programs         = @($progs)
@@ -2988,7 +3021,7 @@ function Show-MainWindow {
             if (-not (Confirm-Action 'В списке нет explorer.exe — у пользователей могут не открываться папки. Продолжить?')) { return }
         }
         if ($ui.chkSites.IsChecked -eq $true -and -not $cfg.SitesEnabled) {
-            if ($cfg.SitesMode -eq 'allow') { Show-Error 'Строгий режим включён, но белый список пуст — так закроются все сайты. Добавьте разрешённые сайты.' }
+            if ($cfg.SitesMode -ne 'block') { Show-Error 'В этом режиме белый список пуст — так закроются все сайты. Добавьте разрешённые сайты в белый список.' }
             else { Show-Error 'Списки сайтов пусты. Добавьте сайты в чёрный или белый список, либо выключите ограничение сайтов.' }
             return
         }
