@@ -720,10 +720,15 @@ function ConvertTo-Domain([string]$Text) {
     $d = $Text.Trim().ToLowerInvariant()
     if (-not $d -or $d.StartsWith('#')) { return $null }
     $d = $d -replace '^[a-z]+://', ''
-    $d = ($d -split '[/?#:]')[0] -replace '^\*\.', '' -replace '^www\.', ''
+    $d = ($d -split '[?#]')[0].TrimEnd('/')
+    # Можно указать раздел сайта (yandex.ru/games) — тогда остальной сайт останется доступен
+    $path = ''
+    $slash = $d.IndexOf('/')
+    if ($slash -ge 0) { $path = $d.Substring($slash); $d = $d.Substring(0, $slash) }
+    $d = ($d -split ':')[0] -replace '^\*\.', '' -replace '^www\.', ''
     if (-not $d) { return $null }
     try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес сайта: $Text" }
-    return $d
+    return $d + $path
 }
 
 function ConvertTo-ExeName([string]$Text) {
@@ -818,7 +823,8 @@ function Get-RestrictionValues($Config) {
         }
         $i = 1
         foreach ($d in $Config.Sites) {
-            foreach ($pattern in @("*://$d/*", "*://*.$d/*")) {
+            $patterns = if ($d.Contains('/')) { @("*://$d*", "*://*.$d*") } else { @("*://$d/*", "*://*.$d/*") }
+            foreach ($pattern in $patterns) {
                 $vals.Add([pscustomobject]@{ Key = $FirefoxBlockKey; Name = "$i"; Type = 'String'; Data = $pattern }); $i++
             }
         }
@@ -934,7 +940,8 @@ function Set-NonAdminRestrictions($Config) {
     # 2. Прямая запись в реестр каждого существующего обычного пользователя
     $userResults = Invoke-ForStandardUsers { param($root) Set-HiveRestrictions $root $values }
 
-    if ($Config.SitesEnabled -and $Config.HostsEnabled) { Set-HostsBlock $Config.Sites }
+    $hostsDomains = @($Config.Sites | Where-Object { -not $_.Contains('/') })
+    if ($Config.SitesEnabled -and $Config.HostsEnabled -and $hostsDomains.Count) { Set-HostsBlock $hostsDomains }
     elseif ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
 
     $on = @($Lockdowns | Where-Object { $Config.Lockdowns[$_.Id] } | ForEach-Object { $_.Id }) -join ', '
@@ -1477,7 +1484,7 @@ $MainWindowXaml = @'
                     </StackPanel>
                     <CheckBox x:Name="chkSites" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                   </Grid>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Сайты и все их поддомены не откроются в Edge, Chrome, Яндекс.Браузере и Firefox."/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Сайты и все их поддомены не откроются в Edge, Chrome, Яндекс.Браузере и Firefox. Можно указать раздел сайта, например yandex.ru/games — остальной Яндекс будет работать."/>
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
                     <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
@@ -1494,6 +1501,9 @@ $MainWindowXaml = @'
                       <Button x:Name="btnQuickSocial" Style="{StaticResource BtnChip}" Content="+ Соцсети"/>
                       <Button x:Name="btnQuickVideo" Style="{StaticResource BtnChip}" Content="+ Видео"/>
                       <Button x:Name="btnQuickGames" Style="{StaticResource BtnChip}" Content="+ Игры"/>
+                      <Button x:Name="btnQuickMessengers" Style="{StaticResource BtnChip}" Content="+ Мессенджеры"/>
+                      <Button x:Name="btnQuickCinema" Style="{StaticResource BtnChip}" Content="+ Кино и сериалы"/>
+                      <Button x:Name="btnQuickBets" Style="{StaticResource BtnChip}" Content="+ Ставки и казино"/>
                     </WrapPanel>
                     <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
                       <ListBox x:Name="lbSites" Height="250" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -2153,11 +2163,52 @@ function Show-MainWindow {
         }
     })
 
-    $ui.btnQuickSocial.Tag = 'vk.com ok.ru tiktok.com instagram.com facebook.com x.com twitter.com'
-    $ui.btnQuickVideo.Tag = 'youtube.com rutube.ru vkvideo.ru twitch.tv kick.com'
-    $ui.btnQuickGames.Tag = 'roblox.com steampowered.com steamcommunity.com epicgames.com poki.com crazygames.com miniclip.com'
-    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames)) {
-        $b.Add_Click({ param($s, $e) Invoke-Safe { Add-Sites @($s.Tag -split ' ') } })
+    $ui.btnQuickSocial.Tag = @(
+        'vk.com', 'vk.ru', 'vkontakte.ru', 'vk.me', 'vk.cc', 'ok.ru', 'odnoklassniki.ru', 'dzen.ru',
+        'tiktok.com', 'tiktokv.com', 'tiktokcdn.com', 'instagram.com', 'facebook.com', 'fb.com', 'threads.net',
+        'x.com', 'twitter.com', 'pinterest.com', 'pinterest.ru', 'likee.video', 'reddit.com', 'tumblr.com', 'snapchat.com',
+        'ask.fm', 'my.mail.ru', 'yappy.media'
+    ) -join ' '
+    $ui.btnQuickVideo.Tag = @(
+        'youtube.com', 'youtu.be', 'youtube-nocookie.com', 'youtubekids.com',
+        'rutube.ru', 'vkvideo.ru', 'vk.video', 'twitch.tv', 'kick.com', 'trovo.live', 'nuum.ru',
+        'live.vkplay.ru', 'live.vkvideo.ru', 'dzen.ru/video', 'coub.com', 'yappy.media', 'boosty.to'
+    ) -join ' '
+    $ui.btnQuickGames.Tag = @(
+        'yandex.ru/games', 'yandex.com/games', 'yandex.by/games', 'yandex.kz/games', 'yandex.uz/games', 'ya.ru/games', 'playhop.com',
+        'games.mail.ru', 'my.games', 'vkplay.ru', 'vkplay.com', 'vk.com/games', 'vk.ru/games', 'ok.ru/games',
+        'roblox.com', 'steampowered.com', 'steamcommunity.com', 'epicgames.com', 'minecraft.net',
+        'poki.com', 'crazygames.com', 'crazygames.ru', 'miniclip.com', 'friv.com', 'y8.com', 'kongregate.com',
+        'agame.com', 'coolmathgames.com', 'armorgames.com', 'newgrounds.com', 'itch.io', 'gamejolt.com',
+        'igroutka.ru', 'igry-online.net', 'flashgames.ru', 'game-game.com.ua', 'gamezop.com', 'playgama.com',
+        '1001igry.ru', 'gamaverse.com', 'krunker.io', 'slither.io', 'agar.io', 'diep.io', 'shellshock.io',
+        'chess.com', 'lichess.org', 'brawlstars.com', 'supercell.com', 'genshin.hoyoverse.com', 'hoyoverse.com'
+    ) -join ' '
+    $ui.btnQuickMessengers.Tag = @(
+        'web.telegram.org', 't.me', 'telegram.org', 'telegram.me',
+        'web.whatsapp.com', 'whatsapp.com', 'discord.com', 'discord.gg', 'discordapp.com',
+        'web.max.ru', 'icq.com', 'viber.com', 'web.skype.com'
+    ) -join ' '
+    $ui.btnQuickCinema.Tag = @(
+        'kinopoisk.ru', 'ivi.ru', 'okko.tv', 'wink.ru', 'start.ru', 'kion.ru', 'premier.one',
+        'more.tv', 'amediateka.ru', 'netflix.com', 'rezka.ag', 'hdrezka.ag', 'hdrezka.me', 'lordfilm.lu',
+        'kinogo.biz', 'animego.org', 'animego.me', 'jut.su', 'anilibria.tv', 'shikimori.one', 'filmix.my'
+    ) -join ' '
+    $ui.btnQuickBets.Tag = @(
+        'fon.bet', 'fonbet.ru', 'winline.ru', 'betcity.ru', 'ligastavok.ru', 'marathonbet.ru', 'leon.ru', 'olimp.bet',
+        'pari.ru', 'bet-boom.ru', 'betboom.ru', 'tennisi.bet', 'melbet.ru', '1xbet.com', '1xstavka.ru',
+        'pin-up.ru', 'pinup.ru', 'vulkan.ru', 'joycasino.com', 'stake.com', 'csgorun.ru', 'csfail.com', 'ggdrop.com'
+    ) -join ' '
+    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets)) {
+        $b.Add_Click({
+            param($s, $e)
+            Invoke-Safe {
+                $before = $sites.Count
+                Add-Sites @($s.Tag -split ' ')
+                $ui.chkSites.IsChecked = $true
+                Show-Toast "Добавлено сайтов: $($sites.Count - $before). Не забудьте нажать «Применить ограничения»."
+            }
+        })
     }
 
     $lockBoxes = @{}
