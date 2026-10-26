@@ -21,6 +21,14 @@ from tkinter import filedialog, messagebox, ttk
 NO_EXT_FOLDER = "без_расширения"
 APP_TITLE = "File Sorter — сортировка файлов по типу"
 
+# Цвета тёмной темы
+BG = "#1e1e1e"        # фон окна
+PANEL = "#2b2b2b"     # поля ввода, журнал
+BORDER = "#3c3c3c"
+FG = "#e0e0e0"        # текст
+FG_DIM = "#808080"    # неактивный текст
+ACCENT = "#3a7bd5"    # кнопки при наведении, прогресс, отметки
+
 
 # ---------------------------------------------------------------- логика ---
 
@@ -106,8 +114,48 @@ class App(tk.Tk):
         self.history = []  # [(откуда, куда)] последней сортировки — для отмены
         self.worker = None
 
+        self._apply_dark_theme()
         self._build_ui()
         self.after(100, self._poll_events)
+
+    def _apply_dark_theme(self):
+        self.configure(bg=BG)
+        style = ttk.Style(self)
+        style.theme_use("clam")
+        style.configure(".", background=BG, foreground=FG, fieldbackground=PANEL,
+                        bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+                        troughcolor=PANEL, focuscolor=ACCENT, selectbackground=ACCENT,
+                        selectforeground=FG, insertcolor=FG)
+        style.map(".", foreground=[("disabled", FG_DIM)])
+        style.configure("TLabelframe", background=BG, bordercolor=BORDER)
+        style.configure("TLabelframe.Label", background=BG, foreground=FG)
+        style.configure("TButton", background=PANEL, padding=(12, 4))
+        style.map("TButton", background=[("disabled", BG), ("pressed", ACCENT), ("active", BORDER)])
+        for widget in ("TRadiobutton", "TCheckbutton"):
+            style.configure(widget, background=BG, indicatorbackground=PANEL, indicatorforeground=FG)
+            style.map(widget, background=[("active", BG)],
+                      indicatorbackground=[("selected", ACCENT), ("disabled", BG)])
+        style.configure("TEntry", fieldbackground=PANEL, foreground=FG)
+        style.configure("Horizontal.TProgressbar", background=ACCENT, troughcolor=PANEL)
+        style.configure("Vertical.TScrollbar", background=PANEL, arrowcolor=FG, troughcolor=BG)
+        style.map("Vertical.TScrollbar", background=[("active", BORDER)])
+        self._dark_title_bar()
+
+    def _dark_title_bar(self):
+        """Тёмный заголовок окна в Windows 10 (1809+) / 11."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            self.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            value = ctypes.c_int(1)
+            for attr in (20, 19):  # DWMWA_USE_IMMERSIVE_DARK_MODE (новые и старые сборки)
+                if ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, attr, ctypes.byref(value), ctypes.sizeof(value)) == 0:
+                    break
+        except Exception:
+            pass
 
     def _build_ui(self):
         pad = {"padx": 10, "pady": 5}
@@ -143,7 +191,9 @@ class App(tk.Tk):
 
         frm_log = ttk.LabelFrame(self, text="Журнал")
         frm_log.pack(fill="both", expand=True, **pad)
-        self.log = tk.Text(frm_log, height=10, wrap="none", state="disabled")
+        self.log = tk.Text(frm_log, height=10, wrap="none", state="disabled",
+                           bg=PANEL, fg=FG, insertbackground=FG, selectbackground=ACCENT,
+                           relief="flat", highlightthickness=0)
         scroll = ttk.Scrollbar(frm_log, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
