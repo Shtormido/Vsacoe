@@ -3,7 +3,7 @@ chcp 65001 >nul
 echo Установка PyInstaller...
 python -m pip install --upgrade pyinstaller || goto :error
 echo Сборка FileSorter.exe...
-python -m PyInstaller --onefile --windowed --name FileSorter file_sorter.py || goto :error
+python -m PyInstaller --onefile --windowed --name FileSorter --icon icon.ico --add-data "icon.ico;." file_sorter.py || goto :error
 echo.
 echo Готово: dist\FileSorter.exe
 pause

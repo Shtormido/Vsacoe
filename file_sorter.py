@@ -49,6 +49,12 @@ SETTINGS_FILE = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"
                              "FileSorter", "settings.json")
 
 
+def resource_path(name):
+    """Путь к файлу рядом со скриптом или внутри собранного exe."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+
+
 def load_settings():
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as f:
@@ -142,6 +148,10 @@ class App(tk.Tk):
         self.title(APP_TITLE)
         self.geometry("720x520")
         self.minsize(560, 400)
+        try:
+            self.iconbitmap(resource_path("icon.ico"))
+        except tk.TclError:
+            pass
 
         self.dir_var = tk.StringVar()
         self.mode_var = tk.StringVar(value="top")
