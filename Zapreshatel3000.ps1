@@ -517,60 +517,155 @@ function Get-ProcessLog([int]$MaxEvents = 500, [string]$Filter = '') {
     }
 }
 
-$DnsLogName = 'Microsoft-Windows-DNS-Client/Operational'
+# Чтение истории браузеров через встроенную в Windows winsqlite3.dll (так видно реально посещённые сайты,
+# независимо от DNS-over-HTTPS и встроенных резолверов браузеров).
+$SqliteHelper = @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace PMSql {
+    public static class Lite {
+        [DllImport("winsqlite3.dll")] static extern int sqlite3_open_v2(byte[] filename, out IntPtr db, int flags, IntPtr vfs);
+        [DllImport("winsqlite3.dll")] static extern int sqlite3_prepare_v2(IntPtr db, byte[] sql, int nByte, out IntPtr stmt, IntPtr tail);
+        [DllImport("winsqlite3.dll")] static extern int sqlite3_step(IntPtr stmt);
+        [DllImport("winsqlite3.dll")] static extern IntPtr sqlite3_column_text(IntPtr stmt, int i);
+        [DllImport("winsqlite3.dll")] static extern int sqlite3_column_bytes(IntPtr stmt, int i);
+        [DllImport("winsqlite3.dll")] static extern long sqlite3_column_int64(IntPtr stmt, int i);
+        [DllImport("winsqlite3.dll")] static extern int sqlite3_finalize(IntPtr stmt);
+        [DllImport("winsqlite3.dll")] static extern int sqlite3_close(IntPtr db);
 
-function Test-SiteLogEnabled {
-    try { return [bool](Get-WinEvent -ListLog $DnsLogName -ErrorAction Stop).IsEnabled } catch { return $false }
+        static string ColText(IntPtr stmt, int i) {
+            IntPtr p = sqlite3_column_text(stmt, i);
+            if (p == IntPtr.Zero) return "";
+            int n = sqlite3_column_bytes(stmt, i);
+            if (n <= 0) return "";
+            byte[] b = new byte[n];
+            Marshal.Copy(p, b, 0, n);
+            return Encoding.UTF8.GetString(b);
+        }
+
+        // types: строка из 's' (текст) и 'i' (число) по числу столбцов
+        public static List<object[]> Query(string file, string sql, string types) {
+            var rows = new List<object[]>();
+            IntPtr db = IntPtr.Zero;
+            byte[] fileb = Encoding.UTF8.GetBytes(file + "\0");
+            // 0x40 = SQLITE_OPEN_READONLY | 0x... ; 1 = READONLY
+            if (sqlite3_open_v2(fileb, out db, 1, IntPtr.Zero) != 0) { if (db != IntPtr.Zero) sqlite3_close(db); return rows; }
+            try {
+                IntPtr stmt;
+                byte[] sqlb = Encoding.UTF8.GetBytes(sql + "\0");
+                if (sqlite3_prepare_v2(db, sqlb, sqlb.Length, out stmt, IntPtr.Zero) != 0) return rows;
+                try {
+                    while (sqlite3_step(stmt) == 100) {
+                        var row = new object[types.Length];
+                        for (int i = 0; i < types.Length; i++) {
+                            if (types[i] == 'i') row[i] = sqlite3_column_int64(stmt, i);
+                            else row[i] = ColText(stmt, i);
+                        }
+                        rows.Add(row);
+                    }
+                } finally { sqlite3_finalize(stmt); }
+            } finally { sqlite3_close(db); }
+            return rows;
+        }
+    }
+}
+'@
+
+function Initialize-Sqlite {
+    if (-not ('PMSql.Lite' -as [type])) { Add-Type -TypeDefinition $SqliteHelper -Language CSharp }
 }
 
-function Enable-SiteLog {
-    & wevtutil set-log $DnsLogName /enabled:true /quiet:true | Out-Null
-    Write-Log 'Включена запись посещённых сайтов (DNS-журнал)'
+# Копирует файл, открытый другим процессом (история открытого браузера заблокирована)
+function Copy-OpenFile([string]$Src, [string]$Dst) {
+    $in = [IO.File]::Open($Src, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        $out = [IO.File]::Create($Dst)
+        try { $in.CopyTo($out) } finally { $out.Close() }
+    } finally { $in.Close() }
 }
 
-function Disable-SiteLog {
-    & wevtutil set-log $DnsLogName /enabled:false /quiet:true | Out-Null
-    Write-Log 'Отключена запись посещённых сайтов'
-}
-
-# Домены, по которым браузеры и система «фонят» постоянно — не относятся к посещениям пользователя
-$DnsNoiseSuffixes = @(
-    '.in-addr.arpa', '.ip6.arpa', '.local', '.lan', '.home', '.msftconnecttest.com', '.msftncsi.com',
-    '.windowsupdate.com', '.update.microsoft.com', '.delivery.mp.microsoft.com', '.events.data.microsoft.com',
-    '.settings-win.data.microsoft.com', '.wns.windows.com', '.dns.msftncsi.com', '.root-servers.net'
+# Браузеры на движке Chromium: папка в LocalAppData и человекочитаемое имя
+$ChromiumHistoryDirs = @(
+    @{ Name = 'Chrome';   Rel = 'Google\Chrome\User Data' }
+    @{ Name = 'Edge';     Rel = 'Microsoft\Edge\User Data' }
+    @{ Name = 'Яндекс';   Rel = 'Yandex\YandexBrowser\User Data' }
+    @{ Name = 'Brave';    Rel = 'BraveSoftware\Brave-Browser\User Data' }
+    @{ Name = 'Vivaldi';  Rel = 'Vivaldi\User Data' }
+    @{ Name = 'Chromium'; Rel = 'Chromium\User Data' }
+    @{ Name = 'Atom';     Rel = 'Mail.Ru\Atom\User Data' }
+    @{ Name = 'Opera';    Rel = 'Opera Software\Opera Stable' }
+    @{ Name = 'Opera GX'; Rel = 'Opera Software\Opera GX Stable' }
 )
 
-# Посещённые сайты из DNS-журнала, домены сворачиваются, повторы подряд считаются
-function Get-SiteLog([int]$MaxEvents = 2000, [string]$Filter = '') {
-    $filterXml = @"
-<QueryList>
-  <Query Id="0" Path="$DnsLogName">
-    <Select Path="$DnsLogName">*[System[(EventID=3008)]]</Select>
-  </Query>
-</QueryList>
-"@
-    $events = Get-WinEvent -FilterXml $filterXml -MaxEvents $MaxEvents -ErrorAction Stop
-    $result = New-Object System.Collections.Generic.List[object]
-    $lastDomain = $null
-    foreach ($e in $events) {
-        $x = [xml]$e.ToXml()
-        $name = $null
-        foreach ($node in $x.Event.EventData.Data) { if ($node.Name -eq 'QueryName') { $name = $node.'#text' } }
-        if (-not $name) { continue }
-        $domain = $name.TrimEnd('.').ToLowerInvariant()
-        if (-not $domain -or $domain -notmatch '\.') { continue }
-        $skip = $false
-        foreach ($suf in $DnsNoiseSuffixes) { if ($domain.EndsWith($suf)) { $skip = $true; break } }
-        if ($skip) { continue }
-        if ($Filter -and $domain.IndexOf($Filter, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
-        # Браузер при открытии сайта шлёт десятки запросов к одному домену — сворачиваем подряд идущие
-        if ($result.Count -gt 0 -and $result[$result.Count - 1].Domain -eq $domain) {
-            $result[$result.Count - 1].Count++
-            continue
+function ConvertFrom-ChromeTime([long]$T) {
+    if ($T -le 0) { return $null }
+    try { return [DateTime]::FromFileTimeUtc($T * 10).ToLocalTime() } catch { return $null }
+}
+function ConvertFrom-FirefoxTime([long]$T) {
+    if ($T -le 0) { return $null }
+    try { return [DateTimeOffset]::FromUnixTimeMilliseconds([long]($T / 1000)).LocalDateTime } catch { return $null }
+}
+
+# История всех браузеров всех обычных пользователей (и администратора, если его профиль доступен)
+function Get-SiteHistory([int]$Max = 1000, [string]$Filter = '') {
+    Initialize-Sqlite
+    $tmp = Join-Path $env:TEMP ('pm_hist_{0}' -f ([guid]::NewGuid().ToString('N')))
+    New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+    $rows = New-Object System.Collections.Generic.List[object]
+    try {
+        foreach ($userDir in Get-ChildItem -LiteralPath "$env:SystemDrive\Users" -Directory -ErrorAction SilentlyContinue) {
+            $user = $userDir.Name
+            if ($user -in @('Public', 'Default', 'Default User', 'All Users')) { continue }
+            $local = Join-Path $userDir.FullName 'AppData\Local'
+            $roaming = Join-Path $userDir.FullName 'AppData\Roaming'
+
+            # Chromium-браузеры
+            foreach ($br in $ChromiumHistoryDirs) {
+                $base = Join-Path $local $br.Rel
+                if (-not (Test-Path -LiteralPath $base)) { continue }
+                $profiles = @('Default') + @(Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'Profile *' } | ForEach-Object { $_.Name })
+                foreach ($prof in ($profiles | Select-Object -Unique)) {
+                    $hist = Join-Path $base "$prof\History"
+                    if (-not (Test-Path -LiteralPath $hist)) { continue }
+                    $copy = Join-Path $tmp ("{0}_{1}_{2}" -f $user, $br.Name, ($prof -replace '\W', ''))
+                    try {
+                        Copy-OpenFile $hist $copy
+                        $sql = "SELECT url, title, last_visit_time FROM urls WHERE last_visit_time>0 ORDER BY last_visit_time DESC LIMIT $Max"
+                        foreach ($r in [PMSql.Lite]::Query($copy, $sql, 'ssi')) {
+                            $t = ConvertFrom-ChromeTime ([long]$r[2])
+                            if ($t) { $rows.Add([pscustomobject]@{ Time = $t; Url = [string]$r[0]; Title = [string]$r[1]; User = $user; Browser = $br.Name }) }
+                        }
+                    } catch { }
+                }
+            }
+
+            # Firefox
+            $ffProfiles = Join-Path $roaming 'Mozilla\Firefox\Profiles'
+            if (Test-Path -LiteralPath $ffProfiles) {
+                foreach ($pf in Get-ChildItem -LiteralPath $ffProfiles -Directory -ErrorAction SilentlyContinue) {
+                    $places = Join-Path $pf.FullName 'places.sqlite'
+                    if (-not (Test-Path -LiteralPath $places)) { continue }
+                    $copy = Join-Path $tmp ("{0}_Firefox_{1}" -f $user, ($pf.Name -replace '\W', ''))
+                    try {
+                        Copy-OpenFile $places $copy
+                        $sql = "SELECT url, title, last_visit_date FROM moz_places WHERE last_visit_date IS NOT NULL ORDER BY last_visit_date DESC LIMIT $Max"
+                        foreach ($r in [PMSql.Lite]::Query($copy, $sql, 'ssi')) {
+                            $t = ConvertFrom-FirefoxTime ([long]$r[2])
+                            if ($t) { $rows.Add([pscustomobject]@{ Time = $t; Url = [string]$r[0]; Title = [string]$r[1]; User = $user; Browser = 'Firefox' }) }
+                        }
+                    } catch { }
+                }
+            }
         }
-        $result.Add([pscustomobject]@{ Time = $e.TimeCreated; Domain = $domain; Count = 1 })
+    } finally {
+        Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
-    return , $result
+
+    $out = $rows | Sort-Object Time -Descending
+    if ($Filter) { $out = $out | Where-Object { ("$($_.Url) $($_.Title) $($_.User) $($_.Browser)").IndexOf($Filter, [StringComparison]::OrdinalIgnoreCase) -ge 0 } }
+    return , @($out | Select-Object -First $Max)
 }
 
 #endregion
@@ -2266,21 +2361,6 @@ $MainWindowXaml = @'
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <Border Grid.Row="0" x:Name="bannerSites" Style="{StaticResource Card}" Margin="0,0,0,12" BorderBrush="#FCD34D" Background="#FFFBEB" Visibility="Collapsed">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="#B45309" FontSize="18" Margin="0,0,14,0" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                  <TextBlock FontWeight="SemiBold" Foreground="#92400E" Text="Запись сайтов выключена"/>
-                  <TextBlock Foreground="#92400E" FontSize="12" TextWrapping="Wrap" Text="Включите запись — и Windows начнёт сохранять домены, которые открывались в браузерах (по DNS-запросам). Работает для всех браузеров и не стирается очисткой истории. Прошлые посещения до включения не сохраняются."/>
-                </StackPanel>
-                <Button x:Name="btnSitesEnable" Grid.Column="2" Style="{StaticResource BtnPrimary}" Margin="12,0,0,0" Content="Включить запись сайтов"/>
-              </Grid>
-            </Border>
             <Grid Grid.Row="1" Margin="0,0,0,10">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -2289,12 +2369,12 @@ $MainWindowXaml = @'
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
                 <Button x:Name="btnSitesRefresh" Style="{StaticResource BtnPrimary}" Content="Обновить"/>
-                <Button x:Name="btnSitesDisable" Style="{StaticResource Btn}" Content="Выключить запись"/>
               </StackPanel>
+              <TextBlock Grid.Column="1" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" Text="История читается прямо из браузеров (реально открытые страницы). Можно очистить в самом браузере или обойти режимом инкогнито."/>
               <Grid Grid.Column="2">
                 <TextBox x:Name="txtSitesFilter" Style="{StaticResource Input}" Padding="34,8,8,8"/>
                 <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
-                <TextBlock x:Name="phSitesFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Фильтр по домену…"/>
+                <TextBlock x:Name="phSitesFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Поиск: сайт или пользователь…"/>
               </Grid>
             </Grid>
             <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
@@ -2319,9 +2399,10 @@ $MainWindowXaml = @'
                   </Style>
                 </DataGrid.CellStyle>
                 <DataGrid.Columns>
-                  <DataGridTextColumn Header="Время" Binding="{Binding C1}" Width="170"/>
-                  <DataGridTextColumn Header="Сайт (домен)" Binding="{Binding Title}" Width="*"/>
-                  <DataGridTextColumn Header="Повторов подряд" Binding="{Binding C2}" Width="150"/>
+                  <DataGridTextColumn Header="Время" Binding="{Binding C1}" Width="150"/>
+                  <DataGridTextColumn Header="Сайт / страница" Binding="{Binding Title}" Width="*"/>
+                  <DataGridTextColumn Header="Пользователь" Binding="{Binding Subtitle}" Width="140"/>
+                  <DataGridTextColumn Header="Браузер" Binding="{Binding C2}" Width="100"/>
                 </DataGrid.Columns>
               </DataGrid>
                 <StackPanel x:Name="pnlSitesEmpty" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
@@ -3473,20 +3554,19 @@ function Show-MainWindow {
     function Update-SiteView {
         if (-not $IsAdmin) {
             $ui.dgSites.ItemsSource = $null
-            $ui.bannerSites.Visibility = 'Collapsed'
             $ui.pnlSitesEmpty.Visibility = 'Visible'
             $ui.txtSitesEmpty.Text = 'Журнал сайтов доступен только с правами администратора. Нажмите «Запустить от администратора».'
             return
         }
-        $enabled = Test-SiteLogEnabled
-        $ui.bannerSites.Visibility = $(if ($enabled) { 'Collapsed' } else { 'Visible' })
         Set-Busy $true
         try {
             $rows = New-Object System.Collections.Generic.List[object]
             $err = $null
             try {
-                foreach ($r in @(Get-SiteLog 2000 $ui.txtSitesFilter.Text.Trim())) {
-                    $rows.Add((New-Row @{ Title = $r.Domain; C1 = $r.Time.ToString('dd.MM.yyyy HH:mm:ss'); C2 = [string]$r.Count }))
+                foreach ($r in @(Get-SiteHistory 1500 $ui.txtSitesFilter.Text.Trim())) {
+                    $site = $r.Url
+                    if ($r.Title) { $site = "$($r.Title) — $($r.Url)" }
+                    $rows.Add((New-Row @{ Title = $site; Subtitle = $r.User; C1 = $r.Time.ToString('dd.MM.yyyy HH:mm'); C2 = $r.Browser }))
                 }
             } catch { $err = $_.Exception.Message }
             $ui.dgSites.ItemsSource = $rows
@@ -3494,9 +3574,8 @@ function Show-MainWindow {
                 $ui.pnlSitesEmpty.Visibility = 'Collapsed'
             } else {
                 $ui.pnlSitesEmpty.Visibility = 'Visible'
-                if ($err) { $ui.txtSitesEmpty.Text = 'Не удалось прочитать журнал: ' + $err }
-                elseif (-not $enabled) { $ui.txtSitesEmpty.Text = 'Пока нет записей. Включите запись сайтов — и они начнут появляться здесь.' }
-                else { $ui.txtSitesEmpty.Text = 'Записей нет. Откройте сайт в браузере и нажмите «Обновить».' }
+                if ($err) { $ui.txtSitesEmpty.Text = 'Не удалось прочитать историю: ' + $err }
+                else { $ui.txtSitesEmpty.Text = 'История пуста. Возможно, у пользователей ещё нет посещений, либо история очищена.' }
             }
         } finally { Set-Busy $false }
     }
@@ -3515,24 +3594,7 @@ function Show-MainWindow {
             Update-SiteView
         }
     })
-    $ui.btnSitesEnable.Add_Click({
-        Invoke-Safe {
-            if (-not $IsAdmin) { Show-Error 'Нужны права администратора.'; return }
-            Enable-SiteLog
-            Update-SiteView
-            Show-Toast 'Запись сайтов включена. Сохраняются сайты, открытые после этого момента.'
-        }
-    })
-    $ui.btnSitesDisable.Add_Click({
-        Invoke-Safe {
-            if (-not $IsAdmin) { Show-Error 'Нужны права администратора.'; return }
-            if (-not (Confirm-Action 'Выключить запись посещённых сайтов?')) { return }
-            Disable-SiteLog
-            Update-SiteView
-            Show-Toast 'Запись сайтов выключена'
-        }
-    })
-    $ui.btnSitesRefresh.Add_Click({ Invoke-Safe { Update-SiteView; Show-Toast 'Журнал обновлён' } })
+    $ui.btnSitesRefresh.Add_Click({ Invoke-Safe { Update-SiteView; Show-Toast 'История обновлена' } })
     $ui.txtSitesFilter.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Update-SiteView } } })
 
     #endregion
