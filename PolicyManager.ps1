@@ -96,15 +96,19 @@ function Write-Log([string]$Message) {
 #region Работа с реестром
 
 function Resolve-RegPath([string]$Path) {
-    if ($Path -match '^(HKLM|HKCU):\\(.+)$') {
-        $hive = if ($Matches[1] -eq 'HKLM') { [Microsoft.Win32.RegistryHive]::LocalMachine } else { [Microsoft.Win32.RegistryHive]::CurrentUser }
+    if ($Path -match '^(HKLM|HKCU|HKU):\\(.+)$') {
+        $hive = switch ($Matches[1]) {
+            'HKLM' { [Microsoft.Win32.RegistryHive]::LocalMachine }
+            'HKCU' { [Microsoft.Win32.RegistryHive]::CurrentUser }
+            default { [Microsoft.Win32.RegistryHive]::Users }
+        }
         return [pscustomobject]@{ Hive = $hive; SubKey = $Matches[2].TrimEnd('\') }
     }
     throw "Неверный путь реестра: $Path"
 }
 
 function ConvertTo-NativeRegPath([string]$Path) {
-    $Path -replace '^HKLM:', 'HKEY_LOCAL_MACHINE' -replace '^HKCU:', 'HKEY_CURRENT_USER'
+    $Path -replace '^HKLM:', 'HKEY_LOCAL_MACHINE' -replace '^HKCU:', 'HKEY_CURRENT_USER' -replace '^HKU:', 'HKEY_USERS'
 }
 
 # Всегда 64-битное представление реестра, даже если запущен 32-битный PowerShell
@@ -713,7 +717,7 @@ function Get-LocalUserInfo {
         if ($u.SchemaClassName -ne 'User') { continue }
         if ([int]$u.UserFlags.Value -band 2) { continue }   # учётная запись отключена
         $sid = ([Security.Principal.SecurityIdentifier]::new([byte[]]$u.objectSid.Value, 0)).Value
-        [pscustomobject]@{ Name = [string]$u.Name.Value; IsAdmin = $adminSids.ContainsKey($sid) }
+        [pscustomobject]@{ Name = [string]$u.Name.Value; Sid = $sid; IsAdmin = $adminSids.ContainsKey($sid) }
     }
 }
 
@@ -750,24 +754,148 @@ function Save-NonAdminPol($Entries) {
     Update-GptIni $NonAdminGpoDir
 }
 
-function Set-NonAdminRestrictions($Config) {
-    $result = New-Object System.Collections.Generic.List[object]
-    foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
+#region Запись ограничений прямо в профили пользователей
 
+# Групповая политика «Не администраторы» применяется не всегда (и только при входе),
+# поэтому те же значения дополнительно пишутся в реестр каждого существующего обычного пользователя.
+
+function Remove-RegKeyTree([string]$Path) {
+    $cut = $Path.LastIndexOf('\')
+    $parent = Open-RegKey $Path.Substring(0, $cut) -Writable
+    if (-not $parent) { return }
+    try { $parent.DeleteSubKeyTree($Path.Substring($cut + 1), $false) } finally { $parent.Close() }
+}
+
+# Плоский список значений реестра (относительно HKCU), которые задают выбранные ограничения
+function Get-RestrictionValues($Config) {
+    $vals = New-Object System.Collections.Generic.List[object]
     if ($Config.WhitelistEnabled) {
-        $result.Add((New-PolEntry $ExplorerPolicyKey 'RestrictRun' 'DWord' 1))
-        Add-PolList $result $RestrictRunKey $Config.Programs
+        $vals.Add([pscustomobject]@{ Key = $ExplorerPolicyKey; Name = 'RestrictRun'; Type = 'DWord'; Data = 1 })
+        $i = 1
+        foreach ($p in $Config.Programs) { $vals.Add([pscustomobject]@{ Key = $RestrictRunKey; Name = "$i"; Type = 'String'; Data = $p }); $i++ }
     }
     if ($Config.SitesEnabled) {
-        foreach ($k in $SiteListKeys) { Add-PolList $result $k $Config.Sites }
-        Add-PolList $result $FirefoxBlockKey @(foreach ($d in $Config.Sites) { "*://$d/*"; "*://*.$d/*" })
+        foreach ($k in $SiteListKeys) {
+            $i = 1
+            foreach ($d in $Config.Sites) { $vals.Add([pscustomobject]@{ Key = $k; Name = "$i"; Type = 'String'; Data = $d }); $i++ }
+        }
+        $i = 1
+        foreach ($d in $Config.Sites) {
+            foreach ($pattern in @("*://$d/*", "*://*.$d/*")) {
+                $vals.Add([pscustomobject]@{ Key = $FirefoxBlockKey; Name = "$i"; Type = 'String'; Data = $pattern }); $i++
+            }
+        }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
-            foreach ($v in $l.Values) { $result.Add((New-PolEntry $v.Key $v.Name 'DWord' $v.Data)) }
+            foreach ($v in $l.Values) { $vals.Add([pscustomobject]@{ Key = $v.Key; Name = $v.Name; Type = 'DWord'; Data = $v.Data }) }
         }
     }
+    return , $vals
+}
+
+function Clear-HiveRestrictions([string]$Root) {
+    foreach ($k in $ManagedPolKeys) { Remove-RegKeyTree "$Root\$k" }
+    foreach ($pair in @($ManagedPolPairs.Keys)) {
+        $key, $name = $pair.Split('|')
+        Remove-RegValue "$Root\$key" $name
+    }
+}
+
+function Set-HiveRestrictions([string]$Root, $Values) {
+    Clear-HiveRestrictions $Root
+    foreach ($v in $Values) { Set-RegValue "$Root\$($v.Key)" $v.Name $v.Type $v.Data }
+}
+
+function Test-HiveRestrictions([string]$Root) {
+    if (Get-RegValue "$Root\$ExplorerPolicyKey" 'RestrictRun') { return $true }
+    foreach ($k in $SiteListKeys) { if (Get-RegValue "$Root\$k" '1') { return $true } }
+    foreach ($pair in @($ManagedPolPairs.Keys)) {
+        $key, $name = $pair.Split('|')
+        if (Get-RegValue "$Root\$key" $name) { return $true }
+    }
+    return $false
+}
+
+function Invoke-RegExe([string[]]$Arguments) {
+    $proc = Start-Process reg.exe -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+    return $proc.ExitCode
+}
+
+# Выполняет действие с реестром каждого обычного пользователя.
+# Если пользователь не в системе, его NTUSER.DAT временно подключается в HKEY_USERS.
+function Invoke-ForStandardUsers([scriptblock]$Action) {
+    $results = New-Object System.Collections.Generic.List[object]
+    foreach ($u in @(Get-LocalUserInfo | Where-Object { -not $_.IsAdmin })) {
+        $profileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($u.Sid)"
+        $profilePath = (Get-ItemProperty -LiteralPath $profileKey -Name ProfileImagePath -ErrorAction SilentlyContinue).ProfileImagePath
+        if (-not $profilePath) {
+            $results.Add([pscustomobject]@{ User = $u.Name; Status = 'noprofile'; Value = $null; Message = 'ещё ни разу не входил в систему — ограничения применятся при первом входе' })
+            continue
+        }
+        $profilePath = [Environment]::ExpandEnvironmentVariables($profilePath)
+        $loaded = Test-Path -LiteralPath "Registry::HKEY_USERS\$($u.Sid)"
+        $mount = $u.Sid
+        if (-not $loaded) {
+            $mount = "PolicyManager_$($u.Sid)"
+            $hive = Join-Path $profilePath 'NTUSER.DAT'
+            if ((Invoke-RegExe @('load', "HKU\$mount", "`"$hive`"")) -ne 0) {
+                $results.Add([pscustomobject]@{ User = $u.Name; Status = 'error'; Value = $null; Message = "не удалось открыть профиль ($hive)" })
+                continue
+            }
+        }
+        try {
+            $value = & $Action "HKU:\$mount"
+            $results.Add([pscustomobject]@{ User = $u.Name; Status = 'ok'; Value = $value; LoggedOn = $loaded; Message = '' })
+        } catch {
+            $results.Add([pscustomobject]@{ User = $u.Name; Status = 'error'; Value = $null; Message = $_.Exception.Message })
+        } finally {
+            if (-not $loaded) {
+                # Профиль можно отключить только после закрытия всех открытых разделов
+                for ($try = 0; $try -lt 5; $try++) {
+                    [GC]::Collect()
+                    [GC]::WaitForPendingFinalizers()
+                    if ((Invoke-RegExe @('unload', "HKU\$mount")) -eq 0) { break }
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+        }
+    }
+    return , $results
+}
+
+function Format-UserResults($Results) {
+    $lines = foreach ($r in $Results) {
+        if ($r.Status -eq 'ok') {
+            $note = if ($r.LoggedOn) { 'готово (сейчас в системе — нужно выйти и войти снова)' } else { 'готово' }
+            "• $($r.User): $note"
+        } else {
+            "• $($r.User): $($r.Message)"
+        }
+    }
+    return ($lines -join "`r`n")
+}
+
+#endregion
+
+function Set-NonAdminRestrictions($Config) {
+    $values = Get-RestrictionValues $Config
+
+    # 1. Групповая политика «Не администраторы» — для новых и ещё не входивших пользователей
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
+    $cleared = @{}
+    foreach ($v in $values) {
+        if ($ManagedPolKeys -contains $v.Key -and -not $cleared.ContainsKey($v.Key)) {
+            $result.Add((New-PolEntry $v.Key '**delvals.' 'String' ' '))
+            $cleared[$v.Key] = $true
+        }
+        $result.Add((New-PolEntry $v.Key $v.Name $v.Type $v.Data))
+    }
     Save-NonAdminPol $result
+
+    # 2. Прямая запись в реестр каждого существующего обычного пользователя
+    $userResults = Invoke-ForStandardUsers { param($root) Set-HiveRestrictions $root $values }
 
     if ($Config.SitesEnabled -and $Config.HostsEnabled) { Set-HostsBlock $Config.Sites }
     elseif ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
@@ -775,14 +903,25 @@ function Set-NonAdminRestrictions($Config) {
     $on = @($Lockdowns | Where-Object { $Config.Lockdowns[$_.Id] } | ForEach-Object { $_.Id }) -join ', '
     Write-Log ("Ограничения для не-администраторов: программы={0} [{1}]; сайты={2} [{3}]; hosts={4}; запреты=[{5}]" -f `
         $Config.WhitelistEnabled, ($Config.Programs -join ' '), $Config.SitesEnabled, ($Config.Sites -join ' '), $Config.HostsEnabled, $on)
+    Write-Log ("Запись в профили пользователей:`r`n" + (Format-UserResults $userResults))
+    return , $userResults
 }
 
 function Clear-NonAdminRestrictions {
     $result = New-Object System.Collections.Generic.List[object]
     foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
     Save-NonAdminPol $result
+    $userResults = Invoke-ForStandardUsers { param($root) Clear-HiveRestrictions $root }
     if ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
-    Write-Log 'Ограничения для не-администраторов сняты'
+    Write-Log ("Ограничения для не-администраторов сняты:`r`n" + (Format-UserResults $userResults))
+    return , $userResults
+}
+
+# Действуют ли ограничения у каждого обычного пользователя на самом деле (по его реестру)
+function Get-UserRestrictionStatus {
+    $map = @{}
+    foreach ($r in (Invoke-ForStandardUsers { param($root) Test-HiveRestrictions $root })) { $map[$r.User] = $r }
+    return $map
 }
 
 #endregion
@@ -1213,10 +1352,13 @@ $MainWindowXaml = @'
 
             <Border Style="{StaticResource Card}">
               <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                  <TextBlock Style="{StaticResource Icon}" Text="&#xE716;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
-                  <TextBlock Style="{StaticResource H2}" Text="Пользователи этого компьютера"/>
-                </StackPanel>
+                <Grid Margin="0,0,0,4">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE716;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
+                    <TextBlock Style="{StaticResource H2}" Text="Пользователи этого компьютера"/>
+                  </StackPanel>
+                  <Button x:Name="btnCheckUsers" Style="{StaticResource BtnChip}" HorizontalAlignment="Right" Margin="0" Content="Проверить, действуют ли ограничения"/>
+                </Grid>
                 <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Ограничения получат только обычные учётные записи. Тип учётной записи меняется в Параметры → Учётные записи → Другие пользователи."/>
                 <ItemsControl x:Name="icUsers">
                   <ItemsControl.ItemsPanel>
@@ -1842,14 +1984,29 @@ function Show-MainWindow {
     function Update-UserList {
         $rows = New-Object System.Collections.Generic.List[object]
         $standard = 0
+        $status = @{}
+        if ($IsAdmin) { $status = Get-UserRestrictionStatus }
         foreach ($u in @(Get-LocalUserInfo)) {
             $initial = if ($u.Name) { $u.Name.Substring(0, 1).ToUpper() } else { '?' }
             if ($u.IsAdmin) {
                 $rows.Add((New-Row @{ Title = $u.Name; C1 = $initial; Badge = 'Администратор · без ограничений'; BadgeBg = $brush.BlueBg; BadgeFg = $brush.BlueFg; RowBg = $brush.Slate }))
-            } else {
-                $standard++
-                $rows.Add((New-Row @{ Title = $u.Name; C1 = $initial; Badge = 'Обычный · ограничения действуют'; BadgeBg = $brush.AmberBg; BadgeFg = $brush.AmberFg; RowBg = $brush.Accent }))
+                continue
             }
+            $standard++
+            $st = $status[$u.Name]
+            if (-not $st) {
+                $badge = 'Обычный пользователь'; $bg = $brush.GrayBg; $fg = $brush.GrayFg
+            } elseif ($st.Status -eq 'ok' -and $st.Value) {
+                $badge = 'Ограничения записаны ✓'; $bg = $brush.GreenBg; $fg = $brush.GreenFg
+                if ($st.LoggedOn) { $badge += ' · сейчас в системе: выйти и войти' }
+            } elseif ($st.Status -eq 'ok') {
+                $badge = 'Ограничений нет'; $bg = $brush.AmberBg; $fg = $brush.AmberFg
+            } elseif ($st.Status -eq 'noprofile') {
+                $badge = 'Ещё не входил · применится при входе'; $bg = $brush.GrayBg; $fg = $brush.GrayFg
+            } else {
+                $badge = 'Ошибка: ' + $st.Message; $bg = $brush.RedBg; $fg = $brush.RedFg
+            }
+            $rows.Add((New-Row @{ Title = $u.Name; C1 = $initial; Badge = $badge; BadgeBg = $bg; BadgeFg = $fg; RowBg = $brush.Accent }))
         }
         $ui.icUsers.ItemsSource = $rows
         $vis = 'Collapsed'
@@ -1928,19 +2085,26 @@ function Show-MainWindow {
             if (-not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + ($summary -join "`r`n")))) { return }
 
             Set-Busy $true
-            try { Set-NonAdminRestrictions $cfg } finally { Set-Busy $false }
+            try { $userResults = Set-NonAdminRestrictions $cfg } finally { Set-Busy $false }
             Import-RestrictionsToUI
-            Show-Toast 'Ограничения сохранены. Они начнут действовать после повторного входа пользователя.'
+            Update-UserList
+            $report = Format-UserResults $userResults
+            if (-not $report) { $report = '• Обычных пользователей пока нет — ограничения применятся к новым учётным записям при первом входе.' }
+            Show-Info ("Ограничения применены.`r`n`r`n$report`r`n`r`nЧтобы проверить: выйдите из учётной записи пользователя (Пуск → значок пользователя → Выйти), " +
+                "войдите снова и попробуйте запустить программу не из списка или открыть заблокированный сайт.")
         }
     })
+
+    $ui.btnCheckUsers.Add_Click({ Invoke-Safe { Set-Busy $true; try { Update-UserList } finally { Set-Busy $false }; Show-Toast 'Проверка завершена' } })
 
     $ui.btnRClear.Add_Click({
         Invoke-Safe {
             if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
             if (-not (Confirm-Action 'Снять все ограничения для пользователей без прав администратора?')) { return }
             Set-Busy $true
-            try { Clear-NonAdminRestrictions } finally { Set-Busy $false }
+            try { [void](Clear-NonAdminRestrictions) } finally { Set-Busy $false }
             Import-RestrictionsToUI
+            Update-UserList
             Show-Toast 'Ограничения сняты. Изменения вступят в силу после повторного входа пользователей.'
         }
     })
