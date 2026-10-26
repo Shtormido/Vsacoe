@@ -947,7 +947,7 @@ function Get-NonAdminRestrictions {
         Applied          = $applied
         WhitelistEnabled = [bool]($rr -and (Get-PolEntryValue $rr) -eq 1)
         Programs         = @(Get-PolList $entries $RestrictRunKey)
-        SitesEnabled     = ($blockRaw.Count -gt 0)
+        SitesEnabled     = ($blockRaw.Count -gt 0 -or $allow.Count -gt 0)
         SitesMode        = $mode
         BlockSites       = $block
         AllowSites       = $allow
@@ -1009,9 +1009,13 @@ function Get-RestrictionSummary($Config) {
     if ($Config.WhitelistEnabled) { $lines += "• Разрешены только программы из списка ($(@($Config.Programs).Count) шт.)" }
     else { $lines += '• Запуск программ не ограничен' }
     if (-not $Config.SitesEnabled) { $lines += '• Сайты не ограничены' }
-    elseif ($Config.SitesMode -eq 'allow') { $lines += "• Белый список: открываются только $(@($Config.AllowSites).Count) сайтов, остальные запрещены" }
+    elseif ($Config.SitesMode -eq 'allow') {
+        $lines += "• Строгий режим: открываются только сайты из белого списка ($(@($Config.AllowSites).Count) шт.), остальное запрещено"
+        if (@($Config.BlockSites).Count) { $lines += "  (чёрный список тоже задан: $(@($Config.BlockSites).Count))" }
+    }
     else {
-        $line = "• Чёрный список: заблокировано сайтов — $(@($Config.BlockSites).Count)"
+        $line = "• Чёрный список: заблокировано — $(@($Config.BlockSites).Count)"
+        if (@($Config.AllowSites).Count) { $line += "; белый список (исключения): $(@($Config.AllowSites).Count)" }
         if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
         $lines += $line
     }
@@ -1060,17 +1064,20 @@ function Get-RestrictionValues($Config) {
         foreach ($p in $Config.Programs) { $vals.Add([pscustomobject]@{ Key = $RestrictRunKey; Name = "$i"; Type = 'String'; Data = $p }); $i++ }
     }
     if ($Config.SitesEnabled) {
-        if ($Config.SitesMode -eq 'allow') {
-            # Белый список: запрещено всё, кроме перечисленных сайтов
-            foreach ($k in $SiteListKeys) { Add-ValueList $vals $k $BlockAllFilters }
-            $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
-            foreach ($k in $AllowListKeys) { Add-ValueList $vals $k (@($allowFilters) + $BrowserInternalUrls) }
-            Add-ValueList $vals $FirefoxBlockKey @('<all_urls>')
-            Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites)
-        } else {
-            foreach ($k in $SiteListKeys) { Add-ValueList $vals $k $Config.BlockSites }
-            Add-ValueList $vals $FirefoxBlockKey (ConvertTo-FirefoxPatterns $Config.BlockSites)
-        }
+        $strict = ($Config.SitesMode -eq 'allow')
+        # Чёрный список + (в строгом режиме) запрет всего остального. Белый список — исключения, у него приоритет.
+        $blockList = @($Config.BlockSites)
+        if ($strict) { $blockList += $BlockAllFilters }
+        $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
+        if ($strict) { $allowFilters += $BrowserInternalUrls }
+
+        if ($blockList.Count) { foreach ($k in $SiteListKeys) { Add-ValueList $vals $k $blockList } }
+        if ($allowFilters.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowFilters } }
+
+        $fxBlock = @(ConvertTo-FirefoxPatterns $Config.BlockSites)
+        if ($strict) { $fxBlock += '<all_urls>' }
+        if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
+        if (@($Config.AllowSites).Count) { Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites) }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
@@ -1773,54 +1780,71 @@ $MainWindowXaml = @'
                     </StackPanel>
                     <CheckBox x:Name="chkSites" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                   </Grid>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" Text="Чёрный и белый списки работают вместе: запрещается чёрный список, а белый список — исключения, которые открываются всегда (имеет приоритет). Включите строгий режим, чтобы разрешить только белый список."/>
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
-                    <UniformGrid Columns="2" Margin="0,8,0,10">
-                      <RadioButton x:Name="rbSitesBlock" Style="{StaticResource Segment}" GroupName="sitesmode" IsChecked="True">
-                        <StackPanel>
-                          <TextBlock FontWeight="SemiBold" Text="Чёрный список"/>
-                          <TextBlock FontSize="11" Opacity="0.8" TextWrapping="Wrap" Text="Запретить указанные сайты"/>
-                        </StackPanel>
-                      </RadioButton>
-                      <RadioButton x:Name="rbSitesAllow" Style="{StaticResource Segment}" GroupName="sitesmode" Margin="0">
-                        <StackPanel>
-                          <TextBlock FontWeight="SemiBold" Text="Белый список"/>
-                          <TextBlock FontSize="11" Opacity="0.8" TextWrapping="Wrap" Text="Разрешить только указанные"/>
-                        </StackPanel>
-                      </RadioButton>
-                    </UniformGrid>
-                    <TextBlock x:Name="txtSitesDesc" Style="{StaticResource Muted}" Margin="0,0,0,12"/>
-                    <Grid Margin="0,0,0,8">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                      </Grid.ColumnDefinitions>
-                      <Grid>
-                        <TextBox x:Name="txtSiteAdd" Style="{StaticResource Input}"/>
-                        <TextBlock x:Name="phSiteAdd" Style="{StaticResource Placeholder}" Text="Например: youtube.com"/>
-                      </Grid>
-                      <Button x:Name="btnSiteAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
-                    </Grid>
-                    <WrapPanel x:Name="pnlQuickAllow" Margin="0,0,0,8" Visibility="Collapsed">
-                      <Button x:Name="btnAllowSearch" Style="{StaticResource BtnChip}" Content="+ Поисковики"/>
-                      <Button x:Name="btnAllowStudy" Style="{StaticResource BtnChip}" Content="+ Учёба"/>
-                      <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход Microsoft/Google/Яндекс"/>
-                      <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
-                      <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
-                    </WrapPanel>
-                    <WrapPanel x:Name="pnlQuickBlock" Margin="0,0,0,8">
-                      <Button x:Name="btnQuickSocial" Style="{StaticResource BtnChip}" Content="+ Соцсети"/>
-                      <Button x:Name="btnQuickVideo" Style="{StaticResource BtnChip}" Content="+ Видео"/>
-                      <Button x:Name="btnQuickGames" Style="{StaticResource BtnChip}" Content="+ Игры"/>
-                      <Button x:Name="btnQuickMessengers" Style="{StaticResource BtnChip}" Content="+ Мессенджеры"/>
-                      <Button x:Name="btnQuickCinema" Style="{StaticResource BtnChip}" Content="+ Кино и сериалы"/>
-                      <Button x:Name="btnQuickBets" Style="{StaticResource BtnChip}" Content="+ Ставки и казино"/>
-                    </WrapPanel>
-                    <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
-                      <ListBox x:Name="lbSites" Height="250" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                    <CheckBox x:Name="chkStrict" Style="{StaticResource Switch}" Margin="0,0,0,12">
+                      <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Text="Строгий режим: разрешать только сайты из белого списка (всё остальное запрещено)"/>
+                    </CheckBox>
+
+                    <Border BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#FEF2F2">
+                      <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="#B91C1C" Text="Чёрный список — запретить" Margin="0,0,0,8"/>
+                        <Grid Margin="0,0,0,8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <Grid>
+                            <TextBox x:Name="txtBlockAdd" Style="{StaticResource Input}"/>
+                            <TextBlock x:Name="phBlockAdd" Style="{StaticResource Placeholder}" Text="Например: youtube.com"/>
+                          </Grid>
+                          <Button x:Name="btnBlockAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
+                        </Grid>
+                        <WrapPanel Margin="0,0,0,8">
+                          <Button x:Name="btnQuickSocial" Style="{StaticResource BtnChip}" Content="+ Соцсети"/>
+                          <Button x:Name="btnQuickVideo" Style="{StaticResource BtnChip}" Content="+ Видео"/>
+                          <Button x:Name="btnQuickGames" Style="{StaticResource BtnChip}" Content="+ Игры"/>
+                          <Button x:Name="btnQuickMessengers" Style="{StaticResource BtnChip}" Content="+ Мессенджеры"/>
+                          <Button x:Name="btnQuickCinema" Style="{StaticResource BtnChip}" Content="+ Кино"/>
+                          <Button x:Name="btnQuickBets" Style="{StaticResource BtnChip}" Content="+ Ставки"/>
+                        </WrapPanel>
+                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
+                          <ListBox x:Name="lbBlock" Height="150" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                        </Border>
+                        <TextBlock x:Name="txtBlockCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
+                      </StackPanel>
                     </Border>
-                    <TextBlock x:Name="txtSitesCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
-                    <CheckBox x:Name="chkHosts" Style="{StaticResource Switch}" Margin="0,12,0,0">
-                      <TextBlock TextWrapping="Wrap" Text="Также через файл hosts — работает в любом браузере, но и для администратора тоже"/>
+
+                    <Border BorderBrush="#86EFAC" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#F0FDF4">
+                      <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="#166534" Text="Белый список — разрешить (исключения)" Margin="0,0,0,8"/>
+                        <Grid Margin="0,0,0,8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <Grid>
+                            <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Например: uchi.ru"/>
+                          </Grid>
+                          <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
+                        </Grid>
+                        <WrapPanel Margin="0,0,0,8">
+                          <Button x:Name="btnAllowSearch" Style="{StaticResource BtnChip}" Content="+ Поисковики"/>
+                          <Button x:Name="btnAllowStudy" Style="{StaticResource BtnChip}" Content="+ Учёба"/>
+                          <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход в аккаунты"/>
+                          <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
+                          <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
+                        </WrapPanel>
+                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
+                          <ListBox x:Name="lbAllow" Height="150" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                        </Border>
+                        <TextBlock x:Name="txtAllowCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
+                      </StackPanel>
+                    </Border>
+
+                    <CheckBox x:Name="chkHosts" Style="{StaticResource Switch}">
+                      <TextBlock TextWrapping="Wrap" Text="Чёрный список также через файл hosts — работает в любом браузере, но и для администратора тоже"/>
                     </CheckBox>
                   </StackPanel>
                 </StackPanel>
@@ -2624,11 +2648,12 @@ function Show-MainWindow {
     $progs = New-Object System.Collections.ObjectModel.ObservableCollection[string]
     $blockSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
     $allowSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
-    $script:CurSites = $blockSites
     $ui.lbProg.ItemsSource = $progs
-    $ui.lbSites.ItemsSource = $blockSites
+    $ui.lbBlock.ItemsSource = $blockSites
+    $ui.lbAllow.ItemsSource = $allowSites
     Register-Placeholder $ui.txtProgAdd $ui.phProgAdd
-    Register-Placeholder $ui.txtSiteAdd $ui.phSiteAdd
+    Register-Placeholder $ui.txtBlockAdd $ui.phBlockAdd
+    Register-Placeholder $ui.txtAllowAdd $ui.phAllowAdd
 
     function Update-ListCounters {
         $ui.txtProgCount.Text = "Разрешено программ: $($progs.Count)"
@@ -2641,37 +2666,15 @@ function Show-MainWindow {
         $Collection.Add($Value)
     }
     function Add-Programs($Names) { foreach ($n in $Names) { Add-UniqueItem $progs (ConvertTo-ExeName $n) } }
-    function Add-Sites($Names) { foreach ($n in $Names) { Add-UniqueItem $script:CurSites (ConvertTo-Domain $n) } }
+    function Add-BlockSites($Names) { foreach ($n in $Names) { Add-UniqueItem $blockSites (ConvertTo-Domain $n) } }
+    function Add-AllowSites($Names) { foreach ($n in $Names) { Add-UniqueItem $allowSites (ConvertTo-Domain $n) } }
 
     function Update-SitesCount {
-        if ($ui.rbSitesAllow.IsChecked -eq $true) { $ui.txtSitesCount.Text = "Разрешено сайтов: $($allowSites.Count)" }
-        else { $ui.txtSitesCount.Text = "Заблокировано сайтов: $($blockSites.Count)" }
+        $ui.txtBlockCount.Text = "В чёрном списке: $($blockSites.Count)"
+        $ui.txtAllowCount.Text = "В белом списке: $($allowSites.Count)"
     }
     $blockSites.Add_CollectionChanged({ Update-SitesCount })
     $allowSites.Add_CollectionChanged({ Update-SitesCount })
-
-    function Set-SitesMode([string]$Mode) {
-        if ($Mode -eq 'allow') {
-            $script:CurSites = $allowSites
-            $ui.lbSites.ItemsSource = $allowSites
-            $ui.pnlQuickAllow.Visibility = 'Visible'
-            $ui.pnlQuickBlock.Visibility = 'Collapsed'
-            $ui.chkHosts.Visibility = 'Collapsed'
-            $ui.phSiteAdd.Text = 'Например: uchi.ru'
-            $ui.txtSitesDesc.Text = 'Открываться будут ТОЛЬКО эти сайты (с поддоменами), все остальные запрещены. Не забудьте поисковик и сайты для входа в аккаунты, если они нужны.'
-        } else {
-            $script:CurSites = $blockSites
-            $ui.lbSites.ItemsSource = $blockSites
-            $ui.pnlQuickAllow.Visibility = 'Collapsed'
-            $ui.pnlQuickBlock.Visibility = 'Visible'
-            $ui.chkHosts.Visibility = 'Visible'
-            $ui.phSiteAdd.Text = 'Например: youtube.com'
-            $ui.txtSitesDesc.Text = 'Эти сайты и их поддомены не откроются в Edge, Chrome, Яндекс.Браузере и Firefox. Можно указать раздел сайта, например yandex.ru/games — остальной Яндекс будет работать.'
-        }
-        Update-SitesCount
-    }
-    $ui.rbSitesBlock.Add_Checked({ Invoke-Safe { Set-SitesMode 'block' } })
-    $ui.rbSitesAllow.Add_Checked({ Invoke-Safe { Set-SitesMode 'allow' } })
 
     $ui.btnAllowSearch.Tag = 'yandex.ru ya.ru google.com google.ru bing.com duckduckgo.com'
     $ui.btnAllowStudy.Tag = @(
@@ -2690,12 +2693,16 @@ function Show-MainWindow {
             param($s, $e)
             Invoke-Safe {
                 $before = $allowSites.Count
-                Add-Sites @($s.Tag -split ' ')
+                Add-AllowSites @($s.Tag -split ' ')
                 $ui.chkSites.IsChecked = $true
                 Show-Toast "Добавлено в белый список: $($allowSites.Count - $before). Не забудьте нажать «Применить ограничения»."
             }
         })
     }
+    $ui.btnAllowAdd.Add_Click({ Invoke-Safe { Add-AllowSites @($ui.txtAllowAdd.Text -split '[,;\s]+'); $ui.txtAllowAdd.Text = '' } })
+    $ui.txtAllowAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-AllowSites @($ui.txtAllowAdd.Text -split '[,;\s]+'); $ui.txtAllowAdd.Text = '' } } })
+    $ui.btnBlockAdd.Add_Click({ Invoke-Safe { Add-BlockSites @($ui.txtBlockAdd.Text -split '[,;\s]+'); $ui.txtBlockAdd.Text = '' } })
+    $ui.txtBlockAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-BlockSites @($ui.txtBlockAdd.Text -split '[,;\s]+'); $ui.txtBlockAdd.Text = '' } } })
 
     # Кнопки «удалить» внутри списков
     $removeHandler = [System.Windows.RoutedEventHandler] {
@@ -2704,12 +2711,11 @@ function Show-MainWindow {
         if ($btn -is [System.Windows.Controls.Button] -and $btn.Tag) { [void]$s.ItemsSource.Remove([string]$btn.Tag) }
     }
     $ui.lbProg.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
-    $ui.lbSites.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
+    $ui.lbBlock.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
+    $ui.lbAllow.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
 
     $ui.btnProgAdd.Add_Click({ Invoke-Safe { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' } })
     $ui.txtProgAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' } } })
-    $ui.btnSiteAdd.Add_Click({ Invoke-Safe { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' } })
-    $ui.txtSiteAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' } } })
     $ui.btnProgBrowse.Add_Click({
         Invoke-Safe {
             $files = Select-OpenFile 'Программы (*.exe)|*.exe' $env:ProgramFiles $true
@@ -2821,7 +2827,9 @@ function Show-MainWindow {
         'live.vkplay.ru', 'live.vkvideo.ru', 'dzen.ru/video', 'coub.com', 'yappy.media', 'boosty.to'
     ) -join ' '
     $ui.btnQuickGames.Tag = @(
-        'yandex.ru/games', 'yandex.com/games', 'yandex.by/games', 'yandex.kz/games', 'yandex.uz/games', 'ya.ru/games', 'playhop.com',
+        'yandex.ru/games', 'yandex.com/games', 'yandex.by/games', 'yandex.kz/games', 'yandex.uz/games', 'ya.ru/games',
+        'games.yandex.ru', 'm.games.yandex.ru', 'yandex.ru/gamecenter', 'games.s3.yandex.net', 'games-sdk.yandex.ru',
+        'gaming.yandex.ru', 'app.yandexgames.net', 'yandexgames.net', 'playhop.com', 'app.playhop.com',
         'games.mail.ru', 'my.games', 'vkplay.ru', 'vkplay.com', 'vk.com/games', 'vk.ru/games', 'ok.ru/games',
         'roblox.com', 'steampowered.com', 'steamcommunity.com', 'epicgames.com', 'minecraft.net',
         'poki.com', 'crazygames.com', 'crazygames.ru', 'miniclip.com', 'friv.com', 'y8.com', 'kongregate.com',
@@ -2850,9 +2858,9 @@ function Show-MainWindow {
             param($s, $e)
             Invoke-Safe {
                 $before = $blockSites.Count
-                Add-Sites @($s.Tag -split ' ')
+                Add-BlockSites @($s.Tag -split ' ')
                 $ui.chkSites.IsChecked = $true
-                Show-Toast "Добавлено сайтов: $($blockSites.Count - $before). Не забудьте нажать «Применить ограничения»."
+                Show-Toast "Добавлено в чёрный список: $($blockSites.Count - $before). Не забудьте нажать «Применить ограничения»."
             }
         })
     }
@@ -2933,10 +2941,10 @@ function Show-MainWindow {
         }
         foreach ($x in @($r.BlockSites)) { Add-UniqueItem $blockSites $x }
         foreach ($x in @($r.AllowSites)) { Add-UniqueItem $allowSites $x }
-        if ($r.SitesMode -eq 'allow') { $ui.rbSitesAllow.IsChecked = $true } else { $ui.rbSitesBlock.IsChecked = $true }
-        Set-SitesMode $(if ($r.SitesMode -eq 'allow') { 'allow' } else { 'block' })
+        $ui.chkStrict.IsChecked = ($r.SitesMode -eq 'allow')
         $ui.chkHosts.IsChecked = [bool]$r.HostsEnabled
         Update-ListCounters
+        Update-SitesCount
     }
 
     function Import-RestrictionsToUI {
@@ -2950,15 +2958,16 @@ function Show-MainWindow {
     function Get-RestrictionsFromUI {
         $lock = @{}
         foreach ($l in $Lockdowns) { $lock[$l.Id] = ($lockBoxes[$l.Id].IsChecked -eq $true) }
-        $mode = 'block'
-        if ($ui.rbSitesAllow.IsChecked -eq $true) { $mode = 'allow' }
+        $strict = ($ui.chkStrict.IsChecked -eq $true)
+        $mode = if ($strict) { 'allow' } else { 'block' }
         $block = @($blockSites)
         $allow = @($allowSites)
-        $active = if ($mode -eq 'allow') { $allow } else { $block }
+        # В строгом режиме достаточно белого списка; иначе должен быть хотя бы один список
+        $hasSites = if ($strict) { $allow.Count -gt 0 } else { ($block.Count -gt 0 -or $allow.Count -gt 0) }
         [pscustomobject]@{
             WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
             Programs         = @($progs)
-            SitesEnabled     = ($ui.chkSites.IsChecked -eq $true -and $active.Count -gt 0)
+            SitesEnabled     = ($ui.chkSites.IsChecked -eq $true -and $hasSites)
             SitesMode        = $mode
             BlockSites       = $block
             AllowSites       = $allow
@@ -2971,13 +2980,18 @@ function Show-MainWindow {
         if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
         # Текст, введённый в поле, но не добавленный кнопкой, тоже учитываем
         if ($ui.txtProgAdd.Text) { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' }
-        if ($ui.txtSiteAdd.Text) { Add-Sites @($ui.txtSiteAdd.Text -split '[,;\s]+'); $ui.txtSiteAdd.Text = '' }
+        if ($ui.txtBlockAdd.Text) { Add-BlockSites @($ui.txtBlockAdd.Text -split '[,;\s]+'); $ui.txtBlockAdd.Text = '' }
+        if ($ui.txtAllowAdd.Text) { Add-AllowSites @($ui.txtAllowAdd.Text -split '[,;\s]+'); $ui.txtAllowAdd.Text = '' }
         $cfg = Get-RestrictionsFromUI
         if ($cfg.WhitelistEnabled -and -not $cfg.Programs.Count) { Show-Error 'Список разрешённых программ пуст.'; return }
         if ($cfg.WhitelistEnabled -and $cfg.Programs -notcontains 'explorer.exe') {
             if (-not (Confirm-Action 'В списке нет explorer.exe — у пользователей могут не открываться папки. Продолжить?')) { return }
         }
-        if ($ui.chkSites.IsChecked -eq $true -and -not $cfg.SitesEnabled) { Show-Error 'Список сайтов пуст. Добавьте сайты или выключите ограничение сайтов.'; return }
+        if ($ui.chkSites.IsChecked -eq $true -and -not $cfg.SitesEnabled) {
+            if ($cfg.SitesMode -eq 'allow') { Show-Error 'Строгий режим включён, но белый список пуст — так закроются все сайты. Добавьте разрешённые сайты.' }
+            else { Show-Error 'Списки сайтов пусты. Добавьте сайты в чёрный или белый список, либо выключите ограничение сайтов.' }
+            return
+        }
         if ($AskConfirm -and -not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + (Get-RestrictionSummary $cfg)))) { return }
 
         Set-Busy $true
