@@ -455,23 +455,31 @@ function Get-OSInfo {
 # Включает запись события 4688 (создание процесса) в журнал «Безопасность» и добавление в него командной строки
 $AuditCmdLineKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit'
 
+$ProcCreationGuid = '{0CCE922B-69AE-11D9-BED3-505054503030}'
+$LsaKey           = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
+
 function Test-ProcessAuditEnabled {
     try {
-        $out = & auditpol /get /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /r 2>$null
-        return (($out -join "`n") -match 'Success')
+        $out = & auditpol /get /subcategory:"$ProcCreationGuid" /r 2>$null
+        $line = ($out | Where-Object { $_ -and $_ -notmatch '^Machine Name,' } | Select-Object -Last 1)
+        # Столбец «Inclusion Setting» локализован: Success / Успех
+        return ($line -match 'Success|Успех')
     } catch { return $false }
 }
 
 function Enable-ProcessAudit {
-    # Аудит по GUID подкатегории — не зависит от языка Windows
-    & auditpol /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:enable | Out-Null
+    # Без этого ключа «тонкие» настройки аудита перекрываются старой политикой и события 4688 не пишутся
+    Set-ItemProperty -LiteralPath $LsaKey -Name 'SCENoApplyLegacyAuditPolicy' -Type DWord -Value 1
+    $out = & auditpol /set /subcategory:"$ProcCreationGuid" /success:enable 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Не удалось включить аудит (auditpol): $out" }
     if (-not (Test-Path -LiteralPath $AuditCmdLineKey)) { New-Item -Path $AuditCmdLineKey -Force | Out-Null }
     Set-ItemProperty -LiteralPath $AuditCmdLineKey -Name 'ProcessCreationIncludeCmdLine_Enabled' -Type DWord -Value 1
     Write-Log 'Включён аудит запуска приложений (событие 4688)'
+    if (-not (Test-ProcessAuditEnabled)) { throw 'Аудит не включился — возможно, его перекрывает доменная или локальная групповая политика.' }
 }
 
 function Disable-ProcessAudit {
-    & auditpol /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:disable | Out-Null
+    & auditpol /set /subcategory:"$ProcCreationGuid" /success:disable | Out-Null
     Set-ItemProperty -LiteralPath $AuditCmdLineKey -Name 'ProcessCreationIncludeCmdLine_Enabled' -Type DWord -Value 0 -ErrorAction SilentlyContinue
     Write-Log 'Отключён аудит запуска приложений'
 }
