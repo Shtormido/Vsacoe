@@ -632,7 +632,8 @@ function Get-SiteHistory([int]$Max = 1000, [string]$Filter = '') {
                     $copy = Join-Path $tmp ("{0}_{1}_{2}" -f $user, $br.Name, ($prof -replace '\W', ''))
                     try {
                         Copy-OpenFile $hist $copy
-                        $sql = "SELECT url, title, last_visit_time FROM urls WHERE last_visit_time>0 ORDER BY last_visit_time DESC LIMIT $Max"
+                        # По отдельным посещениям (каждый заход), чтобы фиксировать и повторные открытия
+                        $sql = "SELECT urls.url, urls.title, visits.visit_time FROM visits JOIN urls ON urls.id=visits.url WHERE visits.visit_time>0 ORDER BY visits.visit_time DESC LIMIT $Max"
                         foreach ($r in [PMSql.Lite]::Query($copy, $sql, 'ssi')) {
                             $t = ConvertFrom-ChromeTime ([long]$r[2])
                             if ($t) { $rows.Add([pscustomobject]@{ Time = $t; Url = [string]$r[0]; Title = [string]$r[1]; User = $user; Browser = $br.Name }) }
@@ -650,7 +651,7 @@ function Get-SiteHistory([int]$Max = 1000, [string]$Filter = '') {
                     $copy = Join-Path $tmp ("{0}_Firefox_{1}" -f $user, ($pf.Name -replace '\W', ''))
                     try {
                         Copy-OpenFile $places $copy
-                        $sql = "SELECT url, title, last_visit_date FROM moz_places WHERE last_visit_date IS NOT NULL ORDER BY last_visit_date DESC LIMIT $Max"
+                        $sql = "SELECT p.url, p.title, v.visit_date FROM moz_historyvisits v JOIN moz_places p ON p.id=v.place_id WHERE v.visit_date IS NOT NULL ORDER BY v.visit_date DESC LIMIT $Max"
                         foreach ($r in [PMSql.Lite]::Query($copy, $sql, 'ssi')) {
                             $t = ConvertFrom-FirefoxTime ([long]$r[2])
                             if ($t) { $rows.Add([pscustomobject]@{ Time = $t; Url = [string]$r[0]; Title = [string]$r[1]; User = $user; Browser = 'Firefox' }) }
@@ -664,6 +665,69 @@ function Get-SiteHistory([int]$Max = 1000, [string]$Filter = '') {
     }
 
     $out = $rows | Sort-Object Time -Descending
+    if ($Filter) { $out = $out | Where-Object { ("$($_.Url) $($_.Title) $($_.User) $($_.Browser)").IndexOf($Filter, [StringComparison]::OrdinalIgnoreCase) -ge 0 } }
+    return , @($out | Select-Object -First $Max)
+}
+
+# Собственный журнал программы: копит посещения, чтобы очистка истории в браузере их не стирала
+$HistoryStoreFile = Join-Path $DataDir 'history_log.tsv'
+$HistoryStoreMax  = 200000   # максимум записей в журнале программы
+
+function ConvertTo-StoreField([string]$Text) {
+    if (-not $Text) { return '' }
+    return ($Text -replace "[`t`r`n]", ' ')
+}
+function Get-HistoryKey($Ticks, [string]$User, [string]$Browser, [string]$Url) {
+    return ('{0}|{1}|{2}|{3}' -f $Ticks, $User, $Browser, $Url)
+}
+
+function Import-HistoryStore {
+    $list = New-Object System.Collections.Generic.List[object]
+    if (-not (Test-Path -LiteralPath $HistoryStoreFile)) { return , $list }
+    foreach ($line in [IO.File]::ReadAllLines($HistoryStoreFile, [Text.Encoding]::UTF8)) {
+        if (-not $line) { continue }
+        $p = $line.Split("`t")
+        if ($p.Count -lt 5) { continue }
+        $ticks = 0L
+        if (-not [long]::TryParse($p[0], [ref]$ticks)) { continue }
+        $list.Add([pscustomobject]@{
+            Time = [DateTime]::new($ticks); User = $p[1]; Browser = $p[2]; Url = $p[3]; Title = $p[4]
+        })
+    }
+    return , $list
+}
+
+function Save-HistoryStore($Records) {
+    $sorted = @($Records | Sort-Object Time -Descending | Select-Object -First $HistoryStoreMax)
+    $tab = [char]9
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($r in $sorted) {
+        $fields = @([string]$r.Time.Ticks, (ConvertTo-StoreField $r.User), (ConvertTo-StoreField $r.Browser), (ConvertTo-StoreField $r.Url), (ConvertTo-StoreField $r.Title))
+        [void]$sb.AppendLine($fields -join $tab)
+    }
+    $tmp = "$HistoryStoreFile.tmp"
+    [IO.File]::WriteAllText($tmp, $sb.ToString(), (New-Object Text.UTF8Encoding $false))
+    [IO.File]::Copy($tmp, $HistoryStoreFile, $true)
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+}
+
+# Считывает историю браузеров и дописывает новые посещения в журнал программы. Возвращает число новых записей.
+function Sync-HistoryStore([int]$HarvestPerDb = 5000) {
+    $stored = Import-HistoryStore
+    $keys = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($r in $stored) { [void]$keys.Add((Get-HistoryKey $r.Time.Ticks $r.User $r.Browser $r.Url)) }
+    $added = 0
+    foreach ($r in @(Get-SiteHistory $HarvestPerDb '')) {
+        $k = Get-HistoryKey $r.Time.Ticks $r.User $r.Browser $r.Url
+        if ($keys.Add($k)) { $stored.Add($r); $added++ }
+    }
+    if ($added -gt 0) { Save-HistoryStore $stored }
+    return $added
+}
+
+function Get-StoredHistory([int]$Max = 1500, [string]$Filter = '') {
+    $list = Import-HistoryStore
+    $out = $list | Sort-Object Time -Descending
     if ($Filter) { $out = $out | Where-Object { ("$($_.Url) $($_.Title) $($_.User) $($_.Browser)").IndexOf($Filter, [StringComparison]::OrdinalIgnoreCase) -ge 0 } }
     return , @($out | Select-Object -First $Max)
 }
@@ -3563,7 +3627,9 @@ function Show-MainWindow {
             $rows = New-Object System.Collections.Generic.List[object]
             $err = $null
             try {
-                foreach ($r in @(Get-SiteHistory 1500 $ui.txtSitesFilter.Text.Trim())) {
+                # Сначала дописываем свежие посещения в собственный журнал, затем показываем журнал целиком
+                try { [void](Sync-HistoryStore) } catch { }
+                foreach ($r in @(Get-StoredHistory 1500 $ui.txtSitesFilter.Text.Trim())) {
                     $site = $r.Url
                     if ($r.Title) { $site = "$($r.Title) — $($r.Url)" }
                     $rows.Add((New-Row @{ Title = $site; Subtitle = $r.User; C1 = $r.Time.ToString('dd.MM.yyyy HH:mm'); C2 = $r.Browser }))
@@ -3575,7 +3641,7 @@ function Show-MainWindow {
             } else {
                 $ui.pnlSitesEmpty.Visibility = 'Visible'
                 if ($err) { $ui.txtSitesEmpty.Text = 'Не удалось прочитать историю: ' + $err }
-                else { $ui.txtSitesEmpty.Text = 'История пуста. Возможно, у пользователей ещё нет посещений, либо история очищена.' }
+                else { $ui.txtSitesEmpty.Text = 'Журнал пуст. Возможно, у пользователей ещё нет посещений. Как только они появятся, программа сохранит их у себя — даже если потом очистить историю браузера.' }
             }
         } finally { Set-Busy $false }
     }
@@ -3596,6 +3662,15 @@ function Show-MainWindow {
     })
     $ui.btnSitesRefresh.Add_Click({ Invoke-Safe { Update-SiteView; Show-Toast 'История обновлена' } })
     $ui.txtSitesFilter.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Update-SiteView } } })
+
+    # Пока программа открыта, журнал пополняется в фоне — чтобы успеть записать посещения до очистки истории
+    if ($IsAdmin) {
+        $histTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $histTimer.Interval = [TimeSpan]::FromMinutes(3)
+        $histTimer.Add_Tick({ try { [void](Sync-HistoryStore) } catch { } })
+        $histTimer.Start()
+        try { [void](Sync-HistoryStore) } catch { }   # первый сбор при запуске
+    }
 
     #endregion
 
