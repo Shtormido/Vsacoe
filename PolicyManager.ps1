@@ -550,11 +550,15 @@ $Lockdowns = @(
             (New-PolValueRef 'Software\Policies\Google\Chrome' 'IncognitoModeAvailability' 1),
             (New-PolValueRef 'Software\Policies\YandexBrowser' 'IncognitoModeAvailability' 1),
             (New-PolValueRef 'Software\Policies\Mozilla\Firefox' 'DisablePrivateBrowsing' 1)) }
-    [pscustomobject]@{ Id = 'downloads'; Default = $false; Label = 'Запретить скачивание файлов в Edge/Chrome/Яндекс (скачанный .exe можно запустить из браузера в обход списка программ)'
+    [pscustomobject]@{ Id = 'downloads'; Default = $false; Label = 'Запретить скачивание файлов во всех браузерах на движке Chromium (Edge, Chrome, Яндекс, Brave, Vivaldi, Atom) — скачанный .exe можно запустить из браузера в обход списка программ'
         Values = @(
             (New-PolValueRef 'Software\Policies\Microsoft\Edge' 'DownloadRestrictions' 3),
             (New-PolValueRef 'Software\Policies\Google\Chrome' 'DownloadRestrictions' 3),
-            (New-PolValueRef 'Software\Policies\YandexBrowser' 'DownloadRestrictions' 3)) }
+            (New-PolValueRef 'Software\Policies\YandexBrowser' 'DownloadRestrictions' 3),
+            (New-PolValueRef 'Software\Policies\BraveSoftware\Brave' 'DownloadRestrictions' 3),
+            (New-PolValueRef 'Software\Policies\Vivaldi' 'DownloadRestrictions' 3),
+            (New-PolValueRef 'Software\Policies\Chromium' 'DownloadRestrictions' 3),
+            (New-PolValueRef 'Software\Policies\Mail.Ru\Atom' 'DownloadRestrictions' 3)) }
 )
 
 # Какие записи Registry.pol принадлежат этой программе (остальные сохраняются без изменений)
@@ -1469,6 +1473,7 @@ $MainWindowXaml = @'
           <RadioButton x:Name="navRegistry" Style="{StaticResource Nav}" Tag="&#xE71D;" Content="Реестр"/>
           <RadioButton x:Name="navProfiles" Style="{StaticResource Nav}" Tag="&#xE8F1;" Content="Профили и копии"/>
           <RadioButton x:Name="navTools" Style="{StaticResource Nav}" Tag="&#xE90F;" Content="Инструменты"/>
+          <RadioButton x:Name="navAbout" Style="{StaticResource Nav}" Tag="&#xE946;" Content="О программе"/>
         </StackPanel>
       </DockPanel>
     </Border>
@@ -1988,6 +1993,63 @@ $MainWindowXaml = @'
             </Button>
           </UniformGrid>
         </ScrollViewer>
+
+        <!-- ===== О программе ===== -->
+        <ScrollViewer x:Name="pageAbout" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+          <StackPanel Margin="32,0,32,24" MaxWidth="760" HorizontalAlignment="Left">
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                  <Border Width="56" Height="56" CornerRadius="12" Background="#2563EB">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xEA18;" Foreground="White" FontSize="28" HorizontalAlignment="Center"/>
+                  </Border>
+                  <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Policy Manager" FontSize="22" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="txtAboutVersion" Style="{StaticResource Muted}" FontSize="13"/>
+                  </StackPanel>
+                </StackPanel>
+                <TextBlock Style="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap" Text="Управление политиками Windows 10/11 и ограничениями для пользователей без прав администратора. Работает во всех редакциях, включая Home."/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock FontSize="11" FontWeight="Bold" Foreground="#6B7280" Text="РАЗРАБОТЧИК"/>
+                <TextBlock Text="Лига Не Безопасного Интернета" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Сведения о системе" Margin="0,0,0,10"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Muted}" Text="Windows:" Margin="0,2,16,2"/>
+                  <TextBlock x:Name="txtAboutOS" Grid.Row="0" Grid.Column="1" Margin="0,2" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Muted}" Text="Права:" Margin="0,2,16,2"/>
+                  <TextBlock x:Name="txtAboutAdmin" Grid.Row="1" Grid.Column="1" Margin="0,2"/>
+                  <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Muted}" Text="Папка данных:" Margin="0,2,16,2"/>
+                  <TextBlock x:Name="txtAboutData" Grid.Row="2" Grid.Column="1" Margin="0,2" TextWrapping="Wrap"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}" BorderBrush="#FCD34D" Background="#FFFBEB">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Foreground="#92400E" Text="Предупреждение"/>
+                <TextBlock Foreground="#92400E" FontSize="13" TextWrapping="Wrap" Margin="0,6,0,0" Text="Программа изменяет системный реестр и групповые политики. Перед изменениями автоматически создаётся резервная копия. Все действия записываются в журнал."/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
       </Grid>
 
       <!-- Уведомление -->
@@ -2195,12 +2257,18 @@ function Show-MainWindow {
     }
     if ($os.IsHome) { $ui.warnHome.Visibility = 'Visible' }
 
+    $ui.txtAboutVersion.Text = "Версия $AppVersion"
+    $ui.txtAboutOS.Text = $os.Text
+    $ui.txtAboutAdmin.Text = if ($IsAdmin) { 'Администратор' } else { 'Без прав администратора' }
+    $ui.txtAboutData.Text = $DataDir
+
     $pageInfo = [ordered]@{
         navRestrict = @('pageRestrict', 'Ограничения пользователей', 'Белый список программ и блокировка сайтов для всех, кроме администраторов')
         navPolicies = @('pagePolicies', 'Политики Windows', 'Конфиденциальность, обновления, безопасность, интерфейс и Microsoft Edge')
         navRegistry = @('pageRegistry', 'Политики в реестре', 'Все параметры из веток Policies, включая заданные другими программами')
         navProfiles = @('pageProfiles', 'Профили и резервные копии', 'Готовые наборы настроек, сохранение и восстановление')
         navTools    = @('pageTools', 'Инструменты', 'Применение и диагностика групповых политик')
+        navAbout    = @('pageAbout', 'О программе', 'Сведения о Policy Manager и разработчике')
     }
     $script:RegScanned = $false
 
