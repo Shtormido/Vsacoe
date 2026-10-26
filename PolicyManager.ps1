@@ -31,8 +31,9 @@ $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Policy Manager'
 $AppVersion  = '2.0'
-$CatalogFile = Join-Path $PSScriptRoot 'policies.json'
-$ProfilesDir = Join-Path $PSScriptRoot 'profiles'
+$ScriptDir   = if ($PSScriptRoot) { $PSScriptRoot } elseif ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { '' }
+$CatalogFile = if ($ScriptDir) { Join-Path $ScriptDir 'policies.json' } else { $null }
+$ProfilesDir = if ($ScriptDir) { Join-Path $ScriptDir 'profiles' } else { $null }
 $IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore -or $ExportRestrictions -or $ImportRestrictions
 
 $PolicyRoots = @(
@@ -49,9 +50,16 @@ function Test-IsAdmin {
     (New-Object Security.Principal.WindowsPrincipal $id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# Перезапуск с правами администратора — и для .ps1, и для скомпилированного .exe
 function Start-Elevated {
-    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
-    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $argList -Verb RunAs
+    if ($PSCommandPath -and $PSCommandPath -match '\.ps1$') {
+        $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
+        Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $argList -Verb RunAs
+    } else {
+        # Запущен как .exe — перезапускаем сам исполняемый файл
+        $exe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        Start-Process -FilePath $exe -Verb RunAs
+    }
 }
 
 $IsAdmin = Test-IsAdmin
@@ -67,6 +75,891 @@ if (-not $IsAdmin -and -not $NoElevate -and -not $IsCli) {
 }
 
 #endregion
+
+# --- Встроенные ресурсы (чтобы программа работала как один файл или .exe) ---
+$EmbeddedPoliciesJson = @'
+[
+  {
+    "id": "telemetry",
+    "category": "Конфиденциальность",
+    "name": "Уровень телеметрии (диагностические данные)",
+    "description": "Сколько диагностических данных Windows отправляет в Microsoft. Уровень 0 действует только в Enterprise/Education, в Home/Pro он работает как уровень 1.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection",
+    "values": [ { "name": "AllowTelemetry", "type": "DWord" } ],
+    "options": [
+      { "key": "0", "label": "0 — Безопасность (минимум, Enterprise/Education)", "data": [0] },
+      { "key": "1", "label": "1 — Обязательные данные", "data": [1] },
+      { "key": "3", "label": "3 — Необязательные (полные) данные", "data": [3] }
+    ]
+  },
+  {
+    "id": "feedback_notifications",
+    "category": "Конфиденциальность",
+    "name": "Запросы отзывов (Feedback)",
+    "description": "Отключает всплывающие уведомления с просьбой оставить отзыв о Windows.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection",
+    "values": [ { "name": "DoNotShowFeedbackNotifications", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Не показывать запросы отзывов", "data": [1] },
+      { "key": "on", "label": "Показывать", "data": [0] }
+    ]
+  },
+  {
+    "id": "advertising_id",
+    "category": "Конфиденциальность",
+    "name": "Рекламный идентификатор",
+    "description": "Отключает рекламный ID, по которому приложения показывают персонализированную рекламу.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo",
+    "values": [ { "name": "DisabledByGroupPolicy", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить рекламный ID", "data": [1] }
+    ]
+  },
+  {
+    "id": "activity_history",
+    "category": "Конфиденциальность",
+    "name": "Журнал действий (Activity History)",
+    "description": "Сбор и отправка истории действий пользователя (открытые файлы, приложения, сайты).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+    "values": [
+      { "name": "EnableActivityFeed", "type": "DWord" },
+      { "name": "PublishUserActivities", "type": "DWord" },
+      { "name": "UploadUserActivities", "type": "DWord" }
+    ],
+    "options": [
+      { "key": "off", "label": "Отключить журнал действий", "data": [0, 0, 0] },
+      { "key": "on", "label": "Разрешить", "data": [1, 1, 1] }
+    ]
+  },
+  {
+    "id": "location",
+    "category": "Конфиденциальность",
+    "name": "Служба определения местоположения",
+    "description": "Полностью запрещает определение местоположения для системы и приложений.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors",
+    "values": [ { "name": "DisableLocation", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить определение местоположения", "data": [1] },
+      { "key": "on", "label": "Разрешить", "data": [0] }
+    ]
+  },
+  {
+    "id": "input_personalization",
+    "category": "Конфиденциальность",
+    "name": "Персонализация рукописного и клавиатурного ввода",
+    "description": "Запрещает Windows собирать образцы набора текста и рукописного ввода.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\InputPersonalization",
+    "values": [ { "name": "AllowInputPersonalization", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить", "data": [0] },
+      { "key": "on", "label": "Разрешить", "data": [1] }
+    ]
+  },
+  {
+    "id": "error_reporting",
+    "category": "Конфиденциальность",
+    "name": "Отчёты об ошибках Windows",
+    "description": "Отключает отправку отчётов об ошибках (Windows Error Reporting).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Error Reporting",
+    "values": [ { "name": "Disabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить отчёты об ошибках", "data": [1] },
+      { "key": "on", "label": "Включить", "data": [0] }
+    ]
+  },
+  {
+    "id": "cortana",
+    "category": "Конфиденциальность",
+    "name": "Cortana",
+    "description": "Запрещает использование Cortana.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search",
+    "values": [ { "name": "AllowCortana", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить Cortana", "data": [0] },
+      { "key": "on", "label": "Разрешить", "data": [1] }
+    ]
+  },
+  {
+    "id": "web_search",
+    "category": "Конфиденциальность",
+    "name": "Поиск в Интернете из меню Пуск",
+    "description": "Убирает результаты Bing и веб-подсказки из поиска Windows. Последний параметр пишется в HKCU (текущий пользователь).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search",
+    "values": [
+      { "name": "DisableWebSearch", "type": "DWord" },
+      { "name": "ConnectedSearchUseWeb", "type": "DWord" },
+      { "name": "DisableSearchBoxSuggestions", "type": "DWord", "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer" }
+    ],
+    "options": [
+      { "key": "off", "label": "Отключить веб-поиск", "data": [1, 0, 1] },
+      { "key": "on", "label": "Разрешить веб-поиск", "data": [0, 1, 0] }
+    ]
+  },
+  {
+    "id": "consumer_features",
+    "category": "Конфиденциальность",
+    "name": "Автоустановка рекомендуемых приложений",
+    "description": "Запрещает Windows самостоятельно устанавливать «рекомендуемые» приложения и игры (Candy Crush и т.п.). Полностью действует в Enterprise/Education.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+    "values": [ { "name": "DisableWindowsConsumerFeatures", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [1] }
+    ]
+  },
+  {
+    "id": "tips",
+    "category": "Конфиденциальность",
+    "name": "Советы и подсказки Windows",
+    "description": "Отключает показ советов по использованию Windows.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+    "values": [ { "name": "DisableSoftLanding", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить советы", "data": [1] }
+    ]
+  },
+  {
+    "id": "spotlight",
+    "category": "Конфиденциальность",
+    "name": "Windows: интересное (Spotlight)",
+    "description": "Отключает все функции «Windows: интересное» (фоны и реклама на экране блокировки). Для текущего пользователя.",
+    "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\CloudContent",
+    "values": [ { "name": "DisableWindowsSpotlightFeatures", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [1] }
+    ]
+  },
+  {
+    "id": "copilot",
+    "category": "Конфиденциальность",
+    "name": "Windows Copilot",
+    "description": "Отключает встроенный Windows Copilot (для текущего пользователя и для всех). На новых сборках Copilot — отдельное приложение, его можно просто удалить.",
+    "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+    "values": [
+      { "name": "TurnOffWindowsCopilot", "type": "DWord" },
+      { "name": "TurnOffWindowsCopilot", "type": "DWord", "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot" }
+    ],
+    "options": [
+      { "key": "off", "label": "Отключить Copilot", "data": [1, 1] }
+    ]
+  },
+  {
+    "id": "recall",
+    "category": "Конфиденциальность",
+    "name": "Recall (снимки экрана ИИ)",
+    "description": "Запрещает функции Recall сохранять снимки экрана для анализа ИИ (Windows 11, Copilot+ PC).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI",
+    "values": [ { "name": "DisableAIDataAnalysis", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить Recall", "data": [1] }
+    ]
+  },
+
+  {
+    "id": "wu_auto",
+    "category": "Центр обновления Windows",
+    "name": "Автоматическое обновление",
+    "description": "Режим загрузки и установки обновлений. В Home часть режимов может игнорироваться.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU",
+    "values": [
+      { "name": "NoAutoUpdate", "type": "DWord" },
+      { "name": "AUOptions", "type": "DWord" }
+    ],
+    "options": [
+      { "key": "notify", "label": "Только уведомлять о загрузке и установке", "data": [0, 2] },
+      { "key": "download", "label": "Загружать автоматически, уведомлять об установке", "data": [0, 3] },
+      { "key": "auto", "label": "Загружать и устанавливать автоматически", "data": [0, 4] },
+      { "key": "off", "label": "Отключить автоматическое обновление", "data": [1, null] }
+    ]
+  },
+  {
+    "id": "wu_no_reboot",
+    "category": "Центр обновления Windows",
+    "name": "Не перезагружать автоматически при вошедших пользователях",
+    "description": "Windows не будет сама перезагружать ПК после установки обновлений, пока в системе есть пользователь.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU",
+    "values": [ { "name": "NoAutoRebootWithLoggedOnUsers", "type": "DWord" } ],
+    "options": [
+      { "key": "on", "label": "Не перезагружать", "data": [1] }
+    ]
+  },
+  {
+    "id": "wu_drivers",
+    "category": "Центр обновления Windows",
+    "name": "Драйверы через Центр обновления",
+    "description": "Запрещает установку драйверов вместе с обновлениями Windows.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+    "values": [ { "name": "ExcludeWUDriversInQualityUpdate", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Не устанавливать драйверы", "data": [1] },
+      { "key": "on", "label": "Устанавливать", "data": [0] }
+    ]
+  },
+  {
+    "id": "wu_target",
+    "category": "Центр обновления Windows",
+    "name": "Зафиксировать версию Windows",
+    "description": "Система останется на выбранной версии и не будет обновляться до следующего крупного выпуска. Работает в Pro/Enterprise/Education.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+    "values": [
+      { "name": "TargetReleaseVersion", "type": "DWord" },
+      { "name": "ProductVersion", "type": "String" },
+      { "name": "TargetReleaseVersionInfo", "type": "String" }
+    ],
+    "options": [
+      { "key": "w10_22h2", "label": "Windows 10 22H2", "data": [1, "Windows 10", "22H2"] },
+      { "key": "w11_23h2", "label": "Windows 11 23H2", "data": [1, "Windows 11", "23H2"] },
+      { "key": "w11_24h2", "label": "Windows 11 24H2", "data": [1, "Windows 11", "24H2"] },
+      { "key": "w11_25h2", "label": "Windows 11 25H2", "data": [1, "Windows 11", "25H2"] }
+    ]
+  },
+  {
+    "id": "wu_defer_feature",
+    "category": "Центр обновления Windows",
+    "name": "Отложить обновления компонентов",
+    "description": "Откладывает крупные обновления (новые версии Windows) на заданное число дней. Pro/Enterprise/Education.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+    "values": [
+      { "name": "DeferFeatureUpdates", "type": "DWord" },
+      { "name": "DeferFeatureUpdatesPeriodInDays", "type": "DWord" }
+    ],
+    "options": [
+      { "key": "30", "label": "На 30 дней", "data": [1, 30] },
+      { "key": "90", "label": "На 90 дней", "data": [1, 90] },
+      { "key": "180", "label": "На 180 дней", "data": [1, 180] },
+      { "key": "365", "label": "На 365 дней (максимум)", "data": [1, 365] }
+    ]
+  },
+  {
+    "id": "wu_defer_quality",
+    "category": "Центр обновления Windows",
+    "name": "Отложить исправления (качественные обновления)",
+    "description": "Откладывает ежемесячные накопительные обновления. Pro/Enterprise/Education.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+    "values": [
+      { "name": "DeferQualityUpdates", "type": "DWord" },
+      { "name": "DeferQualityUpdatesPeriodInDays", "type": "DWord" }
+    ],
+    "options": [
+      { "key": "7", "label": "На 7 дней", "data": [1, 7] },
+      { "key": "14", "label": "На 14 дней", "data": [1, 14] },
+      { "key": "30", "label": "На 30 дней (максимум)", "data": [1, 30] }
+    ]
+  },
+  {
+    "id": "delivery_optimization",
+    "category": "Центр обновления Windows",
+    "name": "Оптимизация доставки (P2P-раздача обновлений)",
+    "description": "Откуда Windows может скачивать обновления и кому раздавать их.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization",
+    "values": [ { "name": "DODownloadMode", "type": "DWord" } ],
+    "options": [
+      { "key": "0", "label": "Только с серверов Microsoft (без P2P)", "data": [0] },
+      { "key": "1", "label": "P2P только в локальной сети", "data": [1] },
+      { "key": "2", "label": "P2P в пределах группы", "data": [2] },
+      { "key": "99", "label": "Простой режим (без P2P и облака)", "data": [99] }
+    ]
+  },
+  {
+    "id": "wu_msrt",
+    "category": "Центр обновления Windows",
+    "name": "Средство удаления вредоносных программ (MSRT)",
+    "description": "Не предлагать ежемесячное средство удаления вредоносных программ через Центр обновления.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\MRT",
+    "values": [ { "name": "DontOfferThroughWUAU", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Не предлагать MSRT", "data": [1] }
+    ]
+  },
+
+  {
+    "id": "uac_admin",
+    "category": "Безопасность",
+    "name": "UAC: поведение запроса для администраторов",
+    "description": "Как контроль учётных записей запрашивает повышение прав у администраторов. Стандартное значение Windows — 5.",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "noUnset": true,
+    "values": [ { "name": "ConsentPromptBehaviorAdmin", "type": "DWord" } ],
+    "options": [
+      { "key": "5", "label": "5 — Запрос согласия для сторонних программ (по умолчанию)", "data": [5] },
+      { "key": "2", "label": "2 — Всегда запрашивать согласие на защищённом рабочем столе", "data": [2] },
+      { "key": "1", "label": "1 — Запрашивать пароль на защищённом рабочем столе", "data": [1] },
+      { "key": "0", "label": "0 — Повышать без запроса (небезопасно)", "data": [0] }
+    ]
+  },
+  {
+    "id": "uac_secure_desktop",
+    "category": "Безопасность",
+    "name": "UAC: затемнение экрана (защищённый рабочий стол)",
+    "description": "Показывать запрос UAC на защищённом (затемнённом) рабочем столе.",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "noUnset": true,
+    "values": [ { "name": "PromptOnSecureDesktop", "type": "DWord" } ],
+    "options": [
+      { "key": "on", "label": "Включено (по умолчанию)", "data": [1] },
+      { "key": "off", "label": "Отключено", "data": [0] }
+    ]
+  },
+  {
+    "id": "uac_enable",
+    "category": "Безопасность",
+    "name": "UAC: контроль учётных записей целиком",
+    "description": "ВНИМАНИЕ: полное отключение UAC снижает безопасность и ломает приложения Microsoft Store. Нужна перезагрузка.",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "noUnset": true,
+    "reboot": true,
+    "values": [ { "name": "EnableLUA", "type": "DWord" } ],
+    "options": [
+      { "key": "on", "label": "Включён (по умолчанию)", "data": [1] },
+      { "key": "off", "label": "Отключён (не рекомендуется)", "data": [0] }
+    ]
+  },
+  {
+    "id": "last_username",
+    "category": "Безопасность",
+    "name": "Не показывать последнего пользователя при входе",
+    "description": "На экране входа не будет отображаться имя последнего вошедшего пользователя.",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "noUnset": true,
+    "values": [ { "name": "DontDisplayLastUserName", "type": "DWord" } ],
+    "options": [
+      { "key": "show", "label": "Показывать (по умолчанию)", "data": [0] },
+      { "key": "hide", "label": "Не показывать", "data": [1] }
+    ]
+  },
+  {
+    "id": "ctrl_alt_del",
+    "category": "Безопасность",
+    "name": "Требовать Ctrl+Alt+Del для входа",
+    "description": "Перед вводом пароля нужно нажать Ctrl+Alt+Del (защита от поддельных окон входа).",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "noUnset": true,
+    "values": [ { "name": "DisableCAD", "type": "DWord" } ],
+    "options": [
+      { "key": "require", "label": "Требовать Ctrl+Alt+Del", "data": [0] },
+      { "key": "norequire", "label": "Не требовать (по умолчанию)", "data": [1] }
+    ]
+  },
+  {
+    "id": "autorun",
+    "category": "Безопасность",
+    "name": "Автозапуск со съёмных носителей",
+    "description": "Отключает автозапуск (AutoRun/AutoPlay) для всех типов дисков — защита от вирусов на флешках.",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "values": [
+      { "name": "NoDriveTypeAutoRun", "type": "DWord" },
+      { "name": "NoAutorun", "type": "DWord" }
+    ],
+    "options": [
+      { "key": "off", "label": "Отключить автозапуск для всех дисков", "data": [255, 1] }
+    ]
+  },
+  {
+    "id": "smartscreen",
+    "category": "Безопасность",
+    "name": "SmartScreen для приложений и файлов",
+    "description": "Проверка скачанных программ фильтром SmartScreen в Проводнике.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+    "values": [
+      { "name": "EnableSmartScreen", "type": "DWord" },
+      { "name": "ShellSmartScreenLevel", "type": "String" }
+    ],
+    "options": [
+      { "key": "warn", "label": "Включить: предупреждать", "data": [1, "Warn"] },
+      { "key": "block", "label": "Включить: предупреждать и блокировать", "data": [1, "Block"] },
+      { "key": "off", "label": "Отключить", "data": [0, null] }
+    ]
+  },
+  {
+    "id": "defender_pua",
+    "category": "Безопасность",
+    "name": "Defender: защита от нежелательных программ (PUA)",
+    "description": "Блокирует потенциально нежелательные приложения (рекламное ПО, тулбары, майнеры в установщиках).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender",
+    "values": [ { "name": "PUAProtection", "type": "DWord" } ],
+    "options": [
+      { "key": "1", "label": "Блокировать", "data": [1] },
+      { "key": "2", "label": "Только аудит (журнал)", "data": [2] },
+      { "key": "0", "label": "Отключить", "data": [0] }
+    ]
+  },
+  {
+    "id": "defender_samples",
+    "category": "Безопасность",
+    "name": "Defender: отправка образцов файлов",
+    "description": "Отправлять ли подозрительные файлы в Microsoft для анализа.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Spynet",
+    "values": [ { "name": "SubmitSamplesConsent", "type": "DWord" } ],
+    "options": [
+      { "key": "0", "label": "Всегда спрашивать", "data": [0] },
+      { "key": "1", "label": "Отправлять безопасные образцы автоматически", "data": [1] },
+      { "key": "2", "label": "Никогда не отправлять", "data": [2] },
+      { "key": "3", "label": "Отправлять все образцы", "data": [3] }
+    ]
+  },
+  {
+    "id": "lockscreen_camera",
+    "category": "Безопасность",
+    "name": "Камера на экране блокировки",
+    "description": "Запрещает запуск камеры с экрана блокировки.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Personalization",
+    "values": [ { "name": "NoLockScreenCamera", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить камеру", "data": [1] }
+    ]
+  },
+  {
+    "id": "rdp",
+    "category": "Безопасность",
+    "name": "Подключения к удалённому рабочему столу (RDP)",
+    "description": "Разрешает или запрещает входящие RDP-подключения к этому ПК (сервер RDP есть только в Pro и выше).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services",
+    "values": [ { "name": "fDenyTSConnections", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить", "data": [1] },
+      { "key": "allow", "label": "Разрешить", "data": [0] }
+    ]
+  },
+  {
+    "id": "remote_assistance",
+    "category": "Безопасность",
+    "name": "Удалённый помощник (запрос помощи)",
+    "description": "Запрещает пользователям запрашивать удалённую помощь.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services",
+    "values": [ { "name": "fAllowToGetHelp", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить", "data": [0] },
+      { "key": "on", "label": "Разрешить", "data": [1] }
+    ]
+  },
+  {
+    "id": "usb_storage",
+    "category": "Безопасность",
+    "name": "Съёмные носители: полный запрет",
+    "description": "Запрещает доступ ко всем классам съёмных запоминающих устройств (флешки, внешние диски, CD/DVD). Может понадобиться перезагрузка.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\RemovableStorageDevices",
+    "values": [ { "name": "Deny_All", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить доступ", "data": [1] }
+    ]
+  },
+  {
+    "id": "usb_write",
+    "category": "Безопасность",
+    "name": "Съёмные диски: запрет записи",
+    "description": "Флешки и внешние диски доступны только для чтения.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\RemovableStorageDevices\\{53f5630d-b6bf-11d0-94f2-00a0c91efb8b}",
+    "values": [ { "name": "Deny_Write", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Только чтение", "data": [1] }
+    ]
+  },
+  {
+    "id": "wsh",
+    "category": "Безопасность",
+    "name": "Windows Script Host (.vbs, .js)",
+    "description": "Отключает выполнение скриптов VBScript/JScript — частый способ заражения через вложения.",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows Script Host\\Settings",
+    "values": [ { "name": "Enabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить WSH", "data": [0] },
+      { "key": "on", "label": "Включить", "data": [1] }
+    ]
+  },
+  {
+    "id": "ps_execution",
+    "category": "Безопасность",
+    "name": "Политика выполнения скриптов PowerShell",
+    "description": "ВНИМАНИЕ: значения «Запретить» и «AllSigned» имеют приоритет над -ExecutionPolicy Bypass и заблокируют запуск этой программы. Откат: reg delete \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\" /f",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell",
+    "values": [
+      { "name": "EnableScripts", "type": "DWord" },
+      { "name": "ExecutionPolicy", "type": "String" }
+    ],
+    "options": [
+      { "key": "remotesigned", "label": "RemoteSigned — локальные без подписи, скачанные с подписью", "data": [1, "RemoteSigned"] },
+      { "key": "allsigned", "label": "AllSigned — только подписанные", "data": [1, "AllSigned"] },
+      { "key": "unrestricted", "label": "Unrestricted — все скрипты", "data": [1, "Unrestricted"] },
+      { "key": "off", "label": "Запретить выполнение скриптов", "data": [0, null] }
+    ]
+  },
+
+  {
+    "id": "llmnr",
+    "category": "Сеть",
+    "name": "LLMNR (многоадресное разрешение имён)",
+    "description": "Отключение LLMNR защищает от перехвата учётных данных в локальной сети (атаки Responder).",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient",
+    "values": [ { "name": "EnableMulticast", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить LLMNR", "data": [0] }
+    ]
+  },
+  {
+    "id": "insecure_guest",
+    "category": "Сеть",
+    "name": "Гостевой вход SMB без пароля",
+    "description": "Разрешает подключение к сетевым папкам/NAS без пароля (в Windows 11 24H2 по умолчанию запрещено). Небезопасно.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LanmanWorkstation",
+    "values": [ { "name": "AllowInsecureGuestAuth", "type": "DWord" } ],
+    "options": [
+      { "key": "allow", "label": "Разрешить гостевой вход", "data": [1] },
+      { "key": "deny", "label": "Запретить", "data": [0] }
+    ]
+  },
+  {
+    "id": "smb_signing",
+    "category": "Сеть",
+    "name": "Обязательная подпись SMB (клиент)",
+    "description": "В Windows 11 24H2 подпись SMB обязательна, из-за чего старые NAS и роутеры перестают открываться. Отключение снижает защиту.",
+    "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters",
+    "noUnset": true,
+    "values": [ { "name": "RequireSecuritySignature", "type": "DWord" } ],
+    "options": [
+      { "key": "on", "label": "Требовать подпись", "data": [1] },
+      { "key": "off", "label": "Не требовать", "data": [0] }
+    ]
+  },
+
+  {
+    "id": "task_manager",
+    "category": "Ограничения пользователя",
+    "name": "Запретить Диспетчер задач",
+    "description": "Текущему пользователю запрещается запуск Диспетчера задач.",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "values": [ { "name": "DisableTaskMgr", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить", "data": [1] }
+    ]
+  },
+  {
+    "id": "regedit",
+    "category": "Ограничения пользователя",
+    "name": "Запретить Редактор реестра",
+    "description": "Запрещает запуск regedit. Эта программа продолжит работать и сможет снять запрет.",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "values": [ { "name": "DisableRegistryTools", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить regedit", "data": [1] },
+      { "key": "deny_ui", "label": "Запретить только интерфейс (regedit /s работает)", "data": [2] }
+    ]
+  },
+  {
+    "id": "cmd",
+    "category": "Ограничения пользователя",
+    "name": "Запретить командную строку",
+    "description": "ВНИМАНИЕ: при полном запрете перестанет работать Start-PolicyManager.bat — запускайте PolicyManager.ps1 через ПКМ → «Выполнить с помощью PowerShell».",
+    "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\System",
+    "values": [ { "name": "DisableCMD", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить cmd и .bat-файлы", "data": [1] },
+      { "key": "deny_ui", "label": "Запретить cmd, но разрешить .bat-файлы", "data": [2] }
+    ]
+  },
+  {
+    "id": "control_panel",
+    "category": "Ограничения пользователя",
+    "name": "Запретить Панель управления и Параметры",
+    "description": "Блокирует доступ к Панели управления и приложению «Параметры».",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "values": [ { "name": "NoControlPanel", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить", "data": [1] }
+    ]
+  },
+  {
+    "id": "run_dialog",
+    "category": "Ограничения пользователя",
+    "name": "Убрать «Выполнить» (Win+R)",
+    "description": "Отключает диалог «Выполнить».",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "values": [ { "name": "NoRun", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Убрать", "data": [1] }
+    ]
+  },
+  {
+    "id": "no_close",
+    "category": "Ограничения пользователя",
+    "name": "Убрать кнопки завершения работы",
+    "description": "Скрывает «Завершение работы», «Перезагрузка», «Спящий режим» в меню Пуск.",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "values": [ { "name": "NoClose", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Убрать", "data": [1] }
+    ]
+  },
+  {
+    "id": "wallpaper",
+    "category": "Ограничения пользователя",
+    "name": "Запретить смену обоев",
+    "description": "Пользователь не сможет изменить фон рабочего стола.",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\ActiveDesktop",
+    "values": [ { "name": "NoChangingWallPaper", "type": "DWord" } ],
+    "options": [
+      { "key": "deny", "label": "Запретить", "data": [1] }
+    ]
+  },
+  {
+    "id": "recent_docs",
+    "category": "Ограничения пользователя",
+    "name": "Не хранить список недавних документов",
+    "description": "Windows не будет запоминать недавно открытые файлы.",
+    "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "values": [ { "name": "NoRecentDocsHistory", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Не хранить", "data": [1] }
+    ]
+  },
+
+  {
+    "id": "widgets",
+    "category": "Интерфейс и система",
+    "name": "Виджеты (Windows 11)",
+    "description": "Отключает панель виджетов и кнопку на панели задач.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Dsh",
+    "values": [ { "name": "AllowNewsAndInterests", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить виджеты", "data": [0] }
+    ]
+  },
+  {
+    "id": "news_feeds",
+    "category": "Интерфейс и система",
+    "name": "Новости и интересы (Windows 10)",
+    "description": "Убирает погоду и новости с панели задач Windows 10.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Feeds",
+    "values": [ { "name": "EnableFeeds", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [0] }
+    ]
+  },
+  {
+    "id": "notification_center",
+    "category": "Интерфейс и система",
+    "name": "Центр уведомлений",
+    "description": "Отключает центр уведомлений для текущего пользователя (нужен перезапуск Проводника или выход из системы).",
+    "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer",
+    "values": [ { "name": "DisableNotificationCenter", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [1] }
+    ]
+  },
+  {
+    "id": "start_recommended",
+    "category": "Интерфейс и система",
+    "name": "Раздел «Рекомендуем» в меню Пуск (Windows 11)",
+    "description": "Скрывает раздел «Рекомендуем». Полностью работает в Education/SE и на новых сборках Pro/Enterprise.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
+    "values": [ { "name": "HideRecommendedSection", "type": "DWord" } ],
+    "options": [
+      { "key": "hide", "label": "Скрыть", "data": [1] }
+    ]
+  },
+  {
+    "id": "lock_screen",
+    "category": "Интерфейс и система",
+    "name": "Экран блокировки",
+    "description": "Сразу показывать окно входа без экрана блокировки. Работает в Enterprise/Education.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Personalization",
+    "values": [ { "name": "NoLockScreen", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Не показывать экран блокировки", "data": [1] }
+    ]
+  },
+  {
+    "id": "game_dvr",
+    "category": "Интерфейс и система",
+    "name": "Запись игр (Game DVR / Xbox Game Bar)",
+    "description": "Отключает фоновую запись игр, которая может снижать FPS.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR",
+    "values": [ { "name": "AllowGameDVR", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [0] }
+    ]
+  },
+  {
+    "id": "onedrive",
+    "category": "Интерфейс и система",
+    "name": "OneDrive",
+    "description": "Запрещает использование OneDrive для хранения файлов.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive",
+    "values": [ { "name": "DisableFileSyncNGSC", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить OneDrive", "data": [1] }
+    ]
+  },
+  {
+    "id": "store_autoupdate",
+    "category": "Интерфейс и система",
+    "name": "Автообновление приложений Microsoft Store",
+    "description": "Включает или отключает автоматическое обновление приложений из Store.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsStore",
+    "values": [ { "name": "AutoDownload", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить автообновление", "data": [2] },
+      { "key": "on", "label": "Включить", "data": [4] }
+    ]
+  },
+  {
+    "id": "store",
+    "category": "Интерфейс и система",
+    "name": "Microsoft Store",
+    "description": "Запрещает запуск Microsoft Store. Работает в Enterprise/Education.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\WindowsStore",
+    "values": [ { "name": "RemoveWindowsStore", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить Store", "data": [1] }
+    ]
+  },
+  {
+    "id": "long_paths",
+    "category": "Интерфейс и система",
+    "name": "Длинные пути (более 260 символов)",
+    "description": "Разрешает приложениям Win32 работать с путями длиннее 260 символов.",
+    "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem",
+    "noUnset": true,
+    "values": [ { "name": "LongPathsEnabled", "type": "DWord" } ],
+    "options": [
+      { "key": "on", "label": "Включить", "data": [1] },
+      { "key": "off", "label": "Отключить (по умолчанию)", "data": [0] }
+    ]
+  },
+
+  {
+    "id": "edge_first_run",
+    "category": "Microsoft Edge",
+    "name": "Мастер первого запуска",
+    "description": "Не показывать приветственный мастер при первом запуске Edge.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+    "values": [ { "name": "HideFirstRunExperience", "type": "DWord" } ],
+    "options": [
+      { "key": "hide", "label": "Скрыть", "data": [1] }
+    ]
+  },
+  {
+    "id": "edge_startup_boost",
+    "category": "Microsoft Edge",
+    "name": "Ускорение запуска (Startup Boost)",
+    "description": "Edge не будет запускаться в фоне при входе в Windows.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+    "values": [ { "name": "StartupBoostEnabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [0] },
+      { "key": "on", "label": "Включить", "data": [1] }
+    ]
+  },
+  {
+    "id": "edge_background",
+    "category": "Microsoft Edge",
+    "name": "Работа в фоне после закрытия",
+    "description": "Запрещает Edge работать в фоне после закрытия последнего окна.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+    "values": [ { "name": "BackgroundModeEnabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [0] },
+      { "key": "on", "label": "Включить", "data": [1] }
+    ]
+  },
+  {
+    "id": "edge_shopping",
+    "category": "Microsoft Edge",
+    "name": "Помощник по покупкам",
+    "description": "Отключает купоны и сравнение цен в Edge.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+    "values": [ { "name": "EdgeShoppingAssistantEnabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [0] }
+    ]
+  },
+  {
+    "id": "edge_sidebar",
+    "category": "Microsoft Edge",
+    "name": "Боковая панель (и Copilot в Edge)",
+    "description": "Убирает боковую панель Edge вместе с кнопкой Copilot.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+    "values": [ { "name": "HubsSidebarEnabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Отключить", "data": [0] }
+    ]
+  },
+  {
+    "id": "edge_personalization",
+    "category": "Microsoft Edge",
+    "name": "Персонализация рекламы по истории браузера",
+    "description": "Запрещает Edge отправлять историю просмотров для персонализации рекламы и новостей.",
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge",
+    "values": [ { "name": "PersonalizationReportingEnabled", "type": "DWord" } ],
+    "options": [
+      { "key": "off", "label": "Запретить", "data": [0] }
+    ]
+  }
+]
+'@
+
+$EmbeddedProfiles = @{
+    'privacy.json' = @'
+{
+  "name": "Конфиденциальность",
+  "description": "Минимум телеметрии, рекламы и ИИ-функций",
+  "policies": {
+    "telemetry": "1",
+    "feedback_notifications": "off",
+    "advertising_id": "off",
+    "activity_history": "off",
+    "location": "off",
+    "input_personalization": "off",
+    "error_reporting": "off",
+    "cortana": "off",
+    "web_search": "off",
+    "consumer_features": "off",
+    "tips": "off",
+    "spotlight": "off",
+    "copilot": "off",
+    "recall": "off",
+    "widgets": "off",
+    "news_feeds": "off",
+    "edge_shopping": "off",
+    "edge_personalization": "off",
+    "edge_startup_boost": "off",
+    "edge_background": "off"
+  }
+}
+'@
+    'security.json' = @'
+{
+  "name": "Усиленная безопасность",
+  "description": "Защита от типовых атак: флешки, скрипты, LLMNR, нежелательное ПО",
+  "policies": {
+    "uac_admin": "2",
+    "uac_secure_desktop": "on",
+    "autorun": "off",
+    "smartscreen": "warn",
+    "defender_pua": "1",
+    "lockscreen_camera": "off",
+    "remote_assistance": "off",
+    "wsh": "off",
+    "llmnr": "off",
+    "insecure_guest": "deny",
+    "smb_signing": "on",
+    "ctrl_alt_del": "require",
+    "last_username": "hide"
+  }
+}
+'@
+    'updates-control.json' = @'
+{
+  "name": "Контроль обновлений",
+  "description": "Обновления скачиваются, но ставятся по согласию; без драйверов и без авто-перезагрузки",
+  "policies": {
+    "wu_auto": "download",
+    "wu_no_reboot": "on",
+    "wu_drivers": "off",
+    "wu_defer_feature": "90",
+    "delivery_optimization": "0"
+  }
+}
+'@
+}
 
 #region Папка данных и журнал
 
@@ -87,6 +980,20 @@ function Initialize-DataDir {
 $DataDir   = Initialize-DataDir
 $BackupDir = Join-Path $DataDir 'backups'
 $LogFile   = Join-Path $DataDir 'PolicyManager.log'
+
+# Если рядом с программой нет файлов ресурсов (запуск одним файлом или .exe) — распаковываем встроенные копии
+if (-not ($CatalogFile -and (Test-Path -LiteralPath $CatalogFile))) {
+    $CatalogFile = Join-Path $DataDir 'policies.json'
+    if (-not (Test-Path -LiteralPath $CatalogFile)) { [IO.File]::WriteAllText($CatalogFile, $EmbeddedPoliciesJson, (New-Object Text.UTF8Encoding $false)) }
+}
+if (-not ($ProfilesDir -and (Test-Path -LiteralPath $ProfilesDir))) {
+    $ProfilesDir = Join-Path $DataDir 'profiles'
+    New-Item -ItemType Directory -Path $ProfilesDir -Force | Out-Null
+    foreach ($name in $EmbeddedProfiles.Keys) {
+        $pf = Join-Path $ProfilesDir $name
+        if (-not (Test-Path -LiteralPath $pf)) { [IO.File]::WriteAllText($pf, $EmbeddedProfiles[$name], (New-Object Text.UTF8Encoding $false)) }
+    }
+}
 
 function Write-Log([string]$Message) {
     try {
