@@ -2305,7 +2305,7 @@ $MainWindowXaml = @'
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock FontSize="11" FontWeight="Bold" Foreground="#6B7280" Text="РАЗРАБОТЧИК"/>
-                <TextBlock Text="ООО Лига опасного интернета" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                <TextBlock Text="ЗАО Лига Опасного интернета" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
               </StackPanel>
             </Border>
 
