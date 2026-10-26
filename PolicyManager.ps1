@@ -442,6 +442,351 @@ function Get-OSInfo {
 
 #endregion
 
+#region Ограничения для пользователей без прав администратора
+
+# Локальная групповая политика «Не администраторы» (MLGPO, Windows Pro и выше):
+# применяется ко всем учётным записям вне группы «Администраторы», включая созданные позже.
+
+function Get-System32Dir {
+    # 32-битный процесс на 64-битной Windows видит System32 как SysWOW64
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) { return (Join-Path $env:windir 'Sysnative') }
+    return (Join-Path $env:windir 'System32')
+}
+
+$NonAdminGpoDir  = Join-Path (Get-System32Dir) 'GroupPolicyUsers\S-1-5-32-545'
+$NonAdminPolFile = Join-Path $NonAdminGpoDir 'User\Registry.pol'
+$HostsFile       = Join-Path $env:windir 'System32\drivers\etc\hosts'
+$HostsBegin      = '# >>> Policy Manager: blocked sites'
+$HostsEnd        = '# <<< Policy Manager'
+
+$ExplorerPolicyKey = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
+$SystemPolicyKey   = 'Software\Microsoft\Windows\CurrentVersion\Policies\System'
+$RestrictRunKey    = "$ExplorerPolicyKey\RestrictRun"
+$SiteListKeys      = @(
+    'Software\Policies\Microsoft\Edge\URLBlocklist',
+    'Software\Policies\Google\Chrome\URLBlocklist',
+    'Software\Policies\YandexBrowser\URLBlocklist'
+)
+$FirefoxBlockKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Block'
+
+$DefaultAllowedPrograms = @(
+    'explorer.exe', 'msedge.exe', 'chrome.exe', 'firefox.exe', 'notepad.exe', 'mspaint.exe', 'calc.exe',
+    'SnippingTool.exe', 'WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'OneDrive.exe', 'SecurityHealthSystray.exe'
+)
+
+function New-PolValueRef([string]$Key, [string]$Name, [uint32]$Data) {
+    [pscustomobject]@{ Key = $Key; Name = $Name; Data = $Data }
+}
+
+$Lockdowns = @(
+    [pscustomobject]@{ Id = 'cmd'; Default = $true; Label = 'Запретить командную строку и .bat-файлы'
+        Values = @((New-PolValueRef 'Software\Policies\Microsoft\Windows\System' 'DisableCMD' 1)) }
+    [pscustomobject]@{ Id = 'regedit'; Default = $true; Label = 'Запретить редактор реестра'
+        Values = @((New-PolValueRef $SystemPolicyKey 'DisableRegistryTools' 1)) }
+    [pscustomobject]@{ Id = 'taskmgr'; Default = $true; Label = 'Запретить Диспетчер задач (через него можно запустить любую программу)'
+        Values = @((New-PolValueRef $SystemPolicyKey 'DisableTaskMgr' 1)) }
+    [pscustomobject]@{ Id = 'control'; Default = $true; Label = 'Запретить Панель управления и Параметры Windows'
+        Values = @((New-PolValueRef $ExplorerPolicyKey 'NoControlPanel' 1)) }
+    [pscustomobject]@{ Id = 'run'; Default = $false; Label = 'Убрать окно «Выполнить» (Win+R)'
+        Values = @((New-PolValueRef $ExplorerPolicyKey 'NoRun' 1)) }
+    [pscustomobject]@{ Id = 'incognito'; Default = $true; Label = 'Запретить режим инкогнито в браузерах'
+        Values = @(
+            (New-PolValueRef 'Software\Policies\Microsoft\Edge' 'InPrivateModeAvailability' 1),
+            (New-PolValueRef 'Software\Policies\Google\Chrome' 'IncognitoModeAvailability' 1),
+            (New-PolValueRef 'Software\Policies\YandexBrowser' 'IncognitoModeAvailability' 1),
+            (New-PolValueRef 'Software\Policies\Mozilla\Firefox' 'DisablePrivateBrowsing' 1)) }
+    [pscustomobject]@{ Id = 'downloads'; Default = $false; Label = 'Запретить скачивание файлов в Edge/Chrome/Яндекс (скачанный .exe можно запустить из браузера в обход списка программ)'
+        Values = @(
+            (New-PolValueRef 'Software\Policies\Microsoft\Edge' 'DownloadRestrictions' 3),
+            (New-PolValueRef 'Software\Policies\Google\Chrome' 'DownloadRestrictions' 3),
+            (New-PolValueRef 'Software\Policies\YandexBrowser' 'DownloadRestrictions' 3)) }
+)
+
+# Какие записи Registry.pol принадлежат этой программе (остальные сохраняются без изменений)
+$ManagedPolKeys = @($RestrictRunKey) + $SiteListKeys + @($FirefoxBlockKey)
+$ManagedPolPairs = @{ "$ExplorerPolicyKey|RestrictRun" = $true }
+foreach ($l in $Lockdowns) { foreach ($v in $l.Values) { $ManagedPolPairs["$($v.Key)|$($v.Name)"] = $true } }
+
+#region Формат Registry.pol
+
+function Read-PolFile([string]$File) {
+    $list = New-Object System.Collections.Generic.List[object]
+    if (-not (Test-Path -LiteralPath $File)) { return , $list }
+    $b = [IO.File]::ReadAllBytes($File)
+    if ($b.Length -lt 8) { return , $list }
+    if ([BitConverter]::ToUInt32($b, 0) -ne 0x67655250) { throw "Файл повреждён или имеет неизвестный формат: $File" }
+    $enc = [Text.Encoding]::Unicode
+    $pos = 8
+    while ($pos + 1 -lt $b.Length) {
+        if ([BitConverter]::ToUInt16($b, $pos) -ne 0x5B) { throw "Ошибка разбора $File (смещение $pos)" }
+        $pos += 2
+        $fields = @()
+        foreach ($f in 1..2) {
+            $start = $pos
+            while ($pos + 1 -lt $b.Length -and [BitConverter]::ToUInt16($b, $pos) -notin @(0, 0x3B)) { $pos += 2 }
+            $fields += $enc.GetString($b, $start, $pos - $start)
+            if ([BitConverter]::ToUInt16($b, $pos) -eq 0) { $pos += 2 }
+            $pos += 2
+        }
+        $type = [BitConverter]::ToUInt32($b, $pos); $pos += 6
+        $size = [BitConverter]::ToUInt32($b, $pos); $pos += 6
+        $data = New-Object byte[] $size
+        [Array]::Copy($b, $pos, $data, 0, $size)
+        $pos += $size + 2
+        $list.Add([pscustomobject]@{ Key = $fields[0]; Value = $fields[1]; Type = $type; Data = $data })
+    }
+    return , $list
+}
+
+function Write-PolFile([string]$File, $Entries) {
+    $enc = [Text.Encoding]::Unicode
+    $ms = New-Object IO.MemoryStream
+    $bw = New-Object IO.BinaryWriter($ms)
+    $bw.Write([uint32]0x67655250)
+    $bw.Write([uint32]1)
+    foreach ($e in $Entries) {
+        $bw.Write($enc.GetBytes('['))
+        $bw.Write($enc.GetBytes($e.Key + [char]0))
+        $bw.Write($enc.GetBytes(';'))
+        $bw.Write($enc.GetBytes($e.Value + [char]0))
+        $bw.Write($enc.GetBytes(';'))
+        $bw.Write([uint32]$e.Type)
+        $bw.Write($enc.GetBytes(';'))
+        $bw.Write([uint32]$e.Data.Length)
+        $bw.Write($enc.GetBytes(';'))
+        $bw.Write([byte[]]$e.Data)
+        $bw.Write($enc.GetBytes(']'))
+    }
+    $bw.Flush()
+    $dir = Split-Path -Parent $File
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    [IO.File]::WriteAllBytes($File, $ms.ToArray())
+    $bw.Close()
+}
+
+function New-PolEntry([string]$Key, [string]$Value, [string]$Type, $Data) {
+    if ($Type -eq 'DWord') { $t = 4; $bytes = [BitConverter]::GetBytes([uint32]$Data) }
+    else { $t = 1; $bytes = [Text.Encoding]::Unicode.GetBytes([string]$Data + [char]0) }
+    [pscustomobject]@{ Key = $Key; Value = $Value; Type = [uint32]$t; Data = $bytes }
+}
+
+function Get-PolEntryValue($Entry) {
+    if ($Entry.Type -eq 4 -and $Entry.Data.Length -ge 4) { return [BitConverter]::ToUInt32($Entry.Data, 0) }
+    if ($Entry.Type -eq 1 -or $Entry.Type -eq 2) { return [Text.Encoding]::Unicode.GetString($Entry.Data).TrimEnd([char]0) }
+    return $null
+}
+
+function Find-PolEntry($Entries, [string]$Key, [string]$Name) {
+    $found = $null
+    foreach ($e in $Entries) { if ($e.Key -eq $Key -and $e.Value -eq $Name) { $found = $e } }
+    return $found
+}
+
+function Get-PolList($Entries, [string]$Key) {
+    $items = foreach ($e in $Entries) {
+        if ($e.Key -eq $Key -and -not $e.Value.StartsWith('**')) {
+            $n = 0
+            [pscustomobject]@{ Order = $(if ([int]::TryParse($e.Value, [ref]$n)) { $n } else { [int]::MaxValue }); Text = (Get-PolEntryValue $e) }
+        }
+    }
+    return @($items | Sort-Object Order | ForEach-Object { $_.Text })
+}
+
+# Список значений «1», «2», ... с предварительной очисткой раздела, как это делает gpedit
+function Add-PolList($List, [string]$Key, $Items) {
+    $List.Add((New-PolEntry $Key '**delvals.' 'String' ' '))
+    $i = 1
+    foreach ($item in $Items) { $List.Add((New-PolEntry $Key "$i" 'String' $item)); $i++ }
+}
+
+function Test-ManagedPolEntry($Entry) {
+    if ($ManagedPolKeys -contains $Entry.Key) { return $true }
+    $name = $Entry.Value -replace '^\*\*del\.', ''
+    return $ManagedPolPairs.ContainsKey("$($Entry.Key)|$name")
+}
+
+# gpt.ini: версия пользовательской части хранится в старших 16 битах; её увеличение заставляет Windows перечитать политику
+function Update-GptIni([string]$Dir) {
+    $file = Join-Path $Dir 'gpt.ini'
+    $regExt = '[{35378EAC-683F-11D2-A89A-00C04FBBCFA2}{D02B1F73-3407-48AE-BA88-E8213C6761F1}]'
+    $lines = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $file) { foreach ($l in [IO.File]::ReadAllLines($file)) { $lines.Add($l) } }
+    if (-not ($lines | Where-Object { $_ -match '^\s*\[General\]' })) { $lines.Insert(0, '[General]') }
+    $version = [int64]0
+    $hasExt = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*Version\s*=\s*(\d+)') { $version = [int64]$Matches[1] }
+        if ($lines[$i] -match '^\s*gPCUserExtensionNames\s*=\s*(.*)$') {
+            $hasExt = $true
+            if ($Matches[1] -notmatch '35378EAC-683F-11D2-A89A-00C04FBBCFA2') { $lines[$i] = 'gPCUserExtensionNames=' + $regExt + $Matches[1].Trim() }
+        }
+    }
+    $newVersion = ([Math]::Floor($version / 65536) + 1) * 65536 + ($version % 65536)
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($l in $lines) { if ($l -notmatch '^\s*Version\s*=') { $out.Add($l) } }
+    $general = [Math]::Max(0, $out.FindIndex([Predicate[string]] { param($x) $x -match '^\s*\[General\]' }))
+    $out.Insert($general + 1, "Version=$newVersion")
+    if (-not $hasExt) { $out.Insert($general + 1, "gPCUserExtensionNames=$regExt") }
+    if (-not ($out | Where-Object { $_ -match '^\s*gPCFunctionalityVersion' })) { $out.Insert($general + 1, 'gPCFunctionalityVersion=2') }
+    if (-not (Test-Path -LiteralPath $Dir)) { New-Item -ItemType Directory -Path $Dir -Force | Out-Null }
+    [IO.File]::WriteAllLines($file, $out.ToArray(), [Text.Encoding]::ASCII)
+}
+
+#endregion
+
+#region Файл hosts
+
+function Get-HostsBlockedSites {
+    if (-not (Test-Path -LiteralPath $HostsFile)) { return @() }
+    $inside = $false
+    $sites = foreach ($l in [IO.File]::ReadAllLines($HostsFile, [Text.Encoding]::Default)) {
+        if ($l -eq $HostsBegin) { $inside = $true; continue }
+        if ($l -eq $HostsEnd) { $inside = $false; continue }
+        if ($inside -and $l -match '^\s*0\.0\.0\.0\s+(\S+)' -and $Matches[1] -notlike 'www.*') { $Matches[1] }
+    }
+    return @($sites)
+}
+
+function Set-HostsBlock([string[]]$Domains) {
+    $enc = [Text.Encoding]::Default
+    $lines = if (Test-Path -LiteralPath $HostsFile) { [IO.File]::ReadAllLines($HostsFile, $enc) } else { @() }
+    $out = New-Object System.Collections.Generic.List[string]
+    $inside = $false
+    foreach ($l in $lines) {
+        if ($l -eq $HostsBegin) { $inside = $true; continue }
+        if ($l -eq $HostsEnd) { $inside = $false; continue }
+        if (-not $inside) { $out.Add($l) }
+    }
+    while ($out.Count -gt 0 -and -not $out[$out.Count - 1].Trim()) { $out.RemoveAt($out.Count - 1) }
+    if ($Domains.Count -gt 0) {
+        $out.Add('')
+        $out.Add($HostsBegin)
+        foreach ($d in $Domains) {
+            $out.Add("0.0.0.0 $d")
+            if ($d -notlike 'www.*') { $out.Add("0.0.0.0 www.$d") }
+        }
+        $out.Add($HostsEnd)
+    }
+    $attr = (Get-Item -LiteralPath $HostsFile -ErrorAction SilentlyContinue).Attributes
+    if ($attr -band [IO.FileAttributes]::ReadOnly) { Set-ItemProperty -LiteralPath $HostsFile -Name Attributes -Value ($attr -bxor [IO.FileAttributes]::ReadOnly) }
+    [IO.File]::WriteAllText($HostsFile, (($out -join "`r`n") + "`r`n"), $enc)
+    Start-Process ipconfig.exe -ArgumentList '/flushdns' -WindowStyle Hidden -Wait
+}
+
+#endregion
+
+function ConvertTo-Domain([string]$Text) {
+    $d = $Text.Trim().ToLowerInvariant()
+    if (-not $d -or $d.StartsWith('#')) { return $null }
+    $d = $d -replace '^[a-z]+://', ''
+    $d = ($d -split '[/?#:]')[0] -replace '^\*\.', '' -replace '^www\.', ''
+    if (-not $d) { return $null }
+    try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес сайта: $Text" }
+    return $d
+}
+
+function ConvertTo-ExeName([string]$Text) {
+    $n = $Text.Trim().Trim('"')
+    if (-not $n -or $n.StartsWith('#')) { return $null }
+    $n = [IO.Path]::GetFileName($n)
+    if ($n -notmatch '\.exe$') { $n += '.exe' }
+    return $n
+}
+
+function Get-UniqueText($Items) {
+    $seen = @{}
+    return @(foreach ($i in $Items) { if ($i -and -not $seen.ContainsKey($i)) { $seen[$i] = $true; $i } })
+}
+
+function Get-LocalUserInfo {
+    $adminSids = @{}
+    try {
+        $grpName = ([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')).Translate([Security.Principal.NTAccount]).Value.Split('\')[-1]
+        $grp = [ADSI]"WinNT://$env:COMPUTERNAME/$grpName,group"
+        foreach ($m in @($grp.Invoke('Members'))) {
+            $sidBytes = $m.GetType().InvokeMember('objectSid', 'GetProperty', $null, $m, $null)
+            $adminSids[([Security.Principal.SecurityIdentifier]::new([byte[]]$sidBytes, 0)).Value] = $true
+        }
+    } catch { }
+    $computer = [ADSI]"WinNT://$env:COMPUTERNAME,computer"
+    foreach ($u in $computer.Children) {
+        if ($u.SchemaClassName -ne 'User') { continue }
+        if ([int]$u.UserFlags.Value -band 2) { continue }   # учётная запись отключена
+        $sid = ([Security.Principal.SecurityIdentifier]::new([byte[]]$u.objectSid.Value, 0)).Value
+        [pscustomobject]@{ Name = [string]$u.Name.Value; IsAdmin = $adminSids.ContainsKey($sid) }
+    }
+}
+
+function Get-NonAdminRestrictions {
+    $entries = Read-PolFile $NonAdminPolFile
+    $rr = Find-PolEntry $entries $ExplorerPolicyKey 'RestrictRun'
+    $lock = @{}
+    foreach ($l in $Lockdowns) {
+        $all = $true
+        foreach ($v in $l.Values) {
+            $e = Find-PolEntry $entries $v.Key $v.Name
+            if (-not $e -or (Get-PolEntryValue $e) -ne $v.Data) { $all = $false }
+        }
+        $lock[$l.Id] = $all
+    }
+    $sites = Get-PolList $entries $SiteListKeys[0]
+    $hostsSites = Get-HostsBlockedSites
+    [pscustomobject]@{
+        Applied          = @($entries | Where-Object { Test-ManagedPolEntry $_ }).Count -gt 0
+        WhitelistEnabled = [bool]($rr -and (Get-PolEntryValue $rr) -eq 1)
+        Programs         = @(Get-PolList $entries $RestrictRunKey)
+        SitesEnabled     = $sites.Count -gt 0
+        Sites            = $(if ($sites.Count) { $sites } else { $hostsSites })
+        HostsEnabled     = $hostsSites.Count -gt 0
+        Lockdowns        = $lock
+    }
+}
+
+function Save-NonAdminPol($Entries) {
+    if (Test-Path -LiteralPath $NonAdminPolFile) {
+        Copy-Item -LiteralPath $NonAdminPolFile -Destination (Join-Path $BackupDir ('nonadmins_registry_{0:yyyyMMdd_HHmmss}.pol' -f (Get-Date))) -Force
+    }
+    Write-PolFile $NonAdminPolFile $Entries
+    Update-GptIni $NonAdminGpoDir
+}
+
+function Set-NonAdminRestrictions($Config) {
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
+
+    if ($Config.WhitelistEnabled) {
+        $result.Add((New-PolEntry $ExplorerPolicyKey 'RestrictRun' 'DWord' 1))
+        Add-PolList $result $RestrictRunKey $Config.Programs
+    }
+    if ($Config.SitesEnabled) {
+        foreach ($k in $SiteListKeys) { Add-PolList $result $k $Config.Sites }
+        Add-PolList $result $FirefoxBlockKey @(foreach ($d in $Config.Sites) { "*://$d/*"; "*://*.$d/*" })
+    }
+    foreach ($l in $Lockdowns) {
+        if ($Config.Lockdowns[$l.Id]) {
+            foreach ($v in $l.Values) { $result.Add((New-PolEntry $v.Key $v.Name 'DWord' $v.Data)) }
+        }
+    }
+    Save-NonAdminPol $result
+
+    if ($Config.SitesEnabled -and $Config.HostsEnabled) { Set-HostsBlock $Config.Sites }
+    elseif ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
+
+    $on = @($Lockdowns | Where-Object { $Config.Lockdowns[$_.Id] } | ForEach-Object { $_.Id }) -join ', '
+    Write-Log ("Ограничения для не-администраторов: программы={0} [{1}]; сайты={2} [{3}]; hosts={4}; запреты=[{5}]" -f `
+        $Config.WhitelistEnabled, ($Config.Programs -join ' '), $Config.SitesEnabled, ($Config.Sites -join ' '), $Config.HostsEnabled, $on)
+}
+
+function Clear-NonAdminRestrictions {
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
+    Save-NonAdminPol $result
+    if ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
+    Write-Log 'Ограничения для не-администраторов сняты'
+}
+
+#endregion
+
 #region Режим командной строки
 
 function Invoke-Cli {
@@ -491,7 +836,7 @@ function Show-MainWindow {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "$AppName $AppVersion — управление политиками Windows"
-    $form.Size = New-Object System.Drawing.Size(1200, 780)
+    $form.Size = New-Object System.Drawing.Size(1200, 840)
     $form.MinimumSize = New-Object System.Drawing.Size(900, 600)
     $form.StartPosition = 'CenterScreen'
     $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -714,6 +1059,8 @@ function Show-MainWindow {
     $tabs.Dock = 'Fill'
     $tabCatalog = New-Object System.Windows.Forms.TabPage('Каталог политик')
     $tabRegistry = New-Object System.Windows.Forms.TabPage('Все политики в реестре')
+    $tabRestrict = New-Object System.Windows.Forms.TabPage('Ограничения пользователей')
+    $tabs.TabPages.Add($tabRestrict)
     $tabs.TabPages.Add($tabCatalog)
     $tabs.TabPages.Add($tabRegistry)
 
@@ -936,6 +1283,261 @@ function Show-MainWindow {
     $regLayout.Controls.Add($lv2, 0, 1)
 
     $script:RegScan = @()
+
+    #endregion
+
+    #region Вкладка «Ограничения пользователей»
+
+    function New-Label([string]$Text) {
+        $l = New-Object System.Windows.Forms.Label
+        $l.Text = $Text
+        $l.AutoSize = $true
+        $l.Margin = New-Object System.Windows.Forms.Padding(3, 6, 3, 3)
+        return $l
+    }
+    function New-Button([string]$Text) {
+        $b = New-Object System.Windows.Forms.Button
+        $b.Text = $Text
+        $b.AutoSize = $true
+        return $b
+    }
+    function New-ListBox {
+        $t = New-Object System.Windows.Forms.TextBox
+        $t.Multiline = $true
+        $t.AcceptsReturn = $true
+        $t.ScrollBars = 'Vertical'
+        $t.Dock = 'Fill'
+        $t.Font = New-Object System.Drawing.Font('Consolas', 10)
+        return $t
+    }
+
+    $rl = New-Object System.Windows.Forms.TableLayoutPanel
+    $rl.Dock = 'Fill'
+    $rl.ColumnCount = 2
+    $rl.RowCount = 5
+    $rl.Padding = New-Object System.Windows.Forms.Padding(4)
+    [void]$rl.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 50)))
+    [void]$rl.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 50)))
+    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 56)))
+    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 120)))
+    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
+    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 175)))
+    [void]$rl.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+    $tabRestrict.Controls.Add($rl)
+
+    $lblRInfo = New-Object System.Windows.Forms.Label
+    $lblRInfo.Dock = 'Fill'
+    $lblRInfo.Text = 'Ограничения действуют на всех пользователей БЕЗ прав администратора (локальная групповая политика «Не администраторы»), в том числе на учётные записи, созданные позже. Администраторы не затрагиваются. Изменения вступают в силу, когда пользователь выйдет из системы и войдёт снова.'
+    if ($os.IsHome) {
+        $lblRInfo.Text = 'ВНИМАНИЕ: в Windows Home политика «Не администраторы» может не применяться. ' + $lblRInfo.Text
+        $lblRInfo.ForeColor = [System.Drawing.Color]::DarkRed
+    }
+    $rl.Controls.Add($lblRInfo, 0, 0)
+    $rl.SetColumnSpan($lblRInfo, 2)
+
+    $lvUsers = New-Object System.Windows.Forms.ListView
+    $lvUsers.Dock = 'Fill'
+    $lvUsers.View = 'Details'
+    $lvUsers.FullRowSelect = $true
+    [void]$lvUsers.Columns.Add('Пользователь', 260)
+    [void]$lvUsers.Columns.Add('Тип учётной записи', 200)
+    [void]$lvUsers.Columns.Add('Ограничения', 300)
+    $rl.Controls.Add($lvUsers, 0, 1)
+    $rl.SetColumnSpan($lvUsers, 2)
+
+    # Программы
+    $gbProg = New-Object System.Windows.Forms.GroupBox
+    $gbProg.Text = 'Программы'
+    $gbProg.Dock = 'Fill'
+    $tlProg = New-Object System.Windows.Forms.TableLayoutPanel
+    $tlProg.Dock = 'Fill'
+    $tlProg.ColumnCount = 1
+    $tlProg.RowCount = 3
+    [void]$tlProg.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+    [void]$tlProg.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
+    [void]$tlProg.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+    $gbProg.Controls.Add($tlProg)
+    $chkWl = New-Object System.Windows.Forms.CheckBox
+    $chkWl.Text = 'Разрешить запуск ТОЛЬКО этих программ (имя .exe, по одной на строку)'
+    $chkWl.AutoSize = $true
+    $tlProg.Controls.Add($chkWl, 0, 0)
+    $txtProg = New-ListBox
+    $tlProg.Controls.Add($txtProg, 0, 1)
+    $flProg = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flProg.AutoSize = $true
+    $flProg.Dock = 'Fill'
+    $btnAddProg = New-Button 'Добавить программу...'
+    $btnDefProg = New-Button 'Добавить стандартный набор'
+    $flProg.Controls.Add($btnAddProg)
+    $flProg.Controls.Add($btnDefProg)
+    $tlProg.Controls.Add($flProg, 0, 2)
+    $rl.Controls.Add($gbProg, 0, 2)
+
+    # Сайты
+    $gbSites = New-Object System.Windows.Forms.GroupBox
+    $gbSites.Text = 'Сайты'
+    $gbSites.Dock = 'Fill'
+    $tlSites = New-Object System.Windows.Forms.TableLayoutPanel
+    $tlSites.Dock = 'Fill'
+    $tlSites.ColumnCount = 1
+    $tlSites.RowCount = 3
+    [void]$tlSites.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+    [void]$tlSites.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
+    [void]$tlSites.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+    $gbSites.Controls.Add($tlSites)
+    $chkSites = New-Object System.Windows.Forms.CheckBox
+    $chkSites.Text = 'Блокировать сайты (по одному на строку, например vk.com) — Edge, Chrome, Яндекс, Firefox'
+    $chkSites.AutoSize = $true
+    $tlSites.Controls.Add($chkSites, 0, 0)
+    $txtSites = New-ListBox
+    $tlSites.Controls.Add($txtSites, 0, 1)
+    $chkHosts = New-Object System.Windows.Forms.CheckBox
+    $chkHosts.Text = 'Также через файл hosts (все браузеры, но и для администратора тоже)'
+    $chkHosts.AutoSize = $true
+    $tlSites.Controls.Add($chkHosts, 0, 2)
+    $rl.Controls.Add($gbSites, 1, 2)
+
+    # Дополнительные запреты
+    $gbLock = New-Object System.Windows.Forms.GroupBox
+    $gbLock.Text = 'Дополнительные запреты (чтобы ограничения нельзя было обойти)'
+    $gbLock.Dock = 'Fill'
+    $clbLock = New-Object System.Windows.Forms.CheckedListBox
+    $clbLock.Dock = 'Fill'
+    $clbLock.CheckOnClick = $true
+    $clbLock.IntegralHeight = $false
+    foreach ($l in $Lockdowns) { [void]$clbLock.Items.Add($l.Label, $l.Default) }
+    $gbLock.Controls.Add($clbLock)
+    $rl.Controls.Add($gbLock, 0, 3)
+    $rl.SetColumnSpan($gbLock, 2)
+
+    $flR = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flR.AutoSize = $true
+    $flR.Dock = 'Fill'
+    $btnRApply = New-Button 'Применить ограничения'
+    $btnRApply.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    $btnRClear = New-Button 'Снять все ограничения'
+    $btnRReload = New-Button 'Обновить'
+    $lblRState = New-Label ''
+    $lblRState.Margin = New-Object System.Windows.Forms.Padding(12, 8, 3, 3)
+    $flR.Controls.Add($btnRApply)
+    $flR.Controls.Add($btnRClear)
+    $flR.Controls.Add($btnRReload)
+    $flR.Controls.Add($lblRState)
+    $rl.Controls.Add($flR, 0, 4)
+    $rl.SetColumnSpan($flR, 2)
+
+    function Update-UserList {
+        $lvUsers.Items.Clear()
+        $users = @(Get-LocalUserInfo)
+        foreach ($u in $users) {
+            $item = New-Object System.Windows.Forms.ListViewItem($u.Name)
+            if ($u.IsAdmin) {
+                [void]$item.SubItems.Add('Администратор')
+                [void]$item.SubItems.Add('не действуют')
+            } else {
+                [void]$item.SubItems.Add('Обычный пользователь')
+                [void]$item.SubItems.Add('действуют')
+                $item.BackColor = $colorOther
+            }
+            [void]$lvUsers.Items.Add($item)
+        }
+        if (-not @($users | Where-Object { -not $_.IsAdmin }).Count) {
+            $item = New-Object System.Windows.Forms.ListViewItem('Нет обычных пользователей — ограничения ни на кого не подействуют.')
+            [void]$item.SubItems.Add('Сделайте учётку обычной: Параметры → Учётные записи → Другие пользователи → Изменить тип учётной записи')
+            $item.ForeColor = [System.Drawing.Color]::DarkRed
+            [void]$lvUsers.Items.Add($item)
+        }
+    }
+
+    function Import-RestrictionsToUI {
+        $r = Get-NonAdminRestrictions
+        if ($r.Applied) {
+            $chkWl.Checked = $r.WhitelistEnabled
+            $programs = @($r.Programs)
+            if (-not $programs.Count) { $programs = $DefaultAllowedPrograms }
+            $txtProg.Text = $programs -join "`r`n"
+            $chkSites.Checked = $r.SitesEnabled
+            for ($i = 0; $i -lt $Lockdowns.Count; $i++) { $clbLock.SetItemChecked($i, [bool]$r.Lockdowns[$Lockdowns[$i].Id]) }
+            $lblRState.Text = 'Состояние: ограничения применены'
+            $lblRState.ForeColor = [System.Drawing.Color]::DarkGreen
+        } else {
+            $chkWl.Checked = $true
+            $txtProg.Text = $DefaultAllowedPrograms -join "`r`n"
+            $chkSites.Checked = $true
+            for ($i = 0; $i -lt $Lockdowns.Count; $i++) { $clbLock.SetItemChecked($i, [bool]$Lockdowns[$i].Default) }
+            $lblRState.Text = 'Состояние: ограничения не применены'
+            $lblRState.ForeColor = [System.Drawing.Color]::DarkRed
+        }
+        $txtSites.Text = @($r.Sites) -join "`r`n"
+        $chkHosts.Checked = $r.HostsEnabled
+    }
+
+    function Get-RestrictionsFromUI {
+        $programs = Get-UniqueText @($txtProg.Lines | ForEach-Object { ConvertTo-ExeName $_ })
+        $sites = Get-UniqueText @($txtSites.Lines | ForEach-Object { ConvertTo-Domain $_ })
+        $lock = @{}
+        for ($i = 0; $i -lt $Lockdowns.Count; $i++) { $lock[$Lockdowns[$i].Id] = $clbLock.GetItemChecked($i) }
+        [pscustomobject]@{
+            WhitelistEnabled = $chkWl.Checked
+            Programs         = @($programs)
+            SitesEnabled     = ($chkSites.Checked -and @($sites).Count -gt 0)
+            Sites            = @($sites)
+            HostsEnabled     = $chkHosts.Checked
+            Lockdowns        = $lock
+        }
+    }
+
+    $btnAddProg.add_Click({
+        Invoke-Safe {
+            $dlg = New-Object System.Windows.Forms.OpenFileDialog
+            $dlg.Filter = 'Программы (*.exe)|*.exe'
+            $dlg.Multiselect = $true
+            if ($dlg.ShowDialog($form) -eq 'OK') {
+                $names = @($txtProg.Lines) + @($dlg.FileNames | ForEach-Object { [IO.Path]::GetFileName($_) })
+                $txtProg.Text = (Get-UniqueText @($names | ForEach-Object { ConvertTo-ExeName $_ })) -join "`r`n"
+            }
+        }
+    })
+    $btnDefProg.add_Click({
+        Invoke-Safe {
+            $names = @($txtProg.Lines) + $DefaultAllowedPrograms
+            $txtProg.Text = (Get-UniqueText @($names | ForEach-Object { ConvertTo-ExeName $_ })) -join "`r`n"
+        }
+    })
+    $btnRReload.add_Click({ Invoke-Safe { Update-UserList; Import-RestrictionsToUI } })
+
+    $btnRApply.add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
+            $cfg = Get-RestrictionsFromUI
+            if ($cfg.WhitelistEnabled -and -not $cfg.Programs.Count) { Show-Error 'Список разрешённых программ пуст.'; return }
+            if ($cfg.WhitelistEnabled -and $cfg.Programs -notcontains 'explorer.exe') {
+                if (-not (Confirm-Action 'В списке нет explorer.exe — у пользователей могут не открываться папки. Продолжить?')) { return }
+            }
+            if ($chkSites.Checked -and -not $cfg.SitesEnabled) { Show-Error 'Список сайтов пуст.'; return }
+
+            $summary = @()
+            if ($cfg.WhitelistEnabled) { $summary += "• Разрешены только программы: $($cfg.Programs.Count) шт." } else { $summary += '• Запуск программ не ограничен' }
+            if ($cfg.SitesEnabled) { $summary += "• Заблокировано сайтов: $($cfg.Sites.Count)" + $(if ($cfg.HostsEnabled) { ' (+ hosts)' } else { '' }) }
+            foreach ($l in $Lockdowns) { if ($cfg.Lockdowns[$l.Id]) { $summary += "• $($l.Label)" } }
+            if (-not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + ($summary -join "`r`n")))) { return }
+
+            Set-NonAdminRestrictions $cfg
+            Import-RestrictionsToUI
+            Show-Info ("Ограничения сохранены.`r`n`r`nОни начнут действовать, когда пользователь выйдет из системы и войдёт снова " +
+                "(или сами в течение ~90 минут).`r`n`r`nПроверьте: войдите под обычной учётной записью и попробуйте запустить запрещённую программу и открыть запрещённый сайт.")
+        }
+    })
+
+    $btnRClear.add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора: нажмите «Запустить от администратора».'; return }
+            if (-not (Confirm-Action 'Снять все ограничения для пользователей без прав администратора?')) { return }
+            Clear-NonAdminRestrictions
+            Import-RestrictionsToUI
+            Show-Info 'Ограничения сняты. Изменения вступят в силу после повторного входа пользователей.'
+        }
+    })
 
     #endregion
 
@@ -1180,6 +1782,8 @@ function Show-MainWindow {
             $lbCat.SelectedIndex = 0
             Update-Everything
         }
+        Invoke-Safe { Update-UserList }
+        Invoke-Safe { Import-RestrictionsToUI }
     })
 
     #endregion
