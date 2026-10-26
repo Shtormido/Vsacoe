@@ -509,6 +509,62 @@ function Get-ProcessLog([int]$MaxEvents = 500, [string]$Filter = '') {
     }
 }
 
+$DnsLogName = 'Microsoft-Windows-DNS-Client/Operational'
+
+function Test-SiteLogEnabled {
+    try { return [bool](Get-WinEvent -ListLog $DnsLogName -ErrorAction Stop).IsEnabled } catch { return $false }
+}
+
+function Enable-SiteLog {
+    & wevtutil set-log $DnsLogName /enabled:true /quiet:true | Out-Null
+    Write-Log 'Включена запись посещённых сайтов (DNS-журнал)'
+}
+
+function Disable-SiteLog {
+    & wevtutil set-log $DnsLogName /enabled:false /quiet:true | Out-Null
+    Write-Log 'Отключена запись посещённых сайтов'
+}
+
+# Домены, по которым браузеры и система «фонят» постоянно — не относятся к посещениям пользователя
+$DnsNoiseSuffixes = @(
+    '.in-addr.arpa', '.ip6.arpa', '.local', '.lan', '.home', '.msftconnecttest.com', '.msftncsi.com',
+    '.windowsupdate.com', '.update.microsoft.com', '.delivery.mp.microsoft.com', '.events.data.microsoft.com',
+    '.settings-win.data.microsoft.com', '.wns.windows.com', '.dns.msftncsi.com', '.root-servers.net'
+)
+
+# Посещённые сайты из DNS-журнала, домены сворачиваются, повторы подряд считаются
+function Get-SiteLog([int]$MaxEvents = 2000, [string]$Filter = '') {
+    $filterXml = @"
+<QueryList>
+  <Query Id="0" Path="$DnsLogName">
+    <Select Path="$DnsLogName">*[System[(EventID=3008)]]</Select>
+  </Query>
+</QueryList>
+"@
+    $events = Get-WinEvent -FilterXml $filterXml -MaxEvents $MaxEvents -ErrorAction Stop
+    $result = New-Object System.Collections.Generic.List[object]
+    $lastDomain = $null
+    foreach ($e in $events) {
+        $x = [xml]$e.ToXml()
+        $name = $null
+        foreach ($node in $x.Event.EventData.Data) { if ($node.Name -eq 'QueryName') { $name = $node.'#text' } }
+        if (-not $name) { continue }
+        $domain = $name.TrimEnd('.').ToLowerInvariant()
+        if (-not $domain -or $domain -notmatch '\.') { continue }
+        $skip = $false
+        foreach ($suf in $DnsNoiseSuffixes) { if ($domain.EndsWith($suf)) { $skip = $true; break } }
+        if ($skip) { continue }
+        if ($Filter -and $domain.IndexOf($Filter, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        # Браузер при открытии сайта шлёт десятки запросов к одному домену — сворачиваем подряд идущие
+        if ($result.Count -gt 0 -and $result[$result.Count - 1].Domain -eq $domain) {
+            $result[$result.Count - 1].Count++
+            continue
+        }
+        $result.Add([pscustomobject]@{ Time = $e.TimeCreated; Domain = $domain; Count = 1 })
+    }
+    return , $result
+}
+
 #endregion
 
 #region Ограничения для пользователей без прав администратора
@@ -1534,7 +1590,7 @@ $MainWindowXaml = @'
           <RadioButton x:Name="navRegistry" Style="{StaticResource Nav}" Tag="&#xE71D;" Content="Реестр"/>
           <RadioButton x:Name="navProfiles" Style="{StaticResource Nav}" Tag="&#xE8F1;" Content="Профили и копии"/>
           <RadioButton x:Name="navTools" Style="{StaticResource Nav}" Tag="&#xE90F;" Content="Инструменты"/>
-          <RadioButton x:Name="navAudit" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="Журнал запусков"/>
+          <RadioButton x:Name="navAudit" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="Журнал"/>
           <RadioButton x:Name="navAbout" Style="{StaticResource Nav}" Tag="&#xE946;" Content="О программе"/>
         </StackPanel>
       </DockPanel>
@@ -2063,46 +2119,57 @@ $MainWindowXaml = @'
           </UniformGrid>
         </ScrollViewer>
 
-        <!-- ===== Журнал запусков ===== -->
+        <!-- ===== Журнал ===== -->
         <Grid x:Name="pageAudit" Margin="32,0,32,24" Visibility="Collapsed">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
           </Grid.RowDefinitions>
-          <Border Grid.Row="0" x:Name="bannerAudit" Style="{StaticResource Card}" Margin="0,0,0,12" BorderBrush="#FCD34D" Background="#FFFBEB" Visibility="Collapsed">
-            <Grid>
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <RadioButton x:Name="rbLogApps" Style="{StaticResource Segment}" GroupName="logkind" IsChecked="True" Content="Запуск программ"/>
+            <RadioButton x:Name="rbLogSites" Style="{StaticResource Segment}" GroupName="logkind" Content="Посещённые сайты"/>
+          </StackPanel>
+
+          <!-- Запуск программ -->
+          <Grid x:Name="gridLogApps" Grid.Row="1">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" x:Name="bannerAudit" Style="{StaticResource Card}" Margin="0,0,0,12" BorderBrush="#FCD34D" Background="#FFFBEB" Visibility="Collapsed">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="#B45309" FontSize="18" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock FontWeight="SemiBold" Foreground="#92400E" Text="Запись запусков выключена"/>
+                  <TextBlock Foreground="#92400E" FontSize="12" TextWrapping="Wrap" Text="Windows пока не ведёт журнал запуска программ. Включите запись — и дальше здесь будет видно, кто и когда что запускал. Прошлые запуски до включения не сохраняются."/>
+                </StackPanel>
+                <Button x:Name="btnAuditEnable" Grid.Column="2" Style="{StaticResource BtnPrimary}" Margin="12,0,0,0" Content="Включить запись запусков"/>
+              </Grid>
+            </Border>
+            <Grid Grid.Row="1" Margin="0,0,0,10">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="320"/>
               </Grid.ColumnDefinitions>
-              <TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="#B45309" FontSize="18" Margin="0,0,14,0" VerticalAlignment="Center"/>
-              <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock FontWeight="SemiBold" Foreground="#92400E" Text="Запись запусков выключена"/>
-                <TextBlock Foreground="#92400E" FontSize="12" TextWrapping="Wrap" Text="Windows пока не ведёт журнал запуска программ. Включите запись — и дальше здесь будет видно, кто и когда что запускал. Прошлые запуски до включения не сохраняются."/>
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="btnAuditRefresh" Style="{StaticResource BtnPrimary}" Content="Обновить"/>
+                <Button x:Name="btnAuditDisable" Style="{StaticResource Btn}" Content="Выключить запись"/>
               </StackPanel>
-              <Button x:Name="btnAuditEnable" Grid.Column="2" Style="{StaticResource BtnPrimary}" Margin="12,0,0,0" Content="Включить запись запусков"/>
+              <Grid Grid.Column="2">
+                <TextBox x:Name="txtAuditFilter" Style="{StaticResource Input}" Padding="34,8,8,8"/>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+                <TextBlock x:Name="phAuditFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Фильтр: программа или пользователь…"/>
+              </Grid>
             </Grid>
-          </Border>
-          <Grid Grid.Row="1" Margin="0,0,0,10">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="320"/>
-            </Grid.ColumnDefinitions>
-            <StackPanel Orientation="Horizontal">
-              <Button x:Name="btnAuditRefresh" Style="{StaticResource BtnPrimary}" Content="Обновить"/>
-              <Button x:Name="btnAuditDisable" Style="{StaticResource Btn}" Content="Выключить запись"/>
-            </StackPanel>
-            <Grid Grid.Column="2">
-              <TextBox x:Name="txtAuditFilter" Style="{StaticResource Input}" Padding="34,8,8,8"/>
-              <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
-              <TextBlock x:Name="phAuditFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Фильтр: программа или пользователь…"/>
-            </Grid>
-          </Grid>
-          <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
-            <Grid>
+            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
+              <Grid>
               <DataGrid x:Name="dgAudit" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
                         GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#F3F4F6" BorderThickness="0" Background="White"
                         RowHeight="30" CanUserAddRows="False" CanUserResizeRows="False">
@@ -2129,12 +2196,86 @@ $MainWindowXaml = @'
                   <DataGridTextColumn Header="Путь" Binding="{Binding C2}" Width="*"/>
                 </DataGrid.Columns>
               </DataGrid>
-              <StackPanel x:Name="pnlAuditEmpty" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
-                <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="40" Foreground="#D1D5DB" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="txtAuditEmpty" Style="{StaticResource Muted}" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                <StackPanel x:Name="pnlAuditEmpty" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="40" Foreground="#D1D5DB" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="txtAuditEmpty" Style="{StaticResource Muted}" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </Grid>
+
+          <!-- Посещённые сайты -->
+          <Grid x:Name="gridLogSites" Grid.Row="1" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" x:Name="bannerSites" Style="{StaticResource Card}" Margin="0,0,0,12" BorderBrush="#FCD34D" Background="#FFFBEB" Visibility="Collapsed">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="#B45309" FontSize="18" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock FontWeight="SemiBold" Foreground="#92400E" Text="Запись сайтов выключена"/>
+                  <TextBlock Foreground="#92400E" FontSize="12" TextWrapping="Wrap" Text="Включите запись — и Windows начнёт сохранять домены, которые открывались в браузерах (по DNS-запросам). Работает для всех браузеров и не стирается очисткой истории. Прошлые посещения до включения не сохраняются."/>
+                </StackPanel>
+                <Button x:Name="btnSitesEnable" Grid.Column="2" Style="{StaticResource BtnPrimary}" Margin="12,0,0,0" Content="Включить запись сайтов"/>
+              </Grid>
+            </Border>
+            <Grid Grid.Row="1" Margin="0,0,0,10">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="320"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="btnSitesRefresh" Style="{StaticResource BtnPrimary}" Content="Обновить"/>
+                <Button x:Name="btnSitesDisable" Style="{StaticResource Btn}" Content="Выключить запись"/>
               </StackPanel>
+              <Grid Grid.Column="2">
+                <TextBox x:Name="txtSitesFilter" Style="{StaticResource Input}" Padding="34,8,8,8"/>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+                <TextBlock x:Name="phSitesFilter" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Фильтр по домену…"/>
+              </Grid>
             </Grid>
-          </Border>
+            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
+              <Grid>
+              <DataGrid x:Name="dgSites" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                        GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#F3F4F6" BorderThickness="0" Background="White"
+                        RowHeight="30" CanUserAddRows="False" CanUserResizeRows="False">
+                <DataGrid.ColumnHeaderStyle>
+                  <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#F9FAFB"/>
+                    <Setter Property="Foreground" Value="#6B7280"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Padding" Value="10,8"/>
+                    <Setter Property="BorderBrush" Value="#E5E7EB"/>
+                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                  </Style>
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.CellStyle>
+                  <Style TargetType="DataGridCell">
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                  </Style>
+                </DataGrid.CellStyle>
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="Время" Binding="{Binding C1}" Width="170"/>
+                  <DataGridTextColumn Header="Сайт (домен)" Binding="{Binding Title}" Width="*"/>
+                  <DataGridTextColumn Header="Повторов подряд" Binding="{Binding C2}" Width="150"/>
+                </DataGrid.Columns>
+              </DataGrid>
+                <StackPanel x:Name="pnlSitesEmpty" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE774;" FontSize="40" Foreground="#D1D5DB" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="txtSitesEmpty" Style="{StaticResource Muted}" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </Grid>
         </Grid>
 
         <!-- ===== О программе ===== -->
@@ -2411,7 +2552,7 @@ function Show-MainWindow {
         navRegistry = @('pageRegistry', 'Политики в реестре', 'Все параметры из веток Policies, включая заданные другими программами')
         navProfiles = @('pageProfiles', 'Профили и резервные копии', 'Готовые наборы настроек, сохранение и восстановление')
         navTools    = @('pageTools', 'Инструменты', 'Применение и диагностика групповых политик')
-        navAudit    = @('pageAudit', 'Журнал запуска приложений', 'Какие программы и когда запускались на компьютере')
+        navAudit    = @('pageAudit', 'Журнал', 'Запуск приложений и посещённые сайты на этом компьютере')
         navAbout    = @('pageAbout', 'О программе', 'Сведения о Policy Manager и разработчике')
     }
     $script:RegScanned = $false
@@ -2426,7 +2567,7 @@ function Show-MainWindow {
         $ui.txtPageSubtitle.Text = $pageInfo[$Nav][2]
         if ($Nav -eq 'navRegistry' -and -not $script:RegScanned) { Update-RegistryScan }
         if ($Nav -eq 'navProfiles') { Update-ProfileList }
-        if ($Nav -eq 'navAudit') { Update-AuditView }
+        if ($Nav -eq 'navAudit') { if ($ui.rbLogSites.IsChecked -eq $true) { Update-SiteView } else { Update-AuditView } }
     }
     foreach ($k in $pageInfo.Keys) {
         $ui[$k].Add_Checked({ param($s, $e) Invoke-Safe { Show-Page $s.Name } })
@@ -3184,6 +3325,7 @@ function Show-MainWindow {
 
     $script:AuditLoaded = $false
     Register-Placeholder $ui.txtAuditFilter $ui.phAuditFilter
+    Register-Placeholder $ui.txtSitesFilter $ui.phSitesFilter
 
     function Update-AuditView {
         if (-not $IsAdmin) {
@@ -3236,6 +3378,71 @@ function Show-MainWindow {
     })
     $ui.btnAuditRefresh.Add_Click({ Invoke-Safe { Update-AuditView; Show-Toast 'Журнал обновлён' } })
     $ui.txtAuditFilter.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Update-AuditView } } })
+
+    function Update-SiteView {
+        if (-not $IsAdmin) {
+            $ui.dgSites.ItemsSource = $null
+            $ui.bannerSites.Visibility = 'Collapsed'
+            $ui.pnlSitesEmpty.Visibility = 'Visible'
+            $ui.txtSitesEmpty.Text = 'Журнал сайтов доступен только с правами администратора. Нажмите «Запустить от администратора».'
+            return
+        }
+        $enabled = Test-SiteLogEnabled
+        $ui.bannerSites.Visibility = $(if ($enabled) { 'Collapsed' } else { 'Visible' })
+        Set-Busy $true
+        try {
+            $rows = New-Object System.Collections.Generic.List[object]
+            $err = $null
+            try {
+                foreach ($r in @(Get-SiteLog 2000 $ui.txtSitesFilter.Text.Trim())) {
+                    $rows.Add((New-Row @{ Title = $r.Domain; C1 = $r.Time.ToString('dd.MM.yyyy HH:mm:ss'); C2 = [string]$r.Count }))
+                }
+            } catch { $err = $_.Exception.Message }
+            $ui.dgSites.ItemsSource = $rows
+            if ($rows.Count) {
+                $ui.pnlSitesEmpty.Visibility = 'Collapsed'
+            } else {
+                $ui.pnlSitesEmpty.Visibility = 'Visible'
+                if ($err) { $ui.txtSitesEmpty.Text = 'Не удалось прочитать журнал: ' + $err }
+                elseif (-not $enabled) { $ui.txtSitesEmpty.Text = 'Пока нет записей. Включите запись сайтов — и они начнут появляться здесь.' }
+                else { $ui.txtSitesEmpty.Text = 'Записей нет. Откройте сайт в браузере и нажмите «Обновить».' }
+            }
+        } finally { Set-Busy $false }
+    }
+
+    $ui.rbLogApps.Add_Checked({
+        Invoke-Safe {
+            $ui.gridLogApps.Visibility = 'Visible'
+            $ui.gridLogSites.Visibility = 'Collapsed'
+            Update-AuditView
+        }
+    })
+    $ui.rbLogSites.Add_Checked({
+        Invoke-Safe {
+            $ui.gridLogApps.Visibility = 'Collapsed'
+            $ui.gridLogSites.Visibility = 'Visible'
+            Update-SiteView
+        }
+    })
+    $ui.btnSitesEnable.Add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора.'; return }
+            Enable-SiteLog
+            Update-SiteView
+            Show-Toast 'Запись сайтов включена. Сохраняются сайты, открытые после этого момента.'
+        }
+    })
+    $ui.btnSitesDisable.Add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора.'; return }
+            if (-not (Confirm-Action 'Выключить запись посещённых сайтов?')) { return }
+            Disable-SiteLog
+            Update-SiteView
+            Show-Toast 'Запись сайтов выключена'
+        }
+    })
+    $ui.btnSitesRefresh.Add_Click({ Invoke-Safe { Update-SiteView; Show-Toast 'Журнал обновлён' } })
+    $ui.txtSitesFilter.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Update-SiteView } } })
 
     #endregion
 
