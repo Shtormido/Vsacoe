@@ -473,10 +473,47 @@ $SiteListKeys      = @(
 )
 $FirefoxBlockKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Block'
 
-$DefaultAllowedPrograms = @(
-    'explorer.exe', 'msedge.exe', 'chrome.exe', 'firefox.exe', 'notepad.exe', 'mspaint.exe', 'calc.exe',
-    'SnippingTool.exe', 'WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'OneDrive.exe', 'SecurityHealthSystray.exe'
+# Системные программы, без которых у пользователя не будут работать Проводник и значки в трее
+$DefaultAllowedPrograms = @('explorer.exe', 'SecurityHealthSystray.exe', 'OneDrive.exe')
+
+# Встроенные программы Windows, которых нет среди ярлыков меню Пуск
+$BuiltinPrograms = @(
+    @{ Exe = 'explorer.exe'; Name = 'Проводник (обязательно)'; Path = "$env:windir\explorer.exe" }
+    @{ Exe = 'SecurityHealthSystray.exe'; Name = 'Значок «Безопасность Windows» в трее'; Path = "$env:windir\System32\SecurityHealthSystray.exe" }
+    @{ Exe = 'notepad.exe'; Name = 'Блокнот'; Path = "$env:windir\System32\notepad.exe" }
+    @{ Exe = 'mspaint.exe'; Name = 'Paint'; Path = "$env:windir\System32\mspaint.exe" }
+    @{ Exe = 'calc.exe'; Name = 'Калькулятор'; Path = "$env:windir\System32\calc.exe" }
+    @{ Exe = 'SnippingTool.exe'; Name = 'Ножницы'; Path = "$env:windir\System32\SnippingTool.exe" }
+    @{ Exe = 'cmd.exe'; Name = 'Командная строка (не рекомендуется)'; Path = "$env:windir\System32\cmd.exe" }
+    @{ Exe = 'powershell.exe'; Name = 'PowerShell (не рекомендуется)'; Path = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe" }
+    @{ Exe = 'taskmgr.exe'; Name = 'Диспетчер задач (не рекомендуется)'; Path = "$env:windir\System32\taskmgr.exe" }
 )
+
+# Программы из ярлыков меню Пуск и рабочих столов всех пользователей
+function Get-InstalledPrograms {
+    $dirs = New-Object System.Collections.Generic.List[string]
+    $dirs.Add("$env:ProgramData\Microsoft\Windows\Start Menu\Programs")
+    $dirs.Add("$env:PUBLIC\Desktop")
+    foreach ($prof in Get-ChildItem -LiteralPath "$env:SystemDrive\Users" -Directory -ErrorAction SilentlyContinue) {
+        $dirs.Add((Join-Path $prof.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs'))
+        $dirs.Add((Join-Path $prof.FullName 'Desktop'))
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $seen = @{}
+    foreach ($d in $dirs) {
+        if (-not (Test-Path -LiteralPath $d)) { continue }
+        foreach ($lnk in Get-ChildItem -LiteralPath $d -Filter *.lnk -Recurse -ErrorAction SilentlyContinue) {
+            try { $target = $shell.CreateShortcut($lnk.FullName).TargetPath } catch { continue }
+            if (-not $target -or $target -notmatch '\.exe$') { continue }
+            $exe = [IO.Path]::GetFileName($target)
+            if ($exe -match '^(unins|uninst|setup|update)' -or $lnk.BaseName -match 'удал|uninstall') { continue }
+            $key = $exe.ToLowerInvariant()
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            [pscustomobject]@{ Name = $lnk.BaseName; Exe = $exe; Path = $target }
+        }
+    }
+}
 
 function New-PolValueRef([string]$Key, [string]$Name, [uint32]$Data) {
     [pscustomobject]@{ Key = $Key; Name = $Name; Data = $Data }
@@ -980,6 +1017,9 @@ namespace PolicyManagerUI {
         public object BadgeBg { get { return _badgeBg; } set { Set(ref _badgeBg, value, "BadgeBg"); } }
         public object BadgeFg { get { return _badgeFg; } set { Set(ref _badgeFg, value, "BadgeFg"); } }
         public object RowBg { get { return _rowBg; } set { Set(ref _rowBg, value, "RowBg"); } }
+        private bool _checked;
+        public bool Checked { get { return _checked; } set { Set(ref _checked, value, "Checked"); } }
+        public object Icon { get; set; }
         public string C1 { get { return _c1; } set { Set(ref _c1, value, "C1"); } }
         public string C2 { get { return _c2; } set { Set(ref _c2, value, "C2"); } }
         public string C3 { get { return _c3; } set { Set(ref _c3, value, "C3"); } }
@@ -1398,11 +1438,11 @@ $MainWindowXaml = @'
                   <Grid Margin="0,0,0,4">
                     <StackPanel Orientation="Horizontal">
                       <TextBlock Style="{StaticResource Icon}" Text="&#xE71D;" FontSize="16" Foreground="#2563EB" Margin="0,0,10,0"/>
-                      <TextBlock Style="{StaticResource H2}" Text="Разрешённые программы"/>
+                      <TextBlock Style="{StaticResource H2}" Text="Разрешённые программы (исключения)"/>
                     </StackPanel>
                     <CheckBox x:Name="chkWl" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                   </Grid>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Запускаться будут только эти программы. Всё остальное (игры, скачанные .exe, PowerShell) — запрещено."/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12" Text="Запускаться будут только программы из этого списка, всё остальное — запрещено. Нажмите «Выбрать из установленных» и отметьте нужные."/>
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkWl}">
                     <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
@@ -1416,8 +1456,9 @@ $MainWindowXaml = @'
                       <Button x:Name="btnProgAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                     </Grid>
                     <WrapPanel Margin="0,0,0,8">
-                      <Button x:Name="btnProgBrowse" Style="{StaticResource BtnChip}" Content="Выбрать файл .exe…"/>
-                      <Button x:Name="btnProgDefault" Style="{StaticResource BtnChip}" Content="+ Стандартный набор"/>
+                      <Button x:Name="btnProgPick" Style="{StaticResource BtnChip}" Background="#2563EB" BorderBrush="#2563EB" Foreground="White" FontWeight="SemiBold" Content="Выбрать из установленных…"/>
+                      <Button x:Name="btnProgBrowse" Style="{StaticResource BtnChip}" Content="Указать файл .exe…"/>
+                      <Button x:Name="btnProgClear" Style="{StaticResource BtnChip}" Content="Очистить"/>
                     </WrapPanel>
                     <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
                       <ListBox x:Name="lbProg" Height="250" BorderThickness="0" Tag="&#xE7AC;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -1759,12 +1800,70 @@ $MainWindowXaml = @'
         </StackPanel>
       </Border>
     </Grid>
+
+    <!-- Выбор программ -->
+    <Grid x:Name="overlayPicker" Grid.ColumnSpan="2" Background="#99000000" Visibility="Collapsed">
+      <Border Background="White" CornerRadius="12" Width="720" Margin="0,40" Padding="24" HorizontalAlignment="Center">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="30" ShadowDepth="4" Opacity="0.35"/>
+        </Border.Effect>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <StackPanel Margin="0,0,0,14">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Какие программы разрешить?"/>
+            <TextBlock Style="{StaticResource Muted}" Margin="0,6,0,0" Text="Отметьте программы, которые пользователям можно запускать. Всё, что не отмечено, будет запрещено. Игры из Steam/Epic запускаются через их лаунчер — достаточно разрешить сам лаунчер."/>
+          </StackPanel>
+          <Grid Grid.Row="1" Margin="0,0,0,10">
+            <TextBox x:Name="txtPickSearch" Style="{StaticResource Input}" Padding="34,8,8,8"/>
+            <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#9CA3AF" Margin="12,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+            <TextBlock x:Name="phPickSearch" Style="{StaticResource Placeholder}" Margin="36,0,0,0" Text="Поиск программы…"/>
+          </Grid>
+          <Border Grid.Row="2" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4">
+            <ListBox x:Name="lbApps" BorderThickness="0" ItemContainerStyle="{StaticResource RowItem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <CheckBox IsChecked="{Binding Checked, Mode=TwoWay}" VerticalContentAlignment="Center" HorizontalContentAlignment="Stretch" Cursor="Hand">
+                    <Grid Margin="10,0,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <Image Source="{Binding Icon}" Width="28" Height="28" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#9CA3AF" TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <Border Grid.Column="2" Background="{Binding BadgeBg}" CornerRadius="8" Padding="8,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding Badge}" Foreground="{Binding BadgeFg}" FontSize="11"/>
+                      </Border>
+                    </Grid>
+                  </CheckBox>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Border>
+          <Grid Grid.Row="3" Margin="0,16,0,0">
+            <TextBlock x:Name="txtPickCount" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button x:Name="btnPickCancel" Style="{StaticResource Btn}" Content="Отмена"/>
+              <Button x:Name="btnPickOk" Style="{StaticResource BtnPrimary}" Margin="0" Content="Готово"/>
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
   </Grid>
 </Window>
 '@
 
 function Show-MainWindow {
-    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing
     if (-not ('PolicyManagerUI.Row' -as [type])) { Add-Type -TypeDefinition $RowTypeSource -Language CSharp }
 
     $os = Get-OSInfo
@@ -1852,7 +1951,9 @@ function Show-MainWindow {
         foreach ($k in @($Props.Keys)) {
             $v = $Props[$k]
             # Кисти передаём как .NET-объекты, иначе WPF не сможет применить цвет из обёртки PowerShell
-            if ($v -is [System.Windows.Media.Brush]) { $r.$k = [System.Windows.Media.Brush]$v } else { $r.$k = $v }
+            if ($v -is [System.Windows.Media.Brush]) { $r.$k = [System.Windows.Media.Brush]$v }
+            elseif ($v -is [System.Windows.Media.ImageSource]) { $r.$k = [System.Windows.Media.ImageSource]$v }
+            else { $r.$k = $v }
         }
         return $r
     }
@@ -1959,7 +2060,98 @@ function Show-MainWindow {
             if ($files) { Add-Programs @($files | ForEach-Object { [IO.Path]::GetFileName($_) }) }
         }
     })
-    $ui.btnProgDefault.Add_Click({ Invoke-Safe { Add-Programs $DefaultAllowedPrograms } })
+    $ui.btnProgClear.Add_Click({
+        Invoke-Safe {
+            if (-not (Confirm-Action 'Очистить список? Останутся только системные программы (Проводник).')) { return }
+            $progs.Clear()
+            Add-Programs $DefaultAllowedPrograms
+        }
+    })
+
+    # Окно выбора программ
+    function Get-ExeIcon([string]$Path) {
+        try {
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
+            $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($Path)
+            $src = [System.Windows.Interop.Imaging]::CreateBitmapSourceFromHIcon($ico.Handle, [System.Windows.Int32Rect]::Empty,
+                [System.Windows.Media.Imaging.BitmapSizeOptions]::FromEmptyOptions())
+            $src.Freeze()
+            $ico.Dispose()
+            return $src
+        } catch { return $null }
+    }
+
+    $script:PickRows = New-Object System.Collections.Generic.List[object]
+    $script:PickFilter = ''
+    Register-Placeholder $ui.txtPickSearch $ui.phPickSearch
+
+    function Update-PickCount {
+        $n = @($script:PickRows | Where-Object { $_.Checked }).Count
+        $ui.txtPickCount.Text = "Отмечено программ: $n"
+    }
+
+    function Show-ProgramPicker {
+        Set-Busy $true
+        try {
+            $allowed = @{}
+            foreach ($p in $progs) { $allowed[$p.ToLowerInvariant()] = $true }
+            $rows = New-Object System.Collections.Generic.List[object]
+            $seen = @{}
+            foreach ($b in $BuiltinPrograms) {
+                $key = $b.Exe.ToLowerInvariant()
+                $seen[$key] = $true
+                $rows.Add((New-Row @{ Id = $b.Exe; Title = $b.Name; Subtitle = $b.Exe; Badge = 'Windows'; BadgeBg = $brush.GrayBg; BadgeFg = $brush.GrayFg
+                    Icon = (Get-ExeIcon $b.Path); Checked = $allowed.ContainsKey($key) }))
+            }
+            foreach ($a in @(Get-InstalledPrograms | Sort-Object Name)) {
+                $key = $a.Exe.ToLowerInvariant()
+                if ($seen.ContainsKey($key)) { continue }
+                $seen[$key] = $true
+                $rows.Add((New-Row @{ Id = $a.Exe; Title = $a.Name; Subtitle = "$($a.Exe)  ·  $($a.Path)"; Badge = 'Установлена'; BadgeBg = $brush.BlueBg; BadgeFg = $brush.BlueFg
+                    Icon = (Get-ExeIcon $a.Path); Checked = $allowed.ContainsKey($key) }))
+            }
+            # Программы из списка, которых не нашлось среди ярлыков
+            foreach ($p in $progs) {
+                $key = $p.ToLowerInvariant()
+                if ($seen.ContainsKey($key)) { continue }
+                $seen[$key] = $true
+                $rows.Add((New-Row @{ Id = $p; Title = $p; Subtitle = 'добавлена вручную'; Badge = 'Вручную'; BadgeBg = $brush.AmberBg; BadgeFg = $brush.AmberFg; Checked = $true }))
+            }
+            $script:PickRows = $rows
+            $view = [System.Windows.Data.CollectionViewSource]::GetDefaultView($rows)
+            $view.Filter = [Predicate[object]] {
+                param($row)
+                if (-not $script:PickFilter) { return $true }
+                return (("$($row.Title) $($row.Subtitle)").IndexOf($script:PickFilter, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+            }
+            $ui.lbApps.ItemsSource = $view
+            $ui.txtPickSearch.Text = ''
+            Update-PickCount
+            $ui.overlayPicker.Visibility = 'Visible'
+            [void]$ui.txtPickSearch.Focus()
+        } finally { Set-Busy $false }
+    }
+
+    $ui.btnProgPick.Add_Click({ Invoke-Safe { Show-ProgramPicker } })
+    $ui.txtPickSearch.Add_TextChanged({
+        Invoke-Safe {
+            $script:PickFilter = $ui.txtPickSearch.Text.Trim()
+            if ($ui.lbApps.ItemsSource) { $ui.lbApps.ItemsSource.Refresh() }
+        }
+    })
+    $ui.lbApps.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, [System.Windows.RoutedEventHandler] { Update-PickCount })
+    $ui.btnPickCancel.Add_Click({ $ui.overlayPicker.Visibility = 'Collapsed' })
+    $ui.btnPickOk.Add_Click({
+        Invoke-Safe {
+            foreach ($r in $script:PickRows) {
+                if ($r.Checked) { Add-UniqueItem $progs $r.Id }
+                else { foreach ($p in @($progs)) { if ($p -eq $r.Id) { [void]$progs.Remove($p) } } }
+            }
+            if (-not ($progs | Where-Object { $_ -eq 'explorer.exe' })) { $progs.Insert(0, 'explorer.exe') }
+            $ui.overlayPicker.Visibility = 'Collapsed'
+            Show-Toast "Разрешено программ: $($progs.Count). Не забудьте нажать «Применить ограничения»."
+        }
+    })
 
     $ui.btnQuickSocial.Tag = 'vk.com ok.ru tiktok.com instagram.com facebook.com x.com twitter.com'
     $ui.btnQuickVideo.Tag = 'youtube.com rutube.ru vkvideo.ru twitch.tv kick.com'
