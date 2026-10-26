@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Zapreshatel3000Hardcore Edition — управление политиками Windows 10/11 (в том числе Home) через реестр.
+    Zapreshatel3000 — управление политиками Windows 10/11 (в том числе Home) через реестр.
 
 .DESCRIPTION
     Без параметров открывает графический интерфейс. Каталог политик хранится в policies.json,
@@ -29,7 +29,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$AppName     = 'Zapreshatel3000Hardcore Edition'
+$AppName     = 'Zapreshatel3000'
 $AppVersion  = '2.0'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1284,7 +1284,7 @@ namespace PolicyManagerUI {
 $MainWindowXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Zapreshatel3000Hardcore Edition" Width="1280" Height="860" MinWidth="1060" MinHeight="660"
+        Title="Zapreshatel3000" Width="1280" Height="860" MinWidth="1060" MinHeight="660"
         WindowStartupLocation="CenterScreen" Background="#F3F4F6"
         FontFamily="Segoe UI" FontSize="13" Foreground="#111827" UseLayoutRounding="True">
   <Window.Resources>
@@ -1574,7 +1574,7 @@ $MainWindowXaml = @'
             </Grid>
           </Border>
           <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-            <TextBlock Text="Zapreshatel3000Hardcore Edition" Foreground="White" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="170"/>
+            <TextBlock Text="Zapreshatel3000" Foreground="White" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="170"/>
             <TextBlock x:Name="txtVersion" Foreground="#9CA3AF" FontSize="11"/>
           </StackPanel>
         </StackPanel>
@@ -1836,7 +1836,7 @@ $MainWindowXaml = @'
                 </Border>
                 <StackPanel Grid.Column="1" Margin="16,0">
                   <TextBlock Style="{StaticResource H2}" Text="Перенос настроек ограничений"/>
-                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" Text="Сохраните программы, сайты и запреты в файл .json и загрузите его в Zapreshatel3000Hardcore Edition на другом компьютере. Без интерфейса: Zapreshatel3000.ps1 -ImportRestrictions файл.json (от администратора)."/>
+                  <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,0" Text="Сохраните программы, сайты и запреты в файл .json и загрузите его в Zapreshatel3000 на другом компьютере. Без интерфейса: Zapreshatel3000.ps1 -ImportRestrictions файл.json (от администратора)."/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                   <Button x:Name="btnRExport" Style="{StaticResource Btn}" Content="Сохранить в файл…"/>
@@ -2294,7 +2294,7 @@ $MainWindowXaml = @'
                     </Grid>
                   </Border>
                   <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Zapreshatel3000Hardcore Edition" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="Zapreshatel3000" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
                     <TextBlock x:Name="txtAboutVersion" Style="{StaticResource Muted}" FontSize="13"/>
                   </StackPanel>
                 </StackPanel>

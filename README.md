@@ -1,4 +1,4 @@
-# Zapreshatel3000Hardcore Edition — управление политиками Windows 10/11
+# Zapreshatel3000 — управление политиками Windows 10/11
 
 Разработчик: **ООО Лига опасного интернета**.
 
