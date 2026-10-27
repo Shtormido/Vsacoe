@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.7'
+$AppVersion  = '3.8'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1075,12 +1075,19 @@ function ConvertTo-Domain([string]$Text) {
     $path = ''
     $slash = $d.IndexOf('/')
     if ($slash -ge 0) { $path = $d.Substring($slash); $d = $d.Substring(0, $slash) }
+    # Локальный адрес: IP или IP:порт (192.168.1.113, 192.168.1.113:8080) добавляется буквально,
+    # по одной записи на адрес. Подсети/диапазоны (192.168.0.0/16) браузеры в списках не понимают.
+    $hostOnly = ($d -split ':')[0]
+    if ($hostOnly -match '^\d{1,3}(\.\d{1,3}){3}$') {
+        if ($path -match '^/\d+$') { return $null }   # 192.168.0.0/16 — это подсеть, браузеры её не понимают
+        return $d + $path
+    }
     $d = $d -replace '^\*\.', '' -replace '^www\.', ''
     # Отбрасываем порт
     $d = ($d -split ':')[0]
     if (-not $d) { return $null }
-    # Работаем только с доменами: IP-адреса и диапазоны не поддерживаются
-    if ($d -match '^[0-9.]+$') { return $null }
+    # Диапазоны/подсети не поддерживаются — указывайте конкретный адрес
+    if ($d -match '^[0-9./]+$') { return $null }
     try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес сайта: $Text" }
     return $d + $path
 }
@@ -1276,7 +1283,10 @@ function Expand-AllowHosts($Sites) {
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($d in $Sites) {
         if (-not $d) { continue }
-        [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
+        [void]$out.Add($d)
+        # Для доменов добавляем и поддомены; для IP-адресов — только сам адрес
+        $hostOnly = (($d -split '/')[0] -split ':')[0]
+        if ($hostOnly -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { [void]$out.Add("*.$d") }
     }
     return , @($out.ToArray() | Select-Object -Unique)
 }
@@ -2038,7 +2048,7 @@ $MainWindowXaml = @'
                           </Grid.ColumnDefinitions>
                           <Grid>
                             <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
-                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Домен сайта: uchi.ru, youtube.com, yandex.ru/games"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Домен или IP: uchi.ru, yandex.ru/games, 192.168.1.113:8080"/>
                           </Grid>
                           <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                         </Grid>
@@ -3202,7 +3212,7 @@ function Show-MainWindow {
             $ui.chkSites.IsChecked = $r.SitesEnabled
             foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$r.Lockdowns[$l.Id] }
         }
-        # Прогоняем через ConvertTo-Domain — так из старых настроек отсеиваются IP/диапазоны (остаются только домены)
+        # Прогоняем через ConvertTo-Domain — нормализуем домены и IP, отсеиваем диапазоны/подсети
         foreach ($x in @($r.BlockSites)) { Add-BlockSites @($x) }
         foreach ($x in @($r.AllowSites)) { Add-AllowSites @($x) }
         foreach ($x in @($r.LocalSites)) { Add-AllowSites @($x) }
