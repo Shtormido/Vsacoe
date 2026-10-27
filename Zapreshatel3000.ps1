@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.8'
+$AppVersion  = '2.9'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -71,23 +71,42 @@ if (-not $IsAdmin -and -not $NoElevate -and -not $IsCli) {
 
 #region Папка данных и журнал
 
+function Test-DirWritable([string]$Dir) {
+    try {
+        New-Item -ItemType Directory -Path (Join-Path $Dir 'backups') -Force | Out-Null
+        $test = Join-Path $Dir '.write_test'
+        [IO.File]::WriteAllText($test, 'x')
+        Remove-Item -LiteralPath $test -Force
+        return $true
+    } catch { return $false }
+}
+
 function Initialize-DataDir {
-    $candidates = @((Join-Path $PSScriptRoot 'data'), (Join-Path $env:LOCALAPPDATA 'PolicyManager'))
-    foreach ($dir in $candidates) {
-        try {
-            New-Item -ItemType Directory -Path (Join-Path $dir 'backups') -Force | Out-Null
-            $test = Join-Path $dir '.write_test'
-            [IO.File]::WriteAllText($test, 'x')
-            Remove-Item -LiteralPath $test -Force
-            return $dir
-        } catch { }
+    # Стабильное место в профиле пользователя — чтобы настройки переживали обновление/перераспаковку программы
+    $stable = Join-Path $env:LOCALAPPDATA 'Zapreshatel3000'
+    $legacy = @((Join-Path $env:LOCALAPPDATA 'PolicyManager'), (Join-Path $PSScriptRoot 'data'))
+    if (Test-DirWritable $stable) {
+        # Один раз переносим настройки из старых мест, если они там были
+        if (-not (Test-Path -LiteralPath (Join-Path $stable 'restrictions.json'))) {
+            foreach ($old in $legacy) {
+                if (Test-Path -LiteralPath (Join-Path $old 'restrictions.json')) {
+                    foreach ($f in @('restrictions.json', 'history_log.tsv', 'Zapreshatel3000.log', 'PolicyManager.log')) {
+                        $src = Join-Path $old $f
+                        if (Test-Path -LiteralPath $src) { try { Copy-Item -LiteralPath $src -Destination (Join-Path $stable $f) -Force } catch { } }
+                    }
+                    break
+                }
+            }
+        }
+        return $stable
     }
+    foreach ($dir in $legacy) { if (Test-DirWritable $dir) { return $dir } }
     return $env:TEMP
 }
 
 $DataDir   = Initialize-DataDir
 $BackupDir = Join-Path $DataDir 'backups'
-$LogFile   = Join-Path $DataDir 'PolicyManager.log'
+$LogFile   = Join-Path $DataDir 'Zapreshatel3000.log'
 
 function Write-Log([string]$Message) {
     try {
@@ -1425,6 +1444,9 @@ function Format-UserResults($Results) {
 function Set-NonAdminRestrictions($Config) {
     $values = Get-RestrictionValues $Config
 
+    # Сохраняем настройки СРАЗУ — чтобы введённые адреса не потерялись, даже если запись политик ниже упадёт
+    Export-RestrictionConfig $Config $RestrictionsFile
+
     # 1. Групповая политика «Не администраторы» — для новых и ещё не входивших пользователей
     $result = New-Object System.Collections.Generic.List[object]
     foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
@@ -1445,8 +1467,6 @@ function Set-NonAdminRestrictions($Config) {
     $hostsDomains = @($Config.BlockSites | Where-Object { $_ -and -not $_.Contains('/') })
     if ($Config.SitesEnabled -and $Config.SitesMode -ne 'allow' -and $Config.HostsEnabled -and $hostsDomains.Count) { Set-HostsBlock $hostsDomains }
     elseif ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
-
-    Export-RestrictionConfig $Config $RestrictionsFile
 
     $on = @($Lockdowns | Where-Object { $Config.Lockdowns[$_.Id] } | ForEach-Object { $_.Id }) -join ', '
     Write-Log ("Ограничения для не-администраторов: программы={0} [{1}]; сайты={2}, режим={3}, чёрный=[{4}], белый=[{5}]; hosts={6}; запреты=[{7}]" -f `
