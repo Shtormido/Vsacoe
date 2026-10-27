@@ -1131,6 +1131,7 @@ function Get-NonAdminRestrictions {
         SitesMode        = $mode
         BlockSites       = $block
         AllowSites       = $allow
+        LocalSites       = @()
         HostsEnabled     = $hostsSites.Count -gt 0
         Lockdowns        = $lock
     }
@@ -1152,6 +1153,7 @@ function Export-RestrictionConfig($Config, [string]$File) {
             mode    = [string]$Config.SitesMode
             block   = @($Config.BlockSites)
             allow   = @($Config.AllowSites)
+            local   = @($Config.LocalSites)
             hosts   = [bool]$Config.HostsEnabled
         }
         lockdowns = $lock
@@ -1167,11 +1169,12 @@ function Import-RestrictionConfig([string]$File) {
     $lock = @{}
     foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$j.lockdowns.($l.Id) }
     $mode = 'block'
-    if ($j.sites.mode -eq 'allow') { $mode = 'allow' }
+    if ($j.sites.mode -in @('allow', 'combined')) { $mode = [string]$j.sites.mode }
     $programs = @(Get-UniqueText @(@($j.programs.list) | ForEach-Object { ConvertTo-ExeName $_ }))
     $block = @(Get-UniqueText @(@($j.sites.block) | ForEach-Object { ConvertTo-Domain $_ }))
     $allow = @(Get-UniqueText @(@($j.sites.allow) | ForEach-Object { ConvertTo-Domain $_ }))
-    $active = if ($mode -eq 'allow') { $allow } else { $block }
+    $local = @(Get-UniqueText @(@($j.sites.local) | ForEach-Object { ConvertTo-Domain $_ }))
+    $active = if ($mode -eq 'block') { @($block + $allow + $local) } else { @($allow + $local) }
     [pscustomobject]@{
         WhitelistEnabled = ([bool]$j.programs.enabled -and $programs.Count -gt 0)
         Programs         = $programs
@@ -1179,6 +1182,7 @@ function Import-RestrictionConfig([string]$File) {
         SitesMode        = $mode
         BlockSites       = $block
         AllowSites       = $allow
+        LocalSites       = $local
         HostsEnabled     = [bool]$j.sites.hosts
         Lockdowns        = $lock
     }
@@ -1203,11 +1207,14 @@ function Get-RestrictionSummary($Config) {
         if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
         $lines += $line
     }
-    # Если в белом списке есть диапазоны CIDR — показываем, во сколько адресов они развернулись
-    $cidr = @($Config.AllowSites | Where-Object { $_ -match '/\d{1,2}$' })
+    $nl = @($Config.LocalSites).Count
+    if ($Config.SitesEnabled -and $nl) { $lines += "• Локальные адреса (открыты всегда): $nl" }
+    # Если в белом/локальном списке есть диапазоны CIDR — показываем, во сколько адресов они развернулись
+    $allAllow = @(@($Config.AllowSites) + @($Config.LocalSites))
+    $cidr = @($allAllow | Where-Object { $_ -match '/\d{1,2}$' })
     if ($cidr.Count) {
-        $hosts = @(Expand-AllowHosts $Config.AllowSites).Count
-        $lines += "• Локальные диапазоны развёрнуты в адреса: всего в белом списке ~$hosts (браузеры учитывают примерно первую 1000)"
+        $hosts = @(Expand-AllowHosts $allAllow).Count
+        $lines += "• Диапазоны развёрнуты в адреса: всего разрешено ~$hosts (браузеры учитывают примерно первую 1000)"
     }
     foreach ($l in $Lockdowns) { if ($Config.Lockdowns[$l.Id]) { $lines += "• $($l.Label)" } }
     return ($lines -join "`r`n")
@@ -1303,8 +1310,9 @@ function Get-RestrictionValues($Config) {
         $blockList = @()
         if ($useBlack) { $blockList += @($Config.BlockSites) }
         if ($strict)   { $blockList += $BlockAllFilters }
-        # Белый список разворачиваем: домены с поддоменами, а диапазоны CIDR — в отдельные IP
-        $allowHosts = @(Expand-AllowHosts $Config.AllowSites)
+        # Белый список + локальные адреса разворачиваем: домены с поддоменами, а диапазоны CIDR — в отдельные IP.
+        # Локальные адреса открыты всегда (в любом режиме).
+        $allowHosts = @(Expand-AllowHosts @(@($Config.AllowSites) + @($Config.LocalSites)))
         $allowFilters = @($allowHosts)
         if ($strict)   { $allowFilters += $BrowserInternalUrls }
 
@@ -2047,7 +2055,6 @@ $MainWindowXaml = @'
                           <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход в аккаунты"/>
                           <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
                           <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
-                          <Button x:Name="btnAllowLocal" Style="{StaticResource BtnChip}" Content="+ Локальная сеть"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
                           <ListBox x:Name="lbAllow" Height="150" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -2084,6 +2091,31 @@ $MainWindowXaml = @'
                           <ListBox x:Name="lbBlock" Height="150" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
                         </Border>
                         <TextBlock x:Name="txtBlockCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
+                      </StackPanel>
+                    </Border>
+
+                    <Border BorderBrush="#93C5FD" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#EFF6FF">
+                      <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="#1D4ED8" Text="Локальные адреса — всегда открыты" Margin="0,0,0,4"/>
+                        <TextBlock Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,8" Text="Серверы и сайты локальной сети открываются в любом режиме. Можно IP, имя сервера, адрес с портом или диапазон: 192.168.1.10, nas, 192.168.1.10:8080, 192.168.0.0/16."/>
+                        <Grid Margin="0,0,0,8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <Grid>
+                            <TextBox x:Name="txtLocalAdd" Style="{StaticResource Input}"/>
+                            <TextBlock x:Name="phLocalAdd" Style="{StaticResource Placeholder}" Text="Например: 192.168.1.10 или nas или 192.168.0.0/16"/>
+                          </Grid>
+                          <Button x:Name="btnLocalAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
+                        </Grid>
+                        <WrapPanel Margin="0,0,0,8">
+                          <Button x:Name="btnLocalPreset" Style="{StaticResource BtnChip}" Content="+ Типовая локальная сеть"/>
+                        </WrapPanel>
+                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
+                          <ListBox x:Name="lbLocal" Height="130" BorderThickness="0" Tag="&#xE968;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                        </Border>
+                        <TextBlock x:Name="txtLocalCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
                       </StackPanel>
                     </Border>
 
@@ -2878,12 +2910,15 @@ function Show-MainWindow {
     $progs = New-Object System.Collections.ObjectModel.ObservableCollection[string]
     $blockSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
     $allowSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $localSites = New-Object System.Collections.ObjectModel.ObservableCollection[string]
     $ui.lbProg.ItemsSource = $progs
     $ui.lbBlock.ItemsSource = $blockSites
     $ui.lbAllow.ItemsSource = $allowSites
+    $ui.lbLocal.ItemsSource = $localSites
     Register-Placeholder $ui.txtProgAdd $ui.phProgAdd
     Register-Placeholder $ui.txtBlockAdd $ui.phBlockAdd
     Register-Placeholder $ui.txtAllowAdd $ui.phAllowAdd
+    Register-Placeholder $ui.txtLocalAdd $ui.phLocalAdd
 
     function Update-ListCounters {
         $ui.txtProgCount.Text = "Разрешено программ: $($progs.Count)"
@@ -2898,13 +2933,20 @@ function Show-MainWindow {
     function Add-Programs($Names) { foreach ($n in $Names) { Add-UniqueItem $progs (ConvertTo-ExeName $n) } }
     function Add-BlockSites($Names) { foreach ($n in $Names) { Add-UniqueItem $blockSites (ConvertTo-Domain $n) } }
     function Add-AllowSites($Names) { foreach ($n in $Names) { Add-UniqueItem $allowSites (ConvertTo-Domain $n) } }
+    function Add-LocalSites($Names) { foreach ($n in $Names) { Add-UniqueItem $localSites (ConvertTo-Domain $n) } }
 
     function Update-SitesCount {
         $ui.txtBlockCount.Text = "В чёрном списке: $($blockSites.Count)"
         $ui.txtAllowCount.Text = "В белом списке: $($allowSites.Count)"
+        $ui.txtLocalCount.Text = "Локальных адресов: $($localSites.Count)"
     }
     $blockSites.Add_CollectionChanged({ Update-SitesCount })
     $allowSites.Add_CollectionChanged({ Update-SitesCount })
+    $localSites.Add_CollectionChanged({ Update-SitesCount })
+
+    $ui.btnLocalAdd.Add_Click({ Invoke-Safe { Add-LocalSites @($ui.txtLocalAdd.Text -split '[,;\s]+'); $ui.txtLocalAdd.Text = '' } })
+    $ui.txtLocalAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-LocalSites @($ui.txtLocalAdd.Text -split '[,;\s]+'); $ui.txtLocalAdd.Text = '' } } })
+    $ui.btnLocalPreset.Add_Click({ Invoke-Safe { Add-LocalSites @('localhost', '127.0.0.1', 'local', 'lan', 'home', 'intranet', 'router', 'fritz.box', '192.168.0.0/24', '192.168.1.0/24'); $ui.chkSites.IsChecked = $true } })
 
     function Get-SiteMode {
         if ($ui.rbModeWhite.IsChecked -eq $true) { return 'allow' }
@@ -2933,9 +2975,7 @@ function Show-MainWindow {
     ) -join ' '
     $ui.btnAllowMail.Tag = 'mail.ru e.mail.ru mail.yandex.ru gmail.com mail.google.com outlook.live.com outlook.office.com'
     $ui.btnAllowGov.Tag = 'gosuslugi.ru esia.gosuslugi.ru nalog.gov.ru mos.ru pfr.gov.ru sfr.gov.ru'
-    # Локальная сеть: localhost, типичные локальные зоны и самые частые домашние подсети (можно заменить на свой диапазон, напр. 192.168.0.0/16)
-    $ui.btnAllowLocal.Tag = 'localhost 127.0.0.1 local lan home intranet router fritz.box 192.168.0.0/24 192.168.1.0/24'
-    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov, $ui.btnAllowLocal)) {
+    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov)) {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
@@ -2960,6 +3000,7 @@ function Show-MainWindow {
     $ui.lbProg.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
     $ui.lbBlock.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
     $ui.lbAllow.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
+    $ui.lbLocal.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, $removeHandler)
 
     $ui.btnProgAdd.Add_Click({ Invoke-Safe { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' } })
     $ui.txtProgAdd.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-Safe { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' } } })
@@ -3190,6 +3231,7 @@ function Show-MainWindow {
         $progs.Clear()
         $blockSites.Clear()
         $allowSites.Clear()
+        $localSites.Clear()
         if ($UseDefaults) {
             $ui.chkWl.IsChecked = $true
             foreach ($p in $DefaultAllowedPrograms) { Add-UniqueItem $progs $p }
@@ -3205,6 +3247,7 @@ function Show-MainWindow {
         }
         foreach ($x in @($r.BlockSites)) { Add-UniqueItem $blockSites $x }
         foreach ($x in @($r.AllowSites)) { Add-UniqueItem $allowSites $x }
+        foreach ($x in @($r.LocalSites)) { Add-UniqueItem $localSites $x }
         switch ($r.SitesMode) {
             'allow'    { $ui.rbModeWhite.IsChecked = $true }
             'combined' { $ui.rbModeCombo.IsChecked = $true }
@@ -3230,8 +3273,9 @@ function Show-MainWindow {
         $mode = Get-SiteMode
         $block = @($blockSites)
         $allow = @($allowSites)
-        # В белом/совмещённом режиме нужен белый список; в чёрном — хотя бы один список
-        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0) } else { $allow.Count -gt 0 }
+        $local = @($localSites)
+        # В белом/совмещённом режиме нужен белый или локальный список; в чёрном — хотя бы один список
+        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0 -or $local.Count -gt 0) } else { ($allow.Count -gt 0 -or $local.Count -gt 0) }
         [pscustomobject]@{
             WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
             Programs         = @($progs)
@@ -3239,6 +3283,7 @@ function Show-MainWindow {
             SitesMode        = $mode
             BlockSites       = $block
             AllowSites       = $allow
+            LocalSites       = $local
             HostsEnabled     = ($ui.chkHosts.IsChecked -eq $true)
             Lockdowns        = $lock
         }
@@ -3250,6 +3295,7 @@ function Show-MainWindow {
         if ($ui.txtProgAdd.Text) { Add-Programs @($ui.txtProgAdd.Text -split '[,;\s]+'); $ui.txtProgAdd.Text = '' }
         if ($ui.txtBlockAdd.Text) { Add-BlockSites @($ui.txtBlockAdd.Text -split '[,;\s]+'); $ui.txtBlockAdd.Text = '' }
         if ($ui.txtAllowAdd.Text) { Add-AllowSites @($ui.txtAllowAdd.Text -split '[,;\s]+'); $ui.txtAllowAdd.Text = '' }
+        if ($ui.txtLocalAdd.Text) { Add-LocalSites @($ui.txtLocalAdd.Text -split '[,;\s]+'); $ui.txtLocalAdd.Text = '' }
         $cfg = Get-RestrictionsFromUI
         if ($cfg.WhitelistEnabled -and -not $cfg.Programs.Count) { Show-Error 'Список разрешённых программ пуст.'; return }
         if ($cfg.WhitelistEnabled -and $cfg.Programs -notcontains 'explorer.exe') {
