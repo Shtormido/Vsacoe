@@ -1035,6 +1035,8 @@ function Set-HostsBlock([string[]]$Domains) {
 function ConvertTo-Domain([string]$Text) {
     $d = $Text.Trim().ToLowerInvariant()
     if (-not $d -or $d.StartsWith('#')) { return $null }
+    # Диапазон локальной сети (CIDR) сохраняем как есть — развернём в адреса при применении
+    if ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$') { return $d }
     $d = $d -replace '^[a-z][a-z0-9+.\-]*://', ''
     $d = ($d -split '[?#]')[0].TrimEnd('/')
     # Можно указать раздел сайта (yandex.ru/games) — тогда остальной сайт останется доступен
@@ -1201,6 +1203,12 @@ function Get-RestrictionSummary($Config) {
         if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
         $lines += $line
     }
+    # Если в белом списке есть диапазоны CIDR — показываем, во сколько адресов они развернулись
+    $cidr = @($Config.AllowSites | Where-Object { $_ -match '/\d{1,2}$' })
+    if ($cidr.Count) {
+        $hosts = @(Expand-AllowHosts $Config.AllowSites).Count
+        $lines += "• Локальные диапазоны развёрнуты в адреса: всего в белом списке ~$hosts (браузеры учитывают примерно первую 1000)"
+    }
     foreach ($l in $Lockdowns) { if ($Config.Lockdowns[$l.Id]) { $lines += "• $($l.Label)" } }
     return ($lines -join "`r`n")
 }
@@ -1237,6 +1245,46 @@ function ConvertTo-FirefoxPatterns($Sites) {
     })
 }
 
+# Браузеры держат в списках не больше ~1000 адресов, поэтому разворачивание CIDR ограничено
+$AllowIpCap = 1024
+
+# Разворачивает диапазон 192.168.0.0/16 в отдельные IP-адреса (не больше $AllowIpCap)
+function Expand-Cidr([string]$Cidr) {
+    if ($Cidr -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})$') { return @() }
+    $o = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3], [int]$Matches[4])
+    $prefix = [int]$Matches[5]
+    if ($prefix -gt 32 -or ($o | Where-Object { $_ -gt 255 })) { return @() }
+    $base = ([long]$o[0] -shl 24) + ([long]$o[1] -shl 16) + ([long]$o[2] -shl 8) + [long]$o[3]
+    $hostBits = 32 - $prefix
+    $mask = ([long]0xFFFFFFFF -shl $hostBits) -band 0xFFFFFFFF
+    $net = $base -band $mask
+    $count = [long][math]::Pow(2, $hostBits)
+    $take = [long][math]::Min($count, $AllowIpCap)
+    $out = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $take; $i++) {
+        $a = $net + $i
+        [void]$out.Add('{0}.{1}.{2}.{3}' -f (($a -shr 24) -band 255), (($a -shr 16) -band 255), (($a -shr 8) -band 255), ($a -band 255))
+    }
+    return , $out.ToArray()
+}
+
+# Из списка разрешённых адресов делает плоский список фильтров для браузеров
+# (домен + его поддомены; одиночный IP как есть; диапазон CIDR — в набор IP)
+function Expand-AllowHosts($Sites) {
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($d in $Sites) {
+        if (-not $d) { continue }
+        if ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$') {
+            foreach ($ip in (Expand-Cidr $d)) { [void]$out.Add($ip) }
+        } elseif ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?(/.*)?$') {
+            [void]$out.Add($d)                    # одиночный IP (возможно с портом/путём)
+        } else {
+            [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
+        }
+    }
+    return , @($out.ToArray() | Select-Object -Unique)
+}
+
 # Плоский список значений реестра (относительно HKCU), которые задают выбранные ограничения
 function Get-RestrictionValues($Config) {
     $vals = New-Object System.Collections.Generic.List[object]
@@ -1255,7 +1303,9 @@ function Get-RestrictionValues($Config) {
         $blockList = @()
         if ($useBlack) { $blockList += @($Config.BlockSites) }
         if ($strict)   { $blockList += $BlockAllFilters }
-        $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
+        # Белый список разворачиваем: домены с поддоменами, а диапазоны CIDR — в отдельные IP
+        $allowHosts = @(Expand-AllowHosts $Config.AllowSites)
+        $allowFilters = @($allowHosts)
         if ($strict)   { $allowFilters += $BrowserInternalUrls }
 
         if ($blockList.Count)    { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
@@ -1265,7 +1315,7 @@ function Get-RestrictionValues($Config) {
         if ($useBlack) { $fxBlock += @(ConvertTo-FirefoxPatterns $Config.BlockSites) }
         if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
-        if (@($Config.AllowSites).Count) { Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites) }
+        if ($allowHosts.Count) { Add-ValueList $vals $FirefoxAllowKey (@($allowHosts | ForEach-Object { "*://$_/*" })) }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
@@ -1987,7 +2037,7 @@ $MainWindowXaml = @'
                           </Grid.ColumnDefinitions>
                           <Grid>
                             <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
-                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Сайт, IP или имя сервера: uchi.ru, 192.168.1.10:8080, nas"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Сайт, IP, имя сервера или диапазон: uchi.ru, 192.168.1.10:8080, nas, 192.168.0.0/16"/>
                           </Grid>
                           <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                         </Grid>
@@ -2883,8 +2933,8 @@ function Show-MainWindow {
     ) -join ' '
     $ui.btnAllowMail.Tag = 'mail.ru e.mail.ru mail.yandex.ru gmail.com mail.google.com outlook.live.com outlook.office.com'
     $ui.btnAllowGov.Tag = 'gosuslugi.ru esia.gosuslugi.ru nalog.gov.ru mos.ru pfr.gov.ru sfr.gov.ru'
-    # Локальная сеть: localhost и типичные локальные зоны (.local/.lan/.home и т.п.). Конкретные IP добавьте вручную.
-    $ui.btnAllowLocal.Tag = 'localhost 127.0.0.1 local lan home intranet router fritz.box'
+    # Локальная сеть: localhost, типичные локальные зоны и самые частые домашние подсети (можно заменить на свой диапазон, напр. 192.168.0.0/16)
+    $ui.btnAllowLocal.Tag = 'localhost 127.0.0.1 local lan home intranet router fritz.box 192.168.0.0/24 192.168.1.0/24'
     foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov, $ui.btnAllowLocal)) {
         $b.Add_Click({
             param($s, $e)
