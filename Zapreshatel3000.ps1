@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.7'
+$AppVersion  = '2.8'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -780,7 +780,11 @@ $AllowListKeys     = @($ChromiumPolicyRoots | ForEach-Object { "$_\URLAllowlist"
 $FirefoxBlockKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Block'
 $FirefoxAllowKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Exceptions'
 # Фильтры «заблокировать всё» для режима белого списка (несколько форм — для надёжности в разных сборках)
-$BlockAllFilters   = @('*', 'http://*', 'https://*', 'ftp://*', 'file://*')
+# Запрет всего: только '*' (он наименее приоритетный, поэтому любое разрешение, включая IP, его перебивает).
+# Прежние фильтры со схемой (https://*) могли перебивать разрешения по IP и блокировали локальные адреса.
+$BlockAllFilters   = @('*')
+# Для распознавания строгого режима при чтении — учитываем и старые фильтры прежних версий
+$BlockAllRecognize = @('*', 'http://*', 'https://*', 'ftp://*', 'file://*')
 # Служебные страницы браузеров (настройки, новая вкладка), которые в режиме белого списка остаются доступны
 $BrowserInternalUrls = @('edge://*', 'chrome://*', 'browser://*', 'brave://*', 'vivaldi://*', 'chrome-extension://*')
 # Файл с последними настройками ограничений; его же формат используется для переноса на другой компьютер
@@ -1118,9 +1122,9 @@ function Get-NonAdminRestrictions {
     $blockRaw = @(Get-PolList $entries $SiteListKeys[0])
     # На экране показываем только домены пользователя, без служебных фильтров и дублей *.domain
     $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') })
-    $block = @($blockRaw | Where-Object { $BlockAllFilters -notcontains $_ })
+    $block = @($blockRaw | Where-Object { $BlockAllRecognize -notcontains $_ })
     $hostsSites = @(Get-HostsBlockedSites)
-    $strict = [bool]($blockRaw | Where-Object { $BlockAllFilters -contains $_ })
+    $strict = [bool]($blockRaw | Where-Object { $BlockAllRecognize -contains $_ })
     if (-not $strict) { $mode = 'block' }
     elseif ($block.Count) { $mode = 'combined' } else { $mode = 'allow' }
     if (-not $block.Count) { $block = $hostsSites }
