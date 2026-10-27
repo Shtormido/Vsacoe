@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.2'
+$AppVersion  = '3.3'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1069,8 +1069,6 @@ function Set-HostsBlock([string[]]$Domains) {
 function ConvertTo-Domain([string]$Text) {
     $d = $Text.Trim().ToLowerInvariant()
     if (-not $d -or $d.StartsWith('#')) { return $null }
-    # Диапазон локальной сети (CIDR) сохраняем как есть — развернём в адреса при применении
-    if ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$') { return $d }
     $d = $d -replace '^[a-z][a-z0-9+.\-]*://', ''
     $d = ($d -split '[?#]')[0].TrimEnd('/')
     # Можно указать раздел сайта (yandex.ru/games) — тогда остальной сайт останется доступен
@@ -1078,17 +1076,13 @@ function ConvertTo-Domain([string]$Text) {
     $slash = $d.IndexOf('/')
     if ($slash -ge 0) { $path = $d.Substring($slash); $d = $d.Substring(0, $slash) }
     $d = $d -replace '^\*\.', '' -replace '^www\.', ''
+    # Отбрасываем порт
+    $d = ($d -split ':')[0]
     if (-not $d) { return $null }
-    # Отделяем порт (локальные серверы часто с портом: 192.168.1.10:8080)
-    $port = ''
-    $colon = $d.LastIndexOf(':')
-    if ($colon -ge 0 -and ($d.Substring($colon + 1) -match '^\d+$')) { $port = $d.Substring($colon); $d = $d.Substring(0, $colon) }
-    if (-not $d) { return $null }
-    # IP-адреса и локальные имена без точки оставляем как есть; обычные домены приводим к ASCII (punycode)
-    if ($d -notmatch '^[0-9.]+$') {
-        try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес: $Text" }
-    }
-    return $d + $port + $path
+    # Работаем только с доменами: IP-адреса и диапазоны не поддерживаются
+    if ($d -match '^[0-9.]+$') { return $null }
+    try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес сайта: $Text" }
+    return $d + $path
 }
 
 function ConvertTo-ExeName([string]$Text) {
@@ -1241,15 +1235,6 @@ function Get-RestrictionSummary($Config) {
         if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
         $lines += $line
     }
-    $nl = @($Config.LocalSites).Count
-    if ($Config.SitesEnabled -and $nl) { $lines += "• Локальные адреса (открыты всегда): $nl" }
-    # Если в белом/локальном списке есть диапазоны CIDR — показываем, во сколько адресов они развернулись
-    $allAllow = @(@($Config.AllowSites) + @($Config.LocalSites))
-    $cidr = @($allAllow | Where-Object { $_ -match '/\d{1,2}$' })
-    if ($cidr.Count) {
-        $hosts = @(Expand-AllowHosts $allAllow).Count
-        $lines += "• Диапазоны развёрнуты в адреса: всего разрешено ~$hosts (браузеры учитывают примерно первую 1000)"
-    }
     foreach ($l in $Lockdowns) { if ($Config.Lockdowns[$l.Id]) { $lines += "• $($l.Label)" } }
     return ($lines -join "`r`n")
 }
@@ -1315,16 +1300,7 @@ function Expand-AllowHosts($Sites) {
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($d in $Sites) {
         if (-not $d) { continue }
-        if ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$') {
-            foreach ($ip in (Expand-Cidr $d)) { [void]$out.Add($ip) }
-        } elseif ($d -match '^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?(/.*)?$') {
-            # Одиночный IP (возможно с портом/путём). Добавляем максимум форм, чтобы точно открывался:
-            # как введено, голый IP (любой порт), и со схемами http/https — и для введённого, и для голого IP.
-            $bareIp = $Matches[1]
-            foreach ($f in @($d, $bareIp, "http://$d", "https://$d", "http://$bareIp", "https://$bareIp")) { [void]$out.Add($f) }
-        } else {
-            [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
-        }
+        [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
     }
     return , @($out.ToArray() | Select-Object -Unique)
 }
@@ -1360,9 +1336,6 @@ function Get-RestrictionValues($Config) {
         if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
         if ($allowHosts.Count) { Add-ValueList $vals $FirefoxAllowKey (@($allowHosts | ForEach-Object { "*://$_/*" })) }
-
-        # Разрешаем HTTP в браузерах (чтобы открывались локальные серверы без HTTPS)
-        foreach ($p in $HttpAllowValues) { $vals.Add([pscustomobject]@{ Key = $p.Key; Name = $p.Name; Type = $p.Type; Data = $p.Data }) }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
@@ -2077,7 +2050,7 @@ $MainWindowXaml = @'
 
                     <Border BorderBrush="#86EFAC" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="#F0FDF4">
                       <StackPanel>
-                        <TextBlock FontWeight="SemiBold" Foreground="#166534" Text="Белый список — разрешить (сайты и локальные адреса)" Margin="0,0,0,8"/>
+                        <TextBlock FontWeight="SemiBold" Foreground="#166534" Text="Белый список — разрешить (исключения)" Margin="0,0,0,8"/>
                         <Grid Margin="0,0,0,8">
                           <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -2085,7 +2058,7 @@ $MainWindowXaml = @'
                           </Grid.ColumnDefinitions>
                           <Grid>
                             <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
-                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Сайт, IP, имя сервера, порт или диапазон: uchi.ru, 192.168.1.10:8080, nas, 192.168.0.0/16"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Домен сайта: uchi.ru, youtube.com, yandex.ru/games"/>
                           </Grid>
                           <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                         </Grid>
@@ -2095,7 +2068,6 @@ $MainWindowXaml = @'
                           <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход в аккаунты"/>
                           <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
                           <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
-                          <Button x:Name="btnAllowLocal" Style="{StaticResource BtnChip}" Content="+ Локальная сеть"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
                           <ListBox x:Name="lbAllow" Height="170" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -2982,8 +2954,7 @@ function Show-MainWindow {
     ) -join ' '
     $ui.btnAllowMail.Tag = 'mail.ru e.mail.ru mail.yandex.ru gmail.com mail.google.com outlook.live.com outlook.office.com'
     $ui.btnAllowGov.Tag = 'gosuslugi.ru esia.gosuslugi.ru nalog.gov.ru mos.ru pfr.gov.ru sfr.gov.ru'
-    $ui.btnAllowLocal.Tag = 'localhost 127.0.0.1 local lan home intranet router fritz.box 192.168.0.0/24 192.168.1.0/24'
-    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov, $ui.btnAllowLocal)) {
+    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov)) {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
@@ -3251,9 +3222,10 @@ function Show-MainWindow {
             $ui.chkSites.IsChecked = $r.SitesEnabled
             foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$r.Lockdowns[$l.Id] }
         }
-        foreach ($x in @($r.BlockSites)) { Add-UniqueItem $blockSites $x }
-        foreach ($x in @($r.AllowSites)) { Add-UniqueItem $allowSites $x }
-        foreach ($x in @($r.LocalSites)) { Add-UniqueItem $allowSites $x }
+        # Прогоняем через ConvertTo-Domain — так из старых настроек отсеиваются IP/диапазоны (остаются только домены)
+        foreach ($x in @($r.BlockSites)) { Add-BlockSites @($x) }
+        foreach ($x in @($r.AllowSites)) { Add-AllowSites @($x) }
+        foreach ($x in @($r.LocalSites)) { Add-AllowSites @($x) }
         switch ($r.SitesMode) {
             'allow'    { $ui.rbModeWhite.IsChecked = $true }
             'combined' { $ui.rbModeCombo.IsChecked = $true }
