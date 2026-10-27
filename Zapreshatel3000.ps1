@@ -2018,6 +2018,7 @@ $MainWindowXaml = @'
                           <Button x:Name="btnQuickMessengers" Style="{StaticResource BtnChip}" Content="+ Мессенджеры"/>
                           <Button x:Name="btnQuickCinema" Style="{StaticResource BtnChip}" Content="+ Кино"/>
                           <Button x:Name="btnQuickBets" Style="{StaticResource BtnChip}" Content="+ Ставки"/>
+                          <Button x:Name="btnQuickYandex" Style="{StaticResource BtnChip}" Content="+ Сервисы Яндекса"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
                           <ListBox x:Name="lbBlock" Height="150" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -3037,7 +3038,17 @@ function Show-MainWindow {
         'pari.ru', 'bet-boom.ru', 'betboom.ru', 'tennisi.bet', 'melbet.ru', '1xbet.com', '1xstavka.ru',
         'pin-up.ru', 'pinup.ru', 'vulkan.ru', 'joycasino.com', 'stake.com', 'csgorun.ru', 'csfail.com', 'ggdrop.com'
     ) -join ' '
-    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets)) {
+    # Развлекательные сервисы Яндекса: поиск, почта и карты остаются доступны
+    $ui.btnQuickYandex.Tag = @(
+        'yandex.ru/games', 'yandex.ru/video', 'yandex.ru/efir', 'yandex.ru/chat', 'yandex.ru/gamecenter',
+        'games.yandex.ru', 'yandexgames.net', 'app.playhop.com', 'playhop.com',
+        'dzen.ru', 'zen.yandex.ru',
+        'music.yandex.ru', 'music.yandex.com', 'radio.yandex.ru',
+        'video.yandex.ru', 'efir.yandex.ru', 'live.yandex.ru',
+        'kinopoisk.ru', 'hd.kinopoisk.ru', 'plus.yandex.ru', 'afisha.yandex.ru',
+        'q.yandex.ru', 'yandex.ru/q', 'market.yandex.ru', 'ya.ru/games'
+    ) -join ' '
+    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets, $ui.btnQuickYandex)) {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
