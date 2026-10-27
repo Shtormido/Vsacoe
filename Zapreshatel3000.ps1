@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.0'
+$AppVersion  = '3.1'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1317,11 +1317,11 @@ function Expand-AllowHosts($Sites) {
         if (-not $d) { continue }
         if ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$') {
             foreach ($ip in (Expand-Cidr $d)) { [void]$out.Add($ip) }
-        } elseif ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?(/.*)?$') {
-            # одиночный IP (возможно с портом/путём) — добавляем и со схемами, чтобы точно открывался по http
-            [void]$out.Add($d)
-            [void]$out.Add("http://$d")
-            [void]$out.Add("https://$d")
+        } elseif ($d -match '^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?(/.*)?$') {
+            # Одиночный IP (возможно с портом/путём). Добавляем максимум форм, чтобы точно открывался:
+            # как введено, голый IP (любой порт), и со схемами http/https — и для введённого, и для голого IP.
+            $bareIp = $Matches[1]
+            foreach ($f in @($d, $bareIp, "http://$d", "https://$d", "http://$bareIp", "https://$bareIp")) { [void]$out.Add($f) }
         } else {
             [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
         }
@@ -1347,9 +1347,8 @@ function Get-RestrictionValues($Config) {
         $blockList = @()
         if ($useBlack) { $blockList += @($Config.BlockSites) }
         if ($strict)   { $blockList += $BlockAllFilters }
-        # Белый список + локальные адреса разворачиваем: домены с поддоменами, а диапазоны CIDR — в отдельные IP.
-        # Локальные адреса открыты всегда (в любом режиме).
-        $allowHosts = @(Expand-AllowHosts @(@($Config.AllowSites) + @($Config.LocalSites)))
+        # Локальные адреса — ПЕРВЫМИ, чтобы их не обрезал лимит браузера (~1000 записей). Открыты всегда.
+        $allowHosts = @(Expand-AllowHosts @(@($Config.LocalSites) + @($Config.AllowSites)))
         $allowFilters = @($allowHosts)
         if ($strict)   { $allowFilters += $BrowserInternalUrls }
 
