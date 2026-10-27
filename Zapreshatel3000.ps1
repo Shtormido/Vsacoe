@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.5'
+$AppVersion  = '3.6'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1365,11 +1365,9 @@ function Get-RestrictionValues($Config) {
         $localNet = @()
         if ($Config.LocalNetwork) { $localNet = @(Get-LocalNetAllowHosts) }
         $allowHosts = @($localNet + @(Expand-AllowHosts $Config.AllowSites))
-        $allowFilters = @($allowHosts)
-        if ($strict)   { $allowFilters += $BrowserInternalUrls }
 
-        if ($blockList.Count)    { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
-        if ($allowFilters.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowFilters } }
+        if ($blockList.Count)  { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
+        if ($allowHosts.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowHosts } }
 
         $fxBlock = @()
         if ($useBlack) { $fxBlock += @(ConvertTo-FirefoxPatterns $Config.BlockSites) }
@@ -1474,6 +1472,12 @@ function Format-UserResults($Results) {
 
 function Set-NonAdminRestrictions($Config) {
     $values = Get-RestrictionValues $Config
+
+    # Для диагностики: что именно записывается в URLBlocklist/URLAllowlist Edge
+    $edgeBlock = @($values | Where-Object { $_.Key -eq 'Software\Policies\Microsoft\Edge\URLBlocklist' } | ForEach-Object { $_.Data })
+    $edgeAllow = @($values | Where-Object { $_.Key -eq 'Software\Policies\Microsoft\Edge\URLAllowlist' } | ForEach-Object { $_.Data })
+    Write-Log ("Edge URLBlocklist [" + ($edgeBlock -join ' ') + "]")
+    Write-Log ("Edge URLAllowlist [" + ($edgeAllow -join ' ') + "]")
 
     # Сохраняем настройки СРАЗУ — чтобы введённые адреса не потерялись, даже если запись политик ниже упадёт
     Export-RestrictionConfig $Config $RestrictionsFile
