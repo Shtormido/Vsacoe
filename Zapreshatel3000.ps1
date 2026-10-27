@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.4'
+$AppVersion  = '3.5'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -2085,9 +2085,9 @@ $MainWindowXaml = @'
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
                     <TextBlock FontWeight="SemiBold" Margin="0,4,0,6" Text="Режим работы списков"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" Content="Чёрный список"/>
+                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Чёрный список"/>
                       <RadioButton x:Name="rbModeWhite" Style="{StaticResource Segment}" GroupName="sitemode" Content="Белый список"/>
-                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Совмещённый"/>
+                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" Content="Совмещённый"/>
                     </StackPanel>
                     <TextBlock x:Name="txtModeDesc" Style="{StaticResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
@@ -2975,8 +2975,8 @@ function Show-MainWindow {
 
     function Get-SiteMode {
         if ($ui.rbModeWhite.IsChecked -eq $true) { return 'allow' }
-        if ($ui.rbModeBlack.IsChecked -eq $true) { return 'block' }
-        return 'combined'
+        if ($ui.rbModeCombo.IsChecked -eq $true) { return 'combined' }
+        return 'block'
     }
     function Update-ModeDesc {
         $t = switch (Get-SiteMode) {
@@ -3331,6 +3331,11 @@ function Show-MainWindow {
             if ($cfg.SitesMode -ne 'block') { Show-Error 'В этом режиме белый список пуст — так закроются все сайты. Добавьте разрешённые сайты в белый список.' }
             else { Show-Error 'Списки сайтов пусты. Добавьте сайты в чёрный или белый список, либо выключите ограничение сайтов.' }
             return
+        }
+        # Предупреждаем, если строгий/совмещённый режим закроет весь интернет (белый список без доменов)
+        if ($cfg.SitesEnabled -and $cfg.SitesMode -ne 'block' -and @($cfg.AllowSites).Count -eq 0) {
+            $extra = if ($cfg.LocalNetwork) { ' Откроется только локальная сеть.' } else { '' }
+            if (-not (Confirm-Action ("ВНИМАНИЕ: в белом списке нет сайтов, а режим — не «Чёрный список». Будет закрыт ВЕСЬ интернет.$extra`r`n`r`nЧаще всего нужен режим «Чёрный список». Всё равно применить?"))) { return }
         }
         if ($AskConfirm -and -not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + (Get-RestrictionSummary $cfg)))) { return }
 
