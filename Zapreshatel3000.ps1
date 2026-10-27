@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.6'
+$AppVersion  = '3.7'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1160,7 +1160,6 @@ function Get-NonAdminRestrictions {
         BlockSites       = $block
         AllowSites       = $allow
         LocalSites       = @()
-        LocalNetwork     = $false
         HostsEnabled     = $hostsSites.Count -gt 0
         Lockdowns        = $lock
     }
@@ -1183,7 +1182,6 @@ function Export-RestrictionConfig($Config, [string]$File) {
             block   = @($Config.BlockSites)
             allow   = @($Config.AllowSites)
             local   = @($Config.LocalSites)
-            localnet = [bool]$Config.LocalNetwork
             hosts   = [bool]$Config.HostsEnabled
         }
         lockdowns = $lock
@@ -1208,12 +1206,11 @@ function Import-RestrictionConfig([string]$File) {
     [pscustomobject]@{
         WhitelistEnabled = ([bool]$j.programs.enabled -and $programs.Count -gt 0)
         Programs         = $programs
-        SitesEnabled     = ([bool]$j.sites.enabled -and ($active.Count -gt 0 -or [bool]$j.sites.localnet))
+        SitesEnabled     = ([bool]$j.sites.enabled -and $active.Count -gt 0)
         SitesMode        = $mode
         BlockSites       = $block
         AllowSites       = @(Get-UniqueText @(@($local) + @($allow)))
         LocalSites       = @()
-        LocalNetwork     = [bool]$j.sites.localnet
         HostsEnabled     = [bool]$j.sites.hosts
         Lockdowns        = $lock
     }
@@ -1237,11 +1234,6 @@ function Get-RestrictionSummary($Config) {
         if ($nw) { $line += "; белый список (исключения): $nw" }
         if ($Config.HostsEnabled) { $line += ' (+ файл hosts)' }
         $lines += $line
-    }
-    if ($Config.SitesEnabled -and $Config.LocalNetwork) {
-        $subs = @(Get-LocalSubnets)
-        $txt = if ($subs.Count) { 'подсети: ' + (($subs | Select-Object -First 2) -join ', ') } else { 'только localhost (локальная подсеть не определена)' }
-        $lines += "• Локальная сеть не блокируется ($txt)"
     }
     foreach ($l in $Lockdowns) { if ($Config.Lockdowns[$l.Id]) { $lines += "• $($l.Label)" } }
     return ($lines -join "`r`n")
@@ -1279,65 +1271,12 @@ function ConvertTo-FirefoxPatterns($Sites) {
     })
 }
 
-# Браузеры держат в списках не больше ~1000 адресов, поэтому разворачивание CIDR ограничено
-$AllowIpCap = 1024
-
-# Разворачивает диапазон 192.168.0.0/16 в отдельные IP-адреса (не больше $AllowIpCap)
-function Expand-Cidr([string]$Cidr) {
-    if ($Cidr -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})$') { return @() }
-    $o = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3], [int]$Matches[4])
-    $prefix = [int]$Matches[5]
-    if ($prefix -gt 32 -or ($o | Where-Object { $_ -gt 255 })) { return @() }
-    $base = ([long]$o[0] -shl 24) + ([long]$o[1] -shl 16) + ([long]$o[2] -shl 8) + [long]$o[3]
-    $hostBits = 32 - $prefix
-    $mask = ([long]0xFFFFFFFF -shl $hostBits) -band 0xFFFFFFFF
-    $net = $base -band $mask
-    $count = [long][math]::Pow(2, $hostBits)
-    $take = [long][math]::Min($count, $AllowIpCap)
-    $out = New-Object System.Collections.Generic.List[string]
-    for ($i = 0; $i -lt $take; $i++) {
-        $a = $net + $i
-        [void]$out.Add(('{0}.{1}.{2}.{3}' -f (($a -shr 24) -band 255), (($a -shr 16) -band 255), (($a -shr 8) -band 255), ($a -band 255)))
-    }
-    return , $out.ToArray()
-}
-
 # Из списка разрешённых доменов делает фильтры для браузеров (домен + его поддомены)
 function Expand-AllowHosts($Sites) {
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($d in $Sites) {
         if (-not $d) { continue }
         [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
-    }
-    return , @($out.ToArray() | Select-Object -Unique)
-}
-
-# Подсети /24 этого компьютера из приватных диапазонов (10/8, 172.16/12, 192.168/16)
-function Get-LocalSubnets {
-    $subnets = New-Object System.Collections.Generic.List[string]
-    try {
-        $ips = @()
-        try { $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.IPAddress }) }
-        catch { $ips = @([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | ForEach-Object { $_.ToString() }) }
-        foreach ($ip in $ips) {
-            if ($ip -match '^(10\.\d+\.\d+|192\.168\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+)\.\d+$') {
-                $o = $ip.Split('.')
-                $subnets.Add("$($o[0]).$($o[1]).$($o[2]).0/24")
-            }
-        }
-    } catch { }
-    return , @($subnets | Select-Object -Unique)
-}
-
-# Разрешённые адреса локальной сети: localhost + все IP из подсетей /24 этого компьютера (не больше 2 подсетей)
-function Get-LocalNetAllowHosts {
-    $out = New-Object System.Collections.Generic.List[string]
-    [void]$out.Add('localhost'); [void]$out.Add('127.0.0.1')
-    $n = 0
-    foreach ($sub in (Get-LocalSubnets)) {
-        if ($n -ge 2) { break }   # не больше 2 подсетей (512 адресов), чтобы не переполнить список браузера
-        foreach ($ip in (Expand-Cidr $sub)) { [void]$out.Add($ip) }
-        $n++
     }
     return , @($out.ToArray() | Select-Object -Unique)
 }
@@ -1361,10 +1300,7 @@ function Get-RestrictionValues($Config) {
         if ($useBlack) { $blockList += @($Config.BlockSites) }
         if ($strict)   { $blockList += $BlockAllFilters }
 
-        # Локальная сеть — ПЕРВОЙ в списке разрешений (чтобы её не обрезал лимит браузера ~1000 записей)
-        $localNet = @()
-        if ($Config.LocalNetwork) { $localNet = @(Get-LocalNetAllowHosts) }
-        $allowHosts = @($localNet + @(Expand-AllowHosts $Config.AllowSites))
+        $allowHosts = @(Expand-AllowHosts $Config.AllowSites)
 
         if ($blockList.Count)  { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
         if ($allowHosts.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowHosts } }
@@ -1374,9 +1310,6 @@ function Get-RestrictionValues($Config) {
         if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
         if ($allowHosts.Count) { Add-ValueList $vals $FirefoxAllowKey (@($allowHosts | ForEach-Object { "*://$_/*" })) }
-
-        # Если разрешена локальная сеть — разрешаем HTTP (локальные серверы обычно без HTTPS)
-        if ($Config.LocalNetwork) { foreach ($p in $HttpAllowValues) { $vals.Add([pscustomobject]@{ Key = $p.Key; Name = $p.Name; Type = $p.Type; Data = $p.Data }) } }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
@@ -2154,9 +2087,6 @@ $MainWindowXaml = @'
                       </StackPanel>
                     </Border>
 
-                    <CheckBox x:Name="chkLocalNet" Style="{StaticResource Switch}" Margin="0,0,0,10">
-                      <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Text="Не блокировать локальную сеть — локальные серверы и устройства (роутер, NAS, панели по 192.168.*) открываются в любом режиме, в том числе по http"/>
-                    </CheckBox>
                     <CheckBox x:Name="chkHosts" Style="{StaticResource Switch}">
                       <TextBlock TextWrapping="Wrap" Text="Чёрный список также через файл hosts — работает в любом браузере, но и для администратора тоже"/>
                     </CheckBox>
@@ -3281,7 +3211,6 @@ function Show-MainWindow {
             'combined' { $ui.rbModeCombo.IsChecked = $true }
             default    { $ui.rbModeBlack.IsChecked = $true }
         }
-        $ui.chkLocalNet.IsChecked = [bool]$r.LocalNetwork
         $ui.chkHosts.IsChecked = [bool]$r.HostsEnabled
         Update-ListCounters
         Update-SitesCount
@@ -3303,9 +3232,8 @@ function Show-MainWindow {
         $block = @($blockSites)
         $allow = @($allowSites)
         $local = @()
-        $localNet = ($ui.chkLocalNet.IsChecked -eq $true)
-        # В белом/совмещённом режиме нужен белый список или разрешённая локальная сеть; в чёрном — хотя бы один список
-        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0 -or $localNet) } else { ($allow.Count -gt 0 -or $localNet) }
+        # В белом/совмещённом режиме нужен белый список; в чёрном — хотя бы один список
+        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0) } else { ($allow.Count -gt 0) }
         [pscustomobject]@{
             WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
             Programs         = @($progs)
@@ -3314,7 +3242,6 @@ function Show-MainWindow {
             BlockSites       = $block
             AllowSites       = $allow
             LocalSites       = $local
-            LocalNetwork     = $localNet
             HostsEnabled     = ($ui.chkHosts.IsChecked -eq $true)
             Lockdowns        = $lock
         }
@@ -3338,8 +3265,7 @@ function Show-MainWindow {
         }
         # Предупреждаем, если строгий/совмещённый режим закроет весь интернет (белый список без доменов)
         if ($cfg.SitesEnabled -and $cfg.SitesMode -ne 'block' -and @($cfg.AllowSites).Count -eq 0) {
-            $extra = if ($cfg.LocalNetwork) { ' Откроется только локальная сеть.' } else { '' }
-            if (-not (Confirm-Action ("ВНИМАНИЕ: в белом списке нет сайтов, а режим — не «Чёрный список». Будет закрыт ВЕСЬ интернет.$extra`r`n`r`nЧаще всего нужен режим «Чёрный список». Всё равно применить?"))) { return }
+            if (-not (Confirm-Action ("ВНИМАНИЕ: в белом списке нет сайтов, а режим — не «Чёрный список». Будет закрыт ВЕСЬ интернет.`r`n`r`nЧаще всего нужен режим «Чёрный список». Всё равно применить?"))) { return }
         }
         if ($AskConfirm -and -not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + (Get-RestrictionSummary $cfg)))) { return }
 
