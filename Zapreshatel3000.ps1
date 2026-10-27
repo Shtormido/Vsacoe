@@ -551,7 +551,8 @@ namespace PMSql {
             IntPtr db = IntPtr.Zero;
             byte[] fileb = Encoding.UTF8.GetBytes(file + "\0");
             // 0x40 = SQLITE_OPEN_READONLY | 0x... ; 1 = READONLY
-            if (sqlite3_open_v2(fileb, out db, 1, IntPtr.Zero) != 0) { if (db != IntPtr.Zero) sqlite3_close(db); return rows; }
+            // 2 = SQLITE_OPEN_READWRITE (копия одноразовая; нужно для баз в режиме WAL)
+            if (sqlite3_open_v2(fileb, out db, 2, IntPtr.Zero) != 0) { if (db != IntPtr.Zero) sqlite3_close(db); return rows; }
             try {
                 IntPtr stmt;
                 byte[] sqlb = Encoding.UTF8.GetBytes(sql + "\0");
@@ -584,6 +585,14 @@ function Copy-OpenFile([string]$Src, [string]$Dst) {
         $out = [IO.File]::Create($Dst)
         try { $in.CopyTo($out) } finally { $out.Close() }
     } finally { $in.Close() }
+}
+
+# Копирует базу SQLite вместе с журналами -wal и -shm (иначе свежие записи не видны)
+function Copy-DbWithSidecars([string]$Src, [string]$Dst) {
+    Copy-OpenFile $Src $Dst
+    foreach ($ext in @('-wal', '-shm')) {
+        if (Test-Path -LiteralPath ($Src + $ext)) { try { Copy-OpenFile ($Src + $ext) ($Dst + $ext) } catch { } }
+    }
 }
 
 # Браузеры на движке Chromium: папка в LocalAppData и человекочитаемое имя
@@ -631,7 +640,7 @@ function Get-SiteHistory([int]$Max = 1000, [string]$Filter = '') {
                     if (-not (Test-Path -LiteralPath $hist)) { continue }
                     $copy = Join-Path $tmp ("{0}_{1}_{2}" -f $user, $br.Name, ($prof -replace '\W', ''))
                     try {
-                        Copy-OpenFile $hist $copy
+                        Copy-DbWithSidecars $hist $copy
                         # По отдельным посещениям (каждый заход), чтобы фиксировать и повторные открытия
                         $sql = "SELECT urls.url, urls.title, visits.visit_time FROM visits JOIN urls ON urls.id=visits.url WHERE visits.visit_time>0 ORDER BY visits.visit_time DESC LIMIT $Max"
                         foreach ($r in [PMSql.Lite]::Query($copy, $sql, 'ssi')) {
@@ -650,7 +659,7 @@ function Get-SiteHistory([int]$Max = 1000, [string]$Filter = '') {
                     if (-not (Test-Path -LiteralPath $places)) { continue }
                     $copy = Join-Path $tmp ("{0}_Firefox_{1}" -f $user, ($pf.Name -replace '\W', ''))
                     try {
-                        Copy-OpenFile $places $copy
+                        Copy-DbWithSidecars $places $copy
                         $sql = "SELECT p.url, p.title, v.visit_date FROM moz_historyvisits v JOIN moz_places p ON p.id=v.place_id WHERE v.visit_date IS NOT NULL ORDER BY v.visit_date DESC LIMIT $Max"
                         foreach ($r in [PMSql.Lite]::Query($copy, $sql, 'ssi')) {
                             $t = ConvertFrom-FirefoxTime ([long]$r[2])
@@ -718,6 +727,7 @@ function Sync-HistoryStore([int]$HarvestPerDb = 5000) {
     foreach ($r in $stored) { [void]$keys.Add((Get-HistoryKey $r.Time.Ticks $r.User $r.Browser $r.Url)) }
     $added = 0
     foreach ($r in @(Get-SiteHistory $HarvestPerDb '')) {
+        if (-not $r -or $r.Time -isnot [datetime]) { continue }
         $k = Get-HistoryKey $r.Time.Ticks $r.User $r.Browser $r.Url
         if ($keys.Add($k)) { $stored.Add($r); $added++ }
     }
@@ -3626,13 +3636,21 @@ function Show-MainWindow {
         try {
             $rows = New-Object System.Collections.Generic.List[object]
             $err = $null
+            $syncErr = $null
+            $filter = ''
+            try { if ($ui.txtSitesFilter -and $ui.txtSitesFilter.Text) { $filter = [string]($ui.txtSitesFilter.Text).Trim() } } catch { }
+            # Сначала дописываем свежие посещения в собственный журнал
+            try { [void](Sync-HistoryStore) } catch { $syncErr = $_.Exception.Message }
+            # Затем показываем журнал целиком
             try {
-                # Сначала дописываем свежие посещения в собственный журнал, затем показываем журнал целиком
-                try { [void](Sync-HistoryStore) } catch { }
-                foreach ($r in @(Get-StoredHistory 1500 $ui.txtSitesFilter.Text.Trim())) {
-                    $site = $r.Url
-                    if ($r.Title) { $site = "$($r.Title) — $($r.Url)" }
-                    $rows.Add((New-Row @{ Title = $site; Subtitle = $r.User; C1 = $r.Time.ToString('dd.MM.yyyy HH:mm'); C2 = $r.Browser }))
+                foreach ($r in @(Get-StoredHistory 1500 $filter)) {
+                    if (-not $r) { continue }
+                    $url = [string]$r.Url
+                    $title = [string]$r.Title
+                    $site = if ($title) { "$title — $url" } else { $url }
+                    $time = ''
+                    if ($r.Time -is [datetime]) { $time = $r.Time.ToString('dd.MM.yyyy HH:mm') }
+                    $rows.Add((New-Row @{ Title = $site; Subtitle = [string]$r.User; C1 = $time; C2 = [string]$r.Browser }))
                 }
             } catch { $err = $_.Exception.Message }
             $ui.dgSites.ItemsSource = $rows
@@ -3640,7 +3658,8 @@ function Show-MainWindow {
                 $ui.pnlSitesEmpty.Visibility = 'Collapsed'
             } else {
                 $ui.pnlSitesEmpty.Visibility = 'Visible'
-                if ($err) { $ui.txtSitesEmpty.Text = 'Не удалось прочитать историю: ' + $err }
+                if ($err) { $ui.txtSitesEmpty.Text = 'Не удалось показать историю: ' + $err }
+                elseif ($syncErr) { $ui.txtSitesEmpty.Text = 'Не удалось прочитать историю браузеров: ' + $syncErr }
                 else { $ui.txtSitesEmpty.Text = 'Журнал пуст. Возможно, у пользователей ещё нет посещений. Как только они появятся, программа сохранит их у себя — даже если потом очистить историю браузера.' }
             }
         } finally { Set-Busy $false }
