@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.9'
+$AppVersion  = '3.0'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -888,6 +888,16 @@ $ManagedPolKeys = @($RestrictRunKey) + $SiteListKeys + @($FirefoxBlockKey) + $Al
 $ManagedPolPairs = @{ "$ExplorerPolicyKey|RestrictRun" = $true }
 foreach ($l in $Lockdowns) { foreach ($v in $l.Values) { $ManagedPolPairs["$($v.Key)|$($v.Name)"] = $true } }
 
+# Разрешаем HTTP: отключаем принудительный HTTPS и авто-апгрейд http->https,
+# иначе локальные серверы без HTTPS (http://192.168.x.x) не открываются
+$HttpAllowValues = New-Object System.Collections.Generic.List[object]
+foreach ($root in $ChromiumPolicyRoots) {
+    $HttpAllowValues.Add([pscustomobject]@{ Key = $root; Name = 'HttpsUpgradesEnabled'; Type = 'DWord'; Data = 0 })
+    $HttpAllowValues.Add([pscustomobject]@{ Key = $root; Name = 'HttpsOnlyMode'; Type = 'String'; Data = 'disabled' })
+}
+$HttpAllowValues.Add([pscustomobject]@{ Key = 'Software\Policies\Microsoft\Edge'; Name = 'AutomaticHttpsDefault'; Type = 'DWord'; Data = 0 })
+foreach ($p in $HttpAllowValues) { $ManagedPolPairs["$($p.Key)|$($p.Name)"] = $true }
+
 #region Формат Registry.pol
 
 function Read-PolFile([string]$File) {
@@ -1308,7 +1318,10 @@ function Expand-AllowHosts($Sites) {
         if ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$') {
             foreach ($ip in (Expand-Cidr $d)) { [void]$out.Add($ip) }
         } elseif ($d -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?(/.*)?$') {
-            [void]$out.Add($d)                    # одиночный IP (возможно с портом/путём)
+            # одиночный IP (возможно с портом/путём) — добавляем и со схемами, чтобы точно открывался по http
+            [void]$out.Add($d)
+            [void]$out.Add("http://$d")
+            [void]$out.Add("https://$d")
         } else {
             [void]$out.Add($d); [void]$out.Add("*.$d")   # домен и его поддомены
         }
@@ -1348,6 +1361,9 @@ function Get-RestrictionValues($Config) {
         if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
         if ($allowHosts.Count) { Add-ValueList $vals $FirefoxAllowKey (@($allowHosts | ForEach-Object { "*://$_/*" })) }
+
+        # Разрешаем HTTP в браузерах (чтобы открывались локальные серверы без HTTPS)
+        foreach ($p in $HttpAllowValues) { $vals.Add([pscustomobject]@{ Key = $p.Key; Name = $p.Name; Type = $p.Type; Data = $p.Data }) }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
