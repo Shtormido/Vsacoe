@@ -1035,16 +1035,24 @@ function Set-HostsBlock([string[]]$Domains) {
 function ConvertTo-Domain([string]$Text) {
     $d = $Text.Trim().ToLowerInvariant()
     if (-not $d -or $d.StartsWith('#')) { return $null }
-    $d = $d -replace '^[a-z]+://', ''
+    $d = $d -replace '^[a-z][a-z0-9+.\-]*://', ''
     $d = ($d -split '[?#]')[0].TrimEnd('/')
     # Можно указать раздел сайта (yandex.ru/games) — тогда остальной сайт останется доступен
     $path = ''
     $slash = $d.IndexOf('/')
     if ($slash -ge 0) { $path = $d.Substring($slash); $d = $d.Substring(0, $slash) }
-    $d = ($d -split ':')[0] -replace '^\*\.', '' -replace '^www\.', ''
+    $d = $d -replace '^\*\.', '' -replace '^www\.', ''
     if (-not $d) { return $null }
-    try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес сайта: $Text" }
-    return $d + $path
+    # Отделяем порт (локальные серверы часто с портом: 192.168.1.10:8080)
+    $port = ''
+    $colon = $d.LastIndexOf(':')
+    if ($colon -ge 0 -and ($d.Substring($colon + 1) -match '^\d+$')) { $port = $d.Substring($colon); $d = $d.Substring(0, $colon) }
+    if (-not $d) { return $null }
+    # IP-адреса и локальные имена без точки оставляем как есть; обычные домены приводим к ASCII (punycode)
+    if ($d -notmatch '^[0-9.]+$') {
+        try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес: $Text" }
+    }
+    return $d + $port + $path
 }
 
 function ConvertTo-ExeName([string]$Text) {
@@ -1979,7 +1987,7 @@ $MainWindowXaml = @'
                           </Grid.ColumnDefinitions>
                           <Grid>
                             <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
-                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Например: uchi.ru"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Сайт, IP или имя сервера: uchi.ru, 192.168.1.10:8080, nas"/>
                           </Grid>
                           <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                         </Grid>
@@ -1989,6 +1997,7 @@ $MainWindowXaml = @'
                           <Button x:Name="btnAllowAccounts" Style="{StaticResource BtnChip}" Content="+ Вход в аккаунты"/>
                           <Button x:Name="btnAllowMail" Style="{StaticResource BtnChip}" Content="+ Почта"/>
                           <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
+                          <Button x:Name="btnAllowLocal" Style="{StaticResource BtnChip}" Content="+ Локальная сеть"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
                           <ListBox x:Name="lbAllow" Height="150" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -2019,6 +2028,7 @@ $MainWindowXaml = @'
                           <Button x:Name="btnQuickCinema" Style="{StaticResource BtnChip}" Content="+ Кино"/>
                           <Button x:Name="btnQuickBets" Style="{StaticResource BtnChip}" Content="+ Ставки"/>
                           <Button x:Name="btnQuickYandex" Style="{StaticResource BtnChip}" Content="+ Сервисы Яндекса"/>
+                          <Button x:Name="btnQuickGoogle" Style="{StaticResource BtnChip}" Content="+ Сервисы Google"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
                           <ListBox x:Name="lbBlock" Height="150" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -2873,7 +2883,9 @@ function Show-MainWindow {
     ) -join ' '
     $ui.btnAllowMail.Tag = 'mail.ru e.mail.ru mail.yandex.ru gmail.com mail.google.com outlook.live.com outlook.office.com'
     $ui.btnAllowGov.Tag = 'gosuslugi.ru esia.gosuslugi.ru nalog.gov.ru mos.ru pfr.gov.ru sfr.gov.ru'
-    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov)) {
+    # Локальная сеть: localhost и типичные локальные зоны (.local/.lan/.home и т.п.). Конкретные IP добавьте вручную.
+    $ui.btnAllowLocal.Tag = 'localhost 127.0.0.1 local lan home intranet router fritz.box'
+    foreach ($b in @($ui.btnAllowSearch, $ui.btnAllowStudy, $ui.btnAllowAccounts, $ui.btnAllowMail, $ui.btnAllowGov, $ui.btnAllowLocal)) {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
@@ -3038,6 +3050,13 @@ function Show-MainWindow {
         'pari.ru', 'bet-boom.ru', 'betboom.ru', 'tennisi.bet', 'melbet.ru', '1xbet.com', '1xstavka.ru',
         'pin-up.ru', 'pinup.ru', 'vulkan.ru', 'joycasino.com', 'stake.com', 'csgorun.ru', 'csfail.com', 'ggdrop.com'
     ) -join ' '
+    # Развлекательные сервисы Google: поиск, почта и документы остаются доступны
+    $ui.btnQuickGoogle.Tag = @(
+        'youtube.com', 'youtu.be', 'youtubekids.com', 'youtube-nocookie.com', 'm.youtube.com',
+        'play.google.com', 'news.google.com', 'podcasts.google.com', 'earth.google.com',
+        'arts.google.com', 'artsandculture.google.com', 'stadia.google.com',
+        'google.com/games', 'blogger.com', 'chromewebstore.google.com', 'chrome.google.com/webstore'
+    ) -join ' '
     # Развлекательные сервисы Яндекса: поиск, почта и карты остаются доступны
     $ui.btnQuickYandex.Tag = @(
         'yandex.ru/games', 'yandex.ru/video', 'yandex.ru/efir', 'yandex.ru/chat', 'yandex.ru/gamecenter',
@@ -3048,7 +3067,7 @@ function Show-MainWindow {
         'kinopoisk.ru', 'hd.kinopoisk.ru', 'plus.yandex.ru', 'afisha.yandex.ru',
         'q.yandex.ru', 'yandex.ru/q', 'market.yandex.ru', 'ya.ru/games'
     ) -join ' '
-    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets, $ui.btnQuickYandex)) {
+    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets, $ui.btnQuickYandex, $ui.btnQuickGoogle)) {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
