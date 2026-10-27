@@ -1270,7 +1270,7 @@ function Expand-Cidr([string]$Cidr) {
     $out = New-Object System.Collections.Generic.List[string]
     for ($i = 0; $i -lt $take; $i++) {
         $a = $net + $i
-        [void]$out.Add('{0}.{1}.{2}.{3}' -f (($a -shr 24) -band 255), (($a -shr 16) -band 255), (($a -shr 8) -band 255), ($a -band 255))
+        [void]$out.Add(('{0}.{1}.{2}.{3}' -f (($a -shr 24) -band 255), (($a -shr 16) -band 255), (($a -shr 8) -band 255), ($a -band 255)))
     }
     return , $out.ToArray()
 }
