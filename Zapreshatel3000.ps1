@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.8'
+$AppVersion  = '3.9'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1271,22 +1271,27 @@ function Add-ValueList($Vals, [string]$Key, $Items) {
     foreach ($item in $Items) { $Vals.Add([pscustomobject]@{ Key = $Key; Name = "$i"; Type = 'String'; Data = $item }); $i++ }
 }
 
-# Firefox понимает шаблоны адресов: домен с поддоменами или раздел сайта
+# Firefox понимает шаблоны адресов: домен с поддоменами или раздел сайта.
+# Для IP-адресов вариант с поддоменами (*.IP) не добавляем — такой шаблон некорректен.
 function ConvertTo-FirefoxPatterns($Sites) {
     return @(foreach ($d in $Sites) {
-        if ($d.Contains('/')) { "*://$d*"; "*://*.$d*" } else { "*://$d/*"; "*://*.$d/*" }
+        $isIp = ((($d -split '/')[0] -split ':')[0] -match '^\d{1,3}(\.\d{1,3}){3}$')
+        if ($d.Contains('/')) {
+            "*://$d*"; if (-not $isIp) { "*://*.$d*" }
+        } else {
+            "*://$d/*"; if (-not $isIp) { "*://*.$d/*" }
+        }
     })
 }
 
-# Из списка разрешённых доменов делает фильтры для браузеров (домен + его поддомены)
+# Фильтры белого списка для Chromium — только голые хосты, как в рабочем чёрном списке.
+# В формате фильтров Chromium запись "*.домен" некорректна и ломает весь URLAllowlist,
+# а голый "домен" и так покрывает сам сайт и все его поддомены (sub.домен).
 function Expand-AllowHosts($Sites) {
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($d in $Sites) {
         if (-not $d) { continue }
         [void]$out.Add($d)
-        # Для доменов добавляем и поддомены; для IP-адресов — только сам адрес
-        $hostOnly = (($d -split '/')[0] -split ':')[0]
-        if ($hostOnly -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { [void]$out.Add("*.$d") }
     }
     return , @($out.ToArray() | Select-Object -Unique)
 }
@@ -1319,7 +1324,8 @@ function Get-RestrictionValues($Config) {
         if ($useBlack) { $fxBlock += @(ConvertTo-FirefoxPatterns $Config.BlockSites) }
         if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
-        if ($allowHosts.Count) { Add-ValueList $vals $FirefoxAllowKey (@($allowHosts | ForEach-Object { "*://$_/*" })) }
+        $fxAllow = @(ConvertTo-FirefoxPatterns $Config.AllowSites)
+        if ($fxAllow.Count) { Add-ValueList $vals $FirefoxAllowKey $fxAllow }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
