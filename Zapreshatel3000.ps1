@@ -31,6 +31,7 @@ $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
 $AppVersion  = '2.1'
+$BuildDate   = '29.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
 $IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore -or $ExportRestrictions -or $ImportRestrictions
@@ -2785,7 +2786,7 @@ function Show-MainWindow {
 
     #region Оформление и навигация
 
-    $ui.txtVersion.Text = "версия $AppVersion"
+    $ui.txtVersion.Text = "версия $AppVersion от $BuildDate"
     $ui.txtOS.Text = $os.Text
     if ($IsAdmin) {
         $ui.badgeAdmin.Background = Get-Brush '#14532D'
@@ -2799,7 +2800,7 @@ function Show-MainWindow {
     }
     if ($os.IsHome) { $ui.warnHome.Visibility = 'Visible' }
 
-    $ui.txtAboutVersion.Text = "Версия $AppVersion"
+    $ui.txtAboutVersion.Text = "Версия $AppVersion от $BuildDate"
     $ui.txtAboutOS.Text = $os.Text
     $ui.txtAboutAdmin.Text = if ($IsAdmin) { 'Администратор' } else { 'Без прав администратора' }
     $ui.txtAboutData.Text = $DataDir
