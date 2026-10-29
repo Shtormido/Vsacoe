@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '4.1'
+$AppVersion  = '4.2'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1150,11 +1150,8 @@ function Get-NonAdminRestrictions {
         $lock[$l.Id] = $all
     }
     $blockRaw = @(Get-PolList $entries $SiteListKeys[0])
-    # На экране показываем голые хосты: убираем схему (https:// / http://), служебные адреса, дубли *.domain
-    $allow = @(Get-PolList $entries $AllowListKeys[0] |
-        Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') } |
-        ForEach-Object { $_ -replace '^https?://', '' } |
-        Select-Object -Unique)
+    # На экране показываем только домены пользователя, без служебных фильтров и дублей *.domain
+    $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') })
     $block = @($blockRaw | Where-Object { $BlockAllRecognize -notcontains $_ })
     $hostsSites = @(Get-HostsBlockedSites)
     $strict = [bool]($blockRaw | Where-Object { $BlockAllRecognize -contains $_ })
@@ -1287,16 +1284,15 @@ function ConvertTo-FirefoxPatterns($Sites) {
     })
 }
 
-# Фильтры белого списка для Chromium. Запись со схемой (https:// / http://) считается
-# более точной, чем блок-всё '*', и гарантированно его перебивает; голый хост добавляем
-# как запасной вариант. Запись "*.домен" некорректна и ломает весь URLAllowlist — её нет.
+# Фильтры белого списка для Chromium: домен и его поддомены (*.домен).
+# Для IP-адресов вариант *.IP не добавляем — он не имеет смысла.
 function Expand-AllowHosts($Sites) {
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($d in $Sites) {
         if (-not $d) { continue }
-        [void]$out.Add("https://$d")   # со схемой — важнее, чем блок-всё '*'
-        [void]$out.Add("http://$d")    # сайты и локальные серверы по http
-        [void]$out.Add($d)             # голый хост — на всякий случай
+        [void]$out.Add($d)
+        $hostOnly = (($d -split '/')[0] -split ':')[0]
+        if ($hostOnly -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { [void]$out.Add("*.$d") }
     }
     return , @($out.ToArray() | Select-Object -Unique)
 }
@@ -1320,10 +1316,13 @@ function Get-RestrictionValues($Config) {
         if ($useBlack) { $blockList += @($Config.BlockSites) }
         if ($strict)   { $blockList += $BlockAllFilters }
 
-        $allowHosts = @(Expand-AllowHosts $Config.AllowSites)
+        $allowFilters = @(Expand-AllowHosts $Config.AllowSites)
+        # В строгом режиме обязательно разрешаем служебные страницы браузера,
+        # иначе блок-всё '*' закрывает в том числе интерфейс браузера.
+        if ($strict) { $allowFilters += $BrowserInternalUrls }
 
-        if ($blockList.Count)  { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
-        if ($allowHosts.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowHosts } }
+        if ($blockList.Count)    { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
+        if ($allowFilters.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowFilters } }
 
         $fxBlock = @()
         if ($useBlack) { $fxBlock += @(ConvertTo-FirefoxPatterns $Config.BlockSites) }
