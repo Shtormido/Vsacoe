@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '4.0'
+$AppVersion  = '4.1'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1150,8 +1150,11 @@ function Get-NonAdminRestrictions {
         $lock[$l.Id] = $all
     }
     $blockRaw = @(Get-PolList $entries $SiteListKeys[0])
-    # На экране показываем только домены пользователя, без служебных фильтров и дублей *.domain
-    $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') })
+    # На экране показываем голые хосты: убираем схему (https:// / http://), служебные адреса, дубли *.domain
+    $allow = @(Get-PolList $entries $AllowListKeys[0] |
+        Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') } |
+        ForEach-Object { $_ -replace '^https?://', '' } |
+        Select-Object -Unique)
     $block = @($blockRaw | Where-Object { $BlockAllRecognize -notcontains $_ })
     $hostsSites = @(Get-HostsBlockedSites)
     $strict = [bool]($blockRaw | Where-Object { $BlockAllRecognize -contains $_ })
@@ -1284,14 +1287,16 @@ function ConvertTo-FirefoxPatterns($Sites) {
     })
 }
 
-# Фильтры белого списка для Chromium — только голые хосты, как в рабочем чёрном списке.
-# В формате фильтров Chromium запись "*.домен" некорректна и ломает весь URLAllowlist,
-# а голый "домен" и так покрывает сам сайт и все его поддомены (sub.домен).
+# Фильтры белого списка для Chromium. Запись со схемой (https:// / http://) считается
+# более точной, чем блок-всё '*', и гарантированно его перебивает; голый хост добавляем
+# как запасной вариант. Запись "*.домен" некорректна и ломает весь URLAllowlist — её нет.
 function Expand-AllowHosts($Sites) {
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($d in $Sites) {
         if (-not $d) { continue }
-        [void]$out.Add($d)
+        [void]$out.Add("https://$d")   # со схемой — важнее, чем блок-всё '*'
+        [void]$out.Add("http://$d")    # сайты и локальные серверы по http
+        [void]$out.Add($d)             # голый хост — на всякий случай
     }
     return , @($out.ToArray() | Select-Object -Unique)
 }
