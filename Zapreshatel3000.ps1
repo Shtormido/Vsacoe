@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.9'
+$AppVersion  = '4.0'
 $BuildDate   = '27.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1470,6 +1470,26 @@ function Clear-NonAdminRestrictions {
     return , $userResults
 }
 
+# Полное удаление: снимает все ограничения, удаляет данные и саму папку программы.
+# Папка программы занята запущенным процессом, поэтому её удаляет отложенный cmd после выхода.
+function Remove-Application {
+    try { [void](Clear-NonAdminRestrictions) } catch { Write-Log "Удаление — не удалось снять ограничения: $($_.Exception.Message)" }
+    try { if (Test-Path -LiteralPath $DataDir) { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
+    $root = $PSScriptRoot
+    if ($root -and (Test-Path -LiteralPath $root)) {
+        $bat = Join-Path $env:TEMP ('zap_uninstall_{0}.cmd' -f ([guid]::NewGuid().ToString('N')))
+        $lines = @(
+            '@echo off',
+            'cd /d "%TEMP%"',
+            'timeout /t 2 /nobreak >nul',
+            ('rmdir /s /q "{0}"' -f $root),
+            '(goto) 2>nul & del "%~f0"'
+        )
+        Set-Content -LiteralPath $bat -Value $lines -Encoding OEM
+        Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$bat`"" -WindowStyle Hidden -WorkingDirectory $env:TEMP
+    }
+}
+
 # Действуют ли ограничения у каждого обычного пользователя на самом деле (по его реестру)
 function Get-UserRestrictionStatus {
     $map = @{}
@@ -2415,6 +2435,13 @@ $MainWindowXaml = @'
                 <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
                 <TextBlock Text="Журнал запуска приложений" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
                 <TextBlock Style="{StaticResource Muted}" Text="Какие программы и когда запускались на ПК"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="btnToolUninstall" Style="{StaticResource Tile}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" FontSize="26" Foreground="#DC2626" HorizontalAlignment="Left"/>
+                <TextBlock Text="Удалить программу" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                <TextBlock Style="{StaticResource Muted}" Text="Снять все ограничения и полностью удалить программу"/>
               </StackPanel>
             </Button>
           </UniformGrid>
@@ -3667,6 +3694,21 @@ function Show-MainWindow {
     })
     $ui.btnToolData.Add_Click({ Invoke-Safe { Start-Process explorer.exe -ArgumentList "`"$DataDir`"" } })
     $ui.btnToolAudit.Add_Click({ $ui.navAudit.IsChecked = $true })
+    $ui.btnToolUninstall.Add_Click({
+        Invoke-Safe {
+            if (-not $IsAdmin) { Show-Error 'Нужны права администратора, чтобы снять ограничения при удалении. Нажмите «Запустить от администратора».'; return }
+            $msg = "Полностью удалить программу?`r`n`r`nБудет сделано:`r`n" +
+                   "• сняты все ограничения со всех пользователей;`r`n" +
+                   "• удалены данные программы ($DataDir);`r`n" +
+                   "• удалена папка программы ($PSScriptRoot).`r`n`r`n" +
+                   'Это действие необратимо. Программа закроется.'
+            if (-not (Confirm-Action $msg)) { return }
+            Set-Busy $true
+            try { Remove-Application } finally { Set-Busy $false }
+            [void][System.Windows.MessageBox]::Show($window, 'Ограничения сняты, данные удалены. Папка программы будет удалена сразу после закрытия окна.', $AppName, 'OK', 'Information')
+            $window.Close()
+        }
+    })
 
     #endregion
 
