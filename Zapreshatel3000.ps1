@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.1'
+$AppVersion  = '2.2'
 $BuildDate   = '29.10.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1425,6 +1425,212 @@ function Get-UserRestrictionStatus {
 
 #endregion
 
+#region Удалённое управление по локальной сети
+
+$RemoteStateFile      = Join-Path $DataDir 'remote_settings.json'
+$RemotePublishedFile  = Join-Path $DataDir 'remote_published.json'
+$RemoteExceptionsFile = Join-Path $DataDir 'remote_exceptions.json'
+
+# Общее состояние сервера (делится с фоновым потоком-слушателем)
+$script:Remote = [hashtable]::Synchronized(@{
+    Running        = $false
+    Port           = 8777
+    Password       = ''
+    Clients        = [hashtable]::Synchronized(@{})
+    PublishedFile  = $RemotePublishedFile
+    ExceptionsFile = $RemoteExceptionsFile
+    PublishedId    = ''
+    Listener       = $null
+    Error          = ''
+    PS             = $null
+    RS             = $null
+})
+
+# Скрипт фонового потока: HTTP-сервер. Полностью自-содержащий, работает только с $R и .NET.
+$script:RemoteListenerScript = {
+    param($R)
+    $listener = $null
+    try {
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add("http://+:$($R.Port)/")
+        $listener.Start()
+        $R.Listener = $listener
+        $R.Error = ''
+        while ($R.Running) {
+            $ctx = $null
+            try { $ctx = $listener.GetContext() } catch { break }
+            try {
+                $req = $ctx.Request
+                $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
+                $raw = $reader.ReadToEnd(); $reader.Close()
+                $data = $null; try { $data = $raw | ConvertFrom-Json } catch { }
+                $respObj = @{ ok = $false; error = 'bad request' }
+                if ($data -and ([string]$data.password -eq [string]$R.Password)) {
+                    $name = [string]$data.name
+                    if ($name) {
+                        $ip = $req.RemoteEndPoint.Address.ToString()
+                        $base = $null
+                        if (Test-Path -LiteralPath $R.PublishedFile) {
+                            try { $base = Get-Content -LiteralPath $R.PublishedFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+                        }
+                        $exAllow = @(); $exBlock = @(); $excluded = $false
+                        if (Test-Path -LiteralPath $R.ExceptionsFile) {
+                            try {
+                                $ex = Get-Content -LiteralPath $R.ExceptionsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                                $e = $ex.$name
+                                if ($e) { $exAllow = @($e.allow); $exBlock = @($e.block); $excluded = [bool]$e.exclude }
+                            } catch { }
+                        }
+                        $config = $null; $id = ''
+                        if ($base) {
+                            if ($excluded) {
+                                $config = [ordered]@{
+                                    app = 'Zapreshatel3000'; type = 'restrictions'; version = 1
+                                    programs = [ordered]@{ enabled = $false; list = @() }
+                                    sites    = [ordered]@{ enabled = $false; mode = 'block'; block = @(); allow = @(); hosts = $false }
+                                    lockdowns = @{}
+                                }
+                            } else {
+                                $allow = @(@($base.sites.allow) + @($exAllow) | Where-Object { $_ } | Select-Object -Unique)
+                                $block = @(@($base.sites.block) + @($exBlock) | Where-Object { $_ } | Select-Object -Unique)
+                                $lock = [ordered]@{}; foreach ($p in $base.lockdowns.PSObject.Properties) { $lock[$p.Name] = [bool]$p.Value }
+                                $config = [ordered]@{
+                                    app = 'Zapreshatel3000'; type = 'restrictions'; version = 1
+                                    programs = [ordered]@{ enabled = [bool]$base.programs.enabled; list = @($base.programs.list) }
+                                    sites    = [ordered]@{ enabled = [bool]$base.sites.enabled; mode = [string]$base.sites.mode; block = $block; allow = $allow; hosts = [bool]$base.sites.hosts }
+                                    lockdowns = $lock
+                                }
+                            }
+                            $json = $config | ConvertTo-Json -Depth 6 -Compress
+                            $sha = [System.Security.Cryptography.SHA1]::Create()
+                            $id = ([BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($json))) -replace '-', '').Substring(0, 12)
+                            $respObj = @{ ok = $true; id = $id; config = $config }
+                        } else {
+                            $respObj = @{ ok = $true; id = ''; config = $null }
+                        }
+                        $R.Clients[$name] = @{
+                            Pc = $name; Ip = $ip; User = [string]$data.user; Version = [string]$data.clientVersion
+                            AppliedId = [string]$data.appliedId; WantId = $id; Excluded = $excluded; LastSeen = (Get-Date)
+                        }
+                    }
+                }
+                $out = [System.Text.Encoding]::UTF8.GetBytes(($respObj | ConvertTo-Json -Depth 6))
+                $ctx.Response.ContentType = 'application/json; charset=utf-8'
+                $ctx.Response.OutputStream.Write($out, 0, $out.Length)
+            } catch { }
+            finally { try { $ctx.Response.Close() } catch { } }
+        }
+    } catch {
+        $R.Error = $_.Exception.Message
+    } finally {
+        try { if ($listener) { $listener.Stop(); $listener.Close() } } catch { }
+        $R.Running = $false
+    }
+}
+
+function Get-LocalIPv4 {
+    try {
+        @(Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction Stop |
+            Where-Object { $_.IPEnabled -and $_.IPAddress } |
+            ForEach-Object { $_.IPAddress } |
+            Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -ne '127.0.0.1' }) -join ', '
+    } catch {
+        try { (@([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | ForEach-Object { $_.ToString() }) -join ', ') } catch { '' }
+    }
+}
+
+function Save-RemoteSettings {
+    try {
+        [ordered]@{ port = $script:Remote.Port; password = $script:Remote.Password; publishedId = $script:Remote.PublishedId } |
+            ConvertTo-Json | Set-Content -LiteralPath $RemoteStateFile -Encoding UTF8
+    } catch { Write-Log "Не удалось сохранить настройки сервера: $($_.Exception.Message)" }
+}
+
+function Load-RemoteSettings {
+    if (Test-Path -LiteralPath $RemoteStateFile) {
+        try {
+            $s = Get-Content -LiteralPath $RemoteStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($s.port)     { $script:Remote.Port = [int]$s.port }
+            if ($s.password) { $script:Remote.Password = [string]$s.password }
+            if ($s.publishedId) { $script:Remote.PublishedId = [string]$s.publishedId }
+        } catch { }
+    }
+}
+
+function Start-RemoteServer {
+    if ($script:Remote.Running) { return }
+    $script:Remote.Running = $true
+    $script:Remote.Error = ''
+    $script:Remote.Clients = [hashtable]::Synchronized(@{})
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.ApartmentState = 'MTA'; $rs.ThreadOptions = 'ReuseThread'; $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript($script:RemoteListenerScript.ToString()).AddArgument($script:Remote)
+    $script:Remote.PS = $ps; $script:Remote.RS = $rs
+    [void]$ps.BeginInvoke()
+    Start-Sleep -Milliseconds 300
+    if ($script:Remote.Error) { $script:Remote.Running = $false; throw $script:Remote.Error }
+    Save-RemoteSettings
+}
+
+function Stop-RemoteServer {
+    $script:Remote.Running = $false
+    try { if ($script:Remote.Listener) { $script:Remote.Listener.Stop() } } catch { }
+    try { if ($script:Remote.PS) { $script:Remote.PS.Stop(); $script:Remote.PS.Dispose() } } catch { }
+    try { if ($script:Remote.RS) { $script:Remote.RS.Close(); $script:Remote.RS.Dispose() } } catch { }
+    $script:Remote.PS = $null; $script:Remote.RS = $null; $script:Remote.Listener = $null
+}
+
+function Publish-RemoteConfig($Config) {
+    Export-RestrictionConfig $Config $RemotePublishedFile
+    $json = Get-Content -LiteralPath $RemotePublishedFile -Raw -Encoding UTF8
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    $script:Remote.PublishedId = ([BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($json))) -replace '-', '').Substring(0, 12)
+    Save-RemoteSettings
+}
+
+function Get-RemoteExceptions {
+    if (Test-Path -LiteralPath $RemoteExceptionsFile) {
+        try { return (Get-Content -LiteralPath $RemoteExceptionsFile -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+    }
+    return $null
+}
+
+function Set-RemoteException([string]$Pc, [string[]]$Allow, [string[]]$Block, [bool]$Exclude) {
+    $map = [ordered]@{}
+    $ex = Get-RemoteExceptions
+    if ($ex) { foreach ($p in $ex.PSObject.Properties) { $map[$p.Name] = $p.Value } }
+    if (-not $Allow -and -not $Block -and -not $Exclude) {
+        if ($map.Contains($Pc)) { $map.Remove($Pc) }
+    } else {
+        $map[$Pc] = [ordered]@{ allow = @($Allow); block = @($Block); exclude = $Exclude }
+    }
+    $map | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $RemoteExceptionsFile -Encoding UTF8
+}
+
+# Снимок клиентов для интерфейса (онлайн = связь за последние 90 секунд)
+function Get-RemoteClientSnapshot {
+    $rows = @()
+    $now = Get-Date
+    $clients = $script:Remote.Clients
+    foreach ($key in @($clients.Keys)) {
+        $c = $clients[$key]
+        if (-not $c) { continue }
+        $age = ($now - $c.LastSeen).TotalSeconds
+        $online = $age -lt 90
+        $applied = if ($c.Excluded) { 'снято' } elseif (-not $c.WantId) { '—' } elseif ($c.AppliedId -eq $c.WantId) { 'да' } else { 'ожидает' }
+        $rows += [pscustomobject]@{
+            Pc = $c.Pc; User = $c.User; Ip = $c.Ip; Version = $c.Version
+            Online = if ($online) { 'онлайн' } else { 'офлайн' }
+            Applied = $applied
+            Seen = $c.LastSeen.ToString('HH:mm:ss')
+        }
+    }
+    return , @($rows | Sort-Object Pc)
+}
+
+#endregion
+
 #region Режим командной строки
 
 function Invoke-Cli {
@@ -1816,6 +2022,7 @@ $MainWindowXaml = @'
           <RadioButton x:Name="navProfiles" Style="{StaticResource Nav}" Tag="&#xE8F1;" Content="Профили и копии"/>
           <RadioButton x:Name="navTools" Style="{StaticResource Nav}" Tag="&#xE90F;" Content="Инструменты"/>
           <RadioButton x:Name="navAudit" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="Журнал"/>
+          <RadioButton x:Name="navRemote" Style="{StaticResource Nav}" Tag="&#xE968;" Content="Удалённые ПК"/>
           <RadioButton x:Name="navAbout" Style="{StaticResource Nav}" Tag="&#xE946;" Content="О программе"/>
         </StackPanel>
       </DockPanel>
@@ -2510,6 +2717,83 @@ $MainWindowXaml = @'
           </Grid>
         </Grid>
 
+        <!-- ===== Удалённые ПК ===== -->
+        <ScrollViewer x:Name="pageRemote" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+          <StackPanel Margin="32,0,32,24" MaxWidth="980" HorizontalAlignment="Left">
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Сервер управления"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Запустите сервер на этом (главном) компьютере. Клиенты в локальной сети будут подключаться к нему по указанному IP и порту, присылать свой статус и автоматически применять присланные ограничения."/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="Порт:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBox x:Name="txtSrvPort" Grid.Column="1" Style="{StaticResource Input}" Text="8777" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="2" Text="Пароль:" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                  <TextBox x:Name="txtSrvPass" Grid.Column="3" Style="{StaticResource Input}" VerticalAlignment="Center"/>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                  <Button x:Name="btnSrvToggle" Style="{StaticResource BtnPrimary}" Content="Запустить сервер"/>
+                  <TextBlock x:Name="txtSrvStatus" VerticalAlignment="Center" Margin="16,0,0,0" Text="Сервер остановлен"/>
+                </StackPanel>
+                <TextBlock x:Name="txtSrvAddr" Style="{StaticResource Muted}" Margin="0,10,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Рассылка ограничений"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Берёт текущие настройки со вкладки «Ограничения» и публикует их для всех клиентов. Клиенты применят их автоматически при следующей связи. Исключения для отдельных ПК задаются ниже."/>
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="btnPublish" Style="{StaticResource Btn}" Content="Разослать текущие ограничения"/>
+                  <TextBlock x:Name="txtPubStatus" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource Muted}" Text="Пока ничего не опубликовано"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Подключённые компьютеры"/>
+                <TextBlock x:Name="txtClientsCount" Style="{StaticResource Muted}" Margin="0,4,0,10" Text="Нет подключённых клиентов"/>
+                <ListView x:Name="lvClients" Height="240" BorderThickness="1" BorderBrush="#E5E7EB">
+                  <ListView.View>
+                    <GridView>
+                      <GridViewColumn Header="Компьютер" Width="160" DisplayMemberBinding="{Binding Pc}"/>
+                      <GridViewColumn Header="Пользователь" Width="140" DisplayMemberBinding="{Binding User}"/>
+                      <GridViewColumn Header="IP" Width="130" DisplayMemberBinding="{Binding Ip}"/>
+                      <GridViewColumn Header="Версия" Width="70" DisplayMemberBinding="{Binding Version}"/>
+                      <GridViewColumn Header="Статус" Width="90" DisplayMemberBinding="{Binding Online}"/>
+                      <GridViewColumn Header="Применено" Width="120" DisplayMemberBinding="{Binding Applied}"/>
+                      <GridViewColumn Header="Был на связи" Width="130" DisplayMemberBinding="{Binding Seen}"/>
+                    </GridView>
+                  </ListView.View>
+                </ListView>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Исключения для выбранного ПК"/>
+                <TextBlock x:Name="txtExPc" Style="{StaticResource Muted}" Margin="0,4,0,10" Text="Выберите компьютер в списке выше"/>
+                <CheckBox x:Name="chkExExclude" Style="{StaticResource Switch}" Content="Полностью снять ограничения для этого ПК" Margin="0,0,0,12"/>
+                <TextBlock Text="Дополнительно разрешить (сайты/IP, через пробел или запятую):" Margin="0,0,0,4"/>
+                <TextBox x:Name="txtExAllow" Style="{StaticResource Input}"/>
+                <TextBlock Text="Дополнительно заблокировать:" Margin="0,10,0,4"/>
+                <TextBox x:Name="txtExBlock" Style="{StaticResource Input}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                  <Button x:Name="btnExSave" Style="{StaticResource BtnPrimary}" Content="Сохранить исключения"/>
+                  <Button x:Name="btnExClear" Style="{StaticResource Btn}" Content="Очистить" Margin="10,0,0,0"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+
         <!-- ===== О программе ===== -->
         <ScrollViewer x:Name="pageAbout" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
           <StackPanel Margin="32,0,32,24" MaxWidth="760" HorizontalAlignment="Left">
@@ -2812,6 +3096,7 @@ function Show-MainWindow {
         navProfiles = @('pageProfiles', 'Профили и резервные копии', 'Готовые наборы настроек, сохранение и восстановление')
         navTools    = @('pageTools', 'Инструменты', 'Применение и диагностика групповых политик')
         navAudit    = @('pageAudit', 'Журнал', 'Запуск приложений и посещённые сайты на этом компьютере')
+        navRemote   = @('pageRemote', 'Удалённые ПК', 'Рассылка ограничений на компьютеры в локальной сети')
         navAbout    = @('pageAbout', 'О программе', 'Сведения о программе и разработчике')
     }
     $script:RegScanned = $false
@@ -3747,6 +4032,112 @@ function Show-MainWindow {
         Invoke-Safe { Update-UserList }
         Invoke-Safe { Import-RestrictionsToUI }
     })
+
+    #endregion
+
+    #region Вкладка «Удалённые ПК»
+
+    Load-RemoteSettings
+    $ui.txtSrvPort.Text = [string]$script:Remote.Port
+    $ui.txtSrvPass.Text = [string]$script:Remote.Password
+    $ui.txtSrvAddr.Text = "IP этого компьютера для клиентов: $(Get-LocalIPv4)"
+    $script:RemoteSelectedPc = ''
+    $clientRows = New-Object System.Collections.ObjectModel.ObservableCollection[object]
+    $ui.lvClients.ItemsSource = $clientRows
+
+    function Update-RemoteServerUi {
+        if ($script:Remote.Running) {
+            $ui.btnSrvToggle.Content = 'Остановить сервер'
+            $ui.txtSrvStatus.Text = "Сервер работает на порту $($script:Remote.Port)"
+        } else {
+            $ui.btnSrvToggle.Content = 'Запустить сервер'
+            $ui.txtSrvStatus.Text = 'Сервер остановлен'
+        }
+        if ($script:Remote.PublishedId) { $ui.txtPubStatus.Text = "Опубликовано (версия $($script:Remote.PublishedId))" }
+    }
+
+    $ui.btnSrvToggle.Add_Click({
+        Invoke-Safe {
+            if ($script:Remote.Running) {
+                Stop-RemoteServer
+            } else {
+                if (-not $IsAdmin) { Show-Error 'Для запуска сервера нужны права администратора.'; return }
+                $port = 0; if (-not [int]::TryParse($ui.txtSrvPort.Text.Trim(), [ref]$port) -or $port -lt 1 -or $port -gt 65535) { Show-Error 'Укажите корректный порт (1–65535).'; return }
+                if (-not $ui.txtSrvPass.Text.Trim()) { Show-Error 'Задайте пароль — без него к серверу сможет подключиться любой компьютер в сети.'; return }
+                $script:Remote.Port = $port
+                $script:Remote.Password = $ui.txtSrvPass.Text.Trim()
+                try { Start-RemoteServer } catch { Show-Error "Не удалось запустить сервер: $($_.Exception.Message)`r`n`r`nВозможно, порт занят или заблокирован брандмауэром."; }
+            }
+            Update-RemoteServerUi
+        }
+    })
+
+    $ui.btnPublish.Add_Click({
+        Invoke-Safe {
+            $cfg = Get-RestrictionsFromUI
+            Publish-RemoteConfig $cfg
+            Update-RemoteServerUi
+            Show-Toast 'Ограничения опубликованы. Клиенты применят их при следующей связи.'
+        }
+    })
+
+    function Load-ExceptionFields([string]$Pc) {
+        $ui.txtExPc.Text = if ($Pc) { "Компьютер: $Pc" } else { 'Выберите компьютер в списке выше' }
+        $ui.chkExExclude.IsChecked = $false; $ui.txtExAllow.Text = ''; $ui.txtExBlock.Text = ''
+        if (-not $Pc) { return }
+        $ex = Get-RemoteExceptions
+        if ($ex -and $ex.$Pc) {
+            $e = $ex.$Pc
+            $ui.chkExExclude.IsChecked = [bool]$e.exclude
+            $ui.txtExAllow.Text = (@($e.allow) -join ' ')
+            $ui.txtExBlock.Text = (@($e.block) -join ' ')
+        }
+    }
+
+    $ui.lvClients.Add_SelectionChanged({
+        $sel = $ui.lvClients.SelectedItem
+        if ($sel) { $script:RemoteSelectedPc = [string]$sel.Pc; Load-ExceptionFields $script:RemoteSelectedPc }
+    })
+
+    $ui.btnExSave.Add_Click({
+        Invoke-Safe {
+            if (-not $script:RemoteSelectedPc) { Show-Error 'Сначала выберите компьютер в списке.'; return }
+            $allow = @($ui.txtExAllow.Text -split '[,;\s]+' | ForEach-Object { ConvertTo-Domain $_ } | Where-Object { $_ })
+            $block = @($ui.txtExBlock.Text -split '[,;\s]+' | ForEach-Object { ConvertTo-Domain $_ } | Where-Object { $_ })
+            Set-RemoteException $script:RemoteSelectedPc $allow $block ($ui.chkExExclude.IsChecked -eq $true)
+            Show-Toast "Исключения для $($script:RemoteSelectedPc) сохранены."
+        }
+    })
+
+    $ui.btnExClear.Add_Click({
+        Invoke-Safe {
+            if (-not $script:RemoteSelectedPc) { return }
+            Set-RemoteException $script:RemoteSelectedPc @() @() $false
+            Load-ExceptionFields $script:RemoteSelectedPc
+            Show-Toast "Исключения для $($script:RemoteSelectedPc) очищены."
+        }
+    })
+
+    $clientTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $clientTimer.Interval = [TimeSpan]::FromSeconds(3)
+    $clientTimer.Add_Tick({
+        Invoke-Safe {
+            if (-not $script:Remote.Running) { return }
+            $snap = @(Get-RemoteClientSnapshot)
+            $clientRows.Clear()
+            foreach ($r in $snap) { [void]$clientRows.Add($r) }
+            $online = @($snap | Where-Object { $_.Online -eq 'онлайн' }).Count
+            $ui.txtClientsCount.Text = "Всего: $($snap.Count), онлайн: $online"
+            if ($script:RemoteSelectedPc) {
+                $match = $clientRows | Where-Object { $_.Pc -eq $script:RemoteSelectedPc } | Select-Object -First 1
+                if ($match -and -not $ui.lvClients.SelectedItem) { $ui.lvClients.SelectedItem = $match }
+            }
+        }
+    })
+    $clientTimer.Start()
+    Update-RemoteServerUi
+
+    $window.Add_Closing({ Invoke-Safe { Stop-RemoteServer } })
 
     #endregion
 
