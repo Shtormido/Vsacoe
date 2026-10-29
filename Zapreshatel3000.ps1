@@ -30,8 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '4.2'
-$BuildDate   = '27.10.2026'
+$AppVersion  = '2.0'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
 $IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore -or $ExportRestrictions -or $ImportRestrictions
@@ -71,42 +70,23 @@ if (-not $IsAdmin -and -not $NoElevate -and -not $IsCli) {
 
 #region Папка данных и журнал
 
-function Test-DirWritable([string]$Dir) {
-    try {
-        New-Item -ItemType Directory -Path (Join-Path $Dir 'backups') -Force | Out-Null
-        $test = Join-Path $Dir '.write_test'
-        [IO.File]::WriteAllText($test, 'x')
-        Remove-Item -LiteralPath $test -Force
-        return $true
-    } catch { return $false }
-}
-
 function Initialize-DataDir {
-    # Стабильное место в профиле пользователя — чтобы настройки переживали обновление/перераспаковку программы
-    $stable = Join-Path $env:LOCALAPPDATA 'Zapreshatel3000'
-    $legacy = @((Join-Path $env:LOCALAPPDATA 'PolicyManager'), (Join-Path $PSScriptRoot 'data'))
-    if (Test-DirWritable $stable) {
-        # Один раз переносим настройки из старых мест, если они там были
-        if (-not (Test-Path -LiteralPath (Join-Path $stable 'restrictions.json'))) {
-            foreach ($old in $legacy) {
-                if (Test-Path -LiteralPath (Join-Path $old 'restrictions.json')) {
-                    foreach ($f in @('restrictions.json', 'history_log.tsv', 'Zapreshatel3000.log', 'PolicyManager.log')) {
-                        $src = Join-Path $old $f
-                        if (Test-Path -LiteralPath $src) { try { Copy-Item -LiteralPath $src -Destination (Join-Path $stable $f) -Force } catch { } }
-                    }
-                    break
-                }
-            }
-        }
-        return $stable
+    $candidates = @((Join-Path $PSScriptRoot 'data'), (Join-Path $env:LOCALAPPDATA 'PolicyManager'))
+    foreach ($dir in $candidates) {
+        try {
+            New-Item -ItemType Directory -Path (Join-Path $dir 'backups') -Force | Out-Null
+            $test = Join-Path $dir '.write_test'
+            [IO.File]::WriteAllText($test, 'x')
+            Remove-Item -LiteralPath $test -Force
+            return $dir
+        } catch { }
     }
-    foreach ($dir in $legacy) { if (Test-DirWritable $dir) { return $dir } }
     return $env:TEMP
 }
 
 $DataDir   = Initialize-DataDir
 $BackupDir = Join-Path $DataDir 'backups'
-$LogFile   = Join-Path $DataDir 'Zapreshatel3000.log'
+$LogFile   = Join-Path $DataDir 'PolicyManager.log'
 
 function Write-Log([string]$Message) {
     try {
@@ -799,11 +779,7 @@ $AllowListKeys     = @($ChromiumPolicyRoots | ForEach-Object { "$_\URLAllowlist"
 $FirefoxBlockKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Block'
 $FirefoxAllowKey   = 'Software\Policies\Mozilla\Firefox\WebsiteFilter\Exceptions'
 # Фильтры «заблокировать всё» для режима белого списка (несколько форм — для надёжности в разных сборках)
-# Запрет всего: только '*' (он наименее приоритетный, поэтому любое разрешение, включая IP, его перебивает).
-# Прежние фильтры со схемой (https://*) могли перебивать разрешения по IP и блокировали локальные адреса.
-$BlockAllFilters   = @('*')
-# Для распознавания строгого режима при чтении — учитываем и старые фильтры прежних версий
-$BlockAllRecognize = @('*', 'http://*', 'https://*', 'ftp://*', 'file://*')
+$BlockAllFilters   = @('*', 'http://*', 'https://*', 'ftp://*', 'file://*')
 # Служебные страницы браузеров (настройки, новая вкладка), которые в режиме белого списка остаются доступны
 $BrowserInternalUrls = @('edge://*', 'chrome://*', 'browser://*', 'brave://*', 'vivaldi://*', 'chrome-extension://*')
 # Файл с последними настройками ограничений; его же формат используется для переноса на другой компьютер
@@ -887,16 +863,6 @@ $Lockdowns = @(
 $ManagedPolKeys = @($RestrictRunKey) + $SiteListKeys + @($FirefoxBlockKey) + $AllowListKeys + @($FirefoxAllowKey)
 $ManagedPolPairs = @{ "$ExplorerPolicyKey|RestrictRun" = $true }
 foreach ($l in $Lockdowns) { foreach ($v in $l.Values) { $ManagedPolPairs["$($v.Key)|$($v.Name)"] = $true } }
-
-# Разрешаем HTTP: отключаем принудительный HTTPS и авто-апгрейд http->https,
-# иначе локальные серверы без HTTPS (http://192.168.x.x) не открываются
-$HttpAllowValues = New-Object System.Collections.Generic.List[object]
-foreach ($root in $ChromiumPolicyRoots) {
-    $HttpAllowValues.Add([pscustomobject]@{ Key = $root; Name = 'HttpsUpgradesEnabled'; Type = 'DWord'; Data = 0 })
-    $HttpAllowValues.Add([pscustomobject]@{ Key = $root; Name = 'HttpsOnlyMode'; Type = 'String'; Data = 'disabled' })
-}
-$HttpAllowValues.Add([pscustomobject]@{ Key = 'Software\Policies\Microsoft\Edge'; Name = 'AutomaticHttpsDefault'; Type = 'DWord'; Data = 0 })
-foreach ($p in $HttpAllowValues) { $ManagedPolPairs["$($p.Key)|$($p.Name)"] = $true }
 
 #region Формат Registry.pol
 
@@ -1069,25 +1035,14 @@ function Set-HostsBlock([string[]]$Domains) {
 function ConvertTo-Domain([string]$Text) {
     $d = $Text.Trim().ToLowerInvariant()
     if (-not $d -or $d.StartsWith('#')) { return $null }
-    $d = $d -replace '^[a-z][a-z0-9+.\-]*://', ''
+    $d = $d -replace '^[a-z]+://', ''
     $d = ($d -split '[?#]')[0].TrimEnd('/')
     # Можно указать раздел сайта (yandex.ru/games) — тогда остальной сайт останется доступен
     $path = ''
     $slash = $d.IndexOf('/')
     if ($slash -ge 0) { $path = $d.Substring($slash); $d = $d.Substring(0, $slash) }
-    # Локальный адрес: IP или IP:порт (192.168.1.113, 192.168.1.113:8080) добавляется буквально,
-    # по одной записи на адрес. Подсети/диапазоны (192.168.0.0/16) браузеры в списках не понимают.
-    $hostOnly = ($d -split ':')[0]
-    if ($hostOnly -match '^\d{1,3}(\.\d{1,3}){3}$') {
-        if ($path -match '^/\d+$') { return $null }   # 192.168.0.0/16 — это подсеть, браузеры её не понимают
-        return $d + $path
-    }
-    $d = $d -replace '^\*\.', '' -replace '^www\.', ''
-    # Отбрасываем порт
-    $d = ($d -split ':')[0]
+    $d = ($d -split ':')[0] -replace '^\*\.', '' -replace '^www\.', ''
     if (-not $d) { return $null }
-    # Диапазоны/подсети не поддерживаются — указывайте конкретный адрес
-    if ($d -match '^[0-9./]+$') { return $null }
     try { $d = (New-Object Globalization.IdnMapping).GetAscii($d) } catch { throw "Некорректный адрес сайта: $Text" }
     return $d + $path
 }
@@ -1152,9 +1107,9 @@ function Get-NonAdminRestrictions {
     $blockRaw = @(Get-PolList $entries $SiteListKeys[0])
     # На экране показываем только домены пользователя, без служебных фильтров и дублей *.domain
     $allow = @(Get-PolList $entries $AllowListKeys[0] | Where-Object { $BrowserInternalUrls -notcontains $_ -and -not $_.StartsWith('*.') })
-    $block = @($blockRaw | Where-Object { $BlockAllRecognize -notcontains $_ })
+    $block = @($blockRaw | Where-Object { $BlockAllFilters -notcontains $_ })
     $hostsSites = @(Get-HostsBlockedSites)
-    $strict = [bool]($blockRaw | Where-Object { $BlockAllRecognize -contains $_ })
+    $strict = [bool]($blockRaw | Where-Object { $BlockAllFilters -contains $_ })
     if (-not $strict) { $mode = 'block' }
     elseif ($block.Count) { $mode = 'combined' } else { $mode = 'allow' }
     if (-not $block.Count) { $block = $hostsSites }
@@ -1166,7 +1121,6 @@ function Get-NonAdminRestrictions {
         SitesMode        = $mode
         BlockSites       = $block
         AllowSites       = $allow
-        LocalSites       = @()
         HostsEnabled     = $hostsSites.Count -gt 0
         Lockdowns        = $lock
     }
@@ -1188,7 +1142,6 @@ function Export-RestrictionConfig($Config, [string]$File) {
             mode    = [string]$Config.SitesMode
             block   = @($Config.BlockSites)
             allow   = @($Config.AllowSites)
-            local   = @($Config.LocalSites)
             hosts   = [bool]$Config.HostsEnabled
         }
         lockdowns = $lock
@@ -1204,20 +1157,18 @@ function Import-RestrictionConfig([string]$File) {
     $lock = @{}
     foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$j.lockdowns.($l.Id) }
     $mode = 'block'
-    if ($j.sites.mode -in @('allow', 'combined')) { $mode = [string]$j.sites.mode }
+    if ($j.sites.mode -eq 'allow') { $mode = 'allow' }
     $programs = @(Get-UniqueText @(@($j.programs.list) | ForEach-Object { ConvertTo-ExeName $_ }))
     $block = @(Get-UniqueText @(@($j.sites.block) | ForEach-Object { ConvertTo-Domain $_ }))
     $allow = @(Get-UniqueText @(@($j.sites.allow) | ForEach-Object { ConvertTo-Domain $_ }))
-    $local = @(Get-UniqueText @(@($j.sites.local) | ForEach-Object { ConvertTo-Domain $_ }))
-    $active = if ($mode -eq 'block') { @($block + $allow + $local) } else { @($allow + $local) }
+    $active = if ($mode -eq 'allow') { $allow } else { $block }
     [pscustomobject]@{
         WhitelistEnabled = ([bool]$j.programs.enabled -and $programs.Count -gt 0)
         Programs         = $programs
         SitesEnabled     = ([bool]$j.sites.enabled -and $active.Count -gt 0)
         SitesMode        = $mode
         BlockSites       = $block
-        AllowSites       = @(Get-UniqueText @(@($local) + @($allow)))
-        LocalSites       = @()
+        AllowSites       = $allow
         HostsEnabled     = [bool]$j.sites.hosts
         Lockdowns        = $lock
     }
@@ -1271,30 +1222,11 @@ function Add-ValueList($Vals, [string]$Key, $Items) {
     foreach ($item in $Items) { $Vals.Add([pscustomobject]@{ Key = $Key; Name = "$i"; Type = 'String'; Data = $item }); $i++ }
 }
 
-# Firefox понимает шаблоны адресов: домен с поддоменами или раздел сайта.
-# Для IP-адресов вариант с поддоменами (*.IP) не добавляем — такой шаблон некорректен.
+# Firefox понимает шаблоны адресов: домен с поддоменами или раздел сайта
 function ConvertTo-FirefoxPatterns($Sites) {
     return @(foreach ($d in $Sites) {
-        $isIp = ((($d -split '/')[0] -split ':')[0] -match '^\d{1,3}(\.\d{1,3}){3}$')
-        if ($d.Contains('/')) {
-            "*://$d*"; if (-not $isIp) { "*://*.$d*" }
-        } else {
-            "*://$d/*"; if (-not $isIp) { "*://*.$d/*" }
-        }
+        if ($d.Contains('/')) { "*://$d*"; "*://*.$d*" } else { "*://$d/*"; "*://*.$d/*" }
     })
-}
-
-# Фильтры белого списка для Chromium: домен и его поддомены (*.домен).
-# Для IP-адресов вариант *.IP не добавляем — он не имеет смысла.
-function Expand-AllowHosts($Sites) {
-    $out = New-Object System.Collections.Generic.List[string]
-    foreach ($d in $Sites) {
-        if (-not $d) { continue }
-        [void]$out.Add($d)
-        $hostOnly = (($d -split '/')[0] -split ':')[0]
-        if ($hostOnly -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { [void]$out.Add("*.$d") }
-    }
-    return , @($out.ToArray() | Select-Object -Unique)
 }
 
 # Плоский список значений реестра (относительно HKCU), которые задают выбранные ограничения
@@ -1315,11 +1247,8 @@ function Get-RestrictionValues($Config) {
         $blockList = @()
         if ($useBlack) { $blockList += @($Config.BlockSites) }
         if ($strict)   { $blockList += $BlockAllFilters }
-
-        $allowFilters = @(Expand-AllowHosts $Config.AllowSites)
-        # В строгом режиме обязательно разрешаем служебные страницы браузера,
-        # иначе блок-всё '*' закрывает в том числе интерфейс браузера.
-        if ($strict) { $allowFilters += $BrowserInternalUrls }
+        $allowFilters = @(foreach ($d in $Config.AllowSites) { $d; "*.$d" })
+        if ($strict)   { $allowFilters += $BrowserInternalUrls }
 
         if ($blockList.Count)    { foreach ($k in $SiteListKeys)  { Add-ValueList $vals $k $blockList } }
         if ($allowFilters.Count) { foreach ($k in $AllowListKeys) { Add-ValueList $vals $k $allowFilters } }
@@ -1328,8 +1257,7 @@ function Get-RestrictionValues($Config) {
         if ($useBlack) { $fxBlock += @(ConvertTo-FirefoxPatterns $Config.BlockSites) }
         if ($strict)   { $fxBlock += '<all_urls>' }
         if ($fxBlock.Count) { Add-ValueList $vals $FirefoxBlockKey $fxBlock }
-        $fxAllow = @(ConvertTo-FirefoxPatterns $Config.AllowSites)
-        if ($fxAllow.Count) { Add-ValueList $vals $FirefoxAllowKey $fxAllow }
+        if (@($Config.AllowSites).Count) { Add-ValueList $vals $FirefoxAllowKey (ConvertTo-FirefoxPatterns $Config.AllowSites) }
     }
     foreach ($l in $Lockdowns) {
         if ($Config.Lockdowns[$l.Id]) {
@@ -1426,15 +1354,6 @@ function Format-UserResults($Results) {
 function Set-NonAdminRestrictions($Config) {
     $values = Get-RestrictionValues $Config
 
-    # Для диагностики: что именно записывается в URLBlocklist/URLAllowlist Edge
-    $edgeBlock = @($values | Where-Object { $_.Key -eq 'Software\Policies\Microsoft\Edge\URLBlocklist' } | ForEach-Object { $_.Data })
-    $edgeAllow = @($values | Where-Object { $_.Key -eq 'Software\Policies\Microsoft\Edge\URLAllowlist' } | ForEach-Object { $_.Data })
-    Write-Log ("Edge URLBlocklist [" + ($edgeBlock -join ' ') + "]")
-    Write-Log ("Edge URLAllowlist [" + ($edgeAllow -join ' ') + "]")
-
-    # Сохраняем настройки СРАЗУ — чтобы введённые адреса не потерялись, даже если запись политик ниже упадёт
-    Export-RestrictionConfig $Config $RestrictionsFile
-
     # 1. Групповая политика «Не администраторы» — для новых и ещё не входивших пользователей
     $result = New-Object System.Collections.Generic.List[object]
     foreach ($e in (Read-PolFile $NonAdminPolFile)) { if (-not (Test-ManagedPolEntry $e)) { $result.Add($e) } }
@@ -1456,6 +1375,8 @@ function Set-NonAdminRestrictions($Config) {
     if ($Config.SitesEnabled -and $Config.SitesMode -ne 'allow' -and $Config.HostsEnabled -and $hostsDomains.Count) { Set-HostsBlock $hostsDomains }
     elseif ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
 
+    Export-RestrictionConfig $Config $RestrictionsFile
+
     $on = @($Lockdowns | Where-Object { $Config.Lockdowns[$_.Id] } | ForEach-Object { $_.Id }) -join ', '
     Write-Log ("Ограничения для не-администраторов: программы={0} [{1}]; сайты={2}, режим={3}, чёрный=[{4}], белый=[{5}]; hosts={6}; запреты=[{7}]" -f `
         $Config.WhitelistEnabled, ($Config.Programs -join ' '), $Config.SitesEnabled, $Config.SitesMode,
@@ -1472,26 +1393,6 @@ function Clear-NonAdminRestrictions {
     if ((Get-HostsBlockedSites).Count) { Set-HostsBlock @() }
     Write-Log ("Ограничения для не-администраторов сняты:`r`n" + (Format-UserResults $userResults))
     return , $userResults
-}
-
-# Полное удаление: снимает все ограничения, удаляет данные и саму папку программы.
-# Папка программы занята запущенным процессом, поэтому её удаляет отложенный cmd после выхода.
-function Remove-Application {
-    try { [void](Clear-NonAdminRestrictions) } catch { Write-Log "Удаление — не удалось снять ограничения: $($_.Exception.Message)" }
-    try { if (Test-Path -LiteralPath $DataDir) { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
-    $root = $PSScriptRoot
-    if ($root -and (Test-Path -LiteralPath $root)) {
-        $bat = Join-Path $env:TEMP ('zap_uninstall_{0}.cmd' -f ([guid]::NewGuid().ToString('N')))
-        $lines = @(
-            '@echo off',
-            'cd /d "%TEMP%"',
-            'timeout /t 2 /nobreak >nul',
-            ('rmdir /s /q "{0}"' -f $root),
-            '(goto) 2>nul & del "%~f0"'
-        )
-        Set-Content -LiteralPath $bat -Value $lines -Encoding OEM
-        Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$bat`"" -WindowStyle Hidden -WorkingDirectory $env:TEMP
-    }
 }
 
 # Действуют ли ограничения у каждого обычного пользователя на самом деле (по его реестру)
@@ -2062,9 +1963,9 @@ $MainWindowXaml = @'
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
                     <TextBlock FontWeight="SemiBold" Margin="0,4,0,6" Text="Режим работы списков"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Чёрный список"/>
+                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" Content="Чёрный список"/>
                       <RadioButton x:Name="rbModeWhite" Style="{StaticResource Segment}" GroupName="sitemode" Content="Белый список"/>
-                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" Content="Совмещённый"/>
+                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Совмещённый"/>
                     </StackPanel>
                     <TextBlock x:Name="txtModeDesc" Style="{StaticResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
@@ -2078,7 +1979,7 @@ $MainWindowXaml = @'
                           </Grid.ColumnDefinitions>
                           <Grid>
                             <TextBox x:Name="txtAllowAdd" Style="{StaticResource Input}"/>
-                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Домен или IP: uchi.ru, yandex.ru/games, 192.168.1.113:8080"/>
+                            <TextBlock x:Name="phAllowAdd" Style="{StaticResource Placeholder}" Text="Например: uchi.ru"/>
                           </Grid>
                           <Button x:Name="btnAllowAdd" Grid.Column="1" Style="{StaticResource BtnPrimary}" Margin="8,0,0,0" Content="Добавить"/>
                         </Grid>
@@ -2090,7 +1991,7 @@ $MainWindowXaml = @'
                           <Button x:Name="btnAllowGov" Style="{StaticResource BtnChip}" Content="+ Госуслуги"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
-                          <ListBox x:Name="lbAllow" Height="170" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                          <ListBox x:Name="lbAllow" Height="150" BorderThickness="0" Tag="&#xE73E;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
                         </Border>
                         <TextBlock x:Name="txtAllowCount" Style="{StaticResource Muted}" FontSize="12" Margin="2,8,0,0"/>
                       </StackPanel>
@@ -2118,7 +2019,6 @@ $MainWindowXaml = @'
                           <Button x:Name="btnQuickCinema" Style="{StaticResource BtnChip}" Content="+ Кино"/>
                           <Button x:Name="btnQuickBets" Style="{StaticResource BtnChip}" Content="+ Ставки"/>
                           <Button x:Name="btnQuickYandex" Style="{StaticResource BtnChip}" Content="+ Сервисы Яндекса"/>
-                          <Button x:Name="btnQuickGoogle" Style="{StaticResource BtnChip}" Content="+ Сервисы Google"/>
                         </WrapPanel>
                         <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="4" Background="White">
                           <ListBox x:Name="lbBlock" Height="150" BorderThickness="0" Tag="&#xE774;" ItemContainerStyle="{StaticResource RowItem}" ItemTemplate="{StaticResource StringRow}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
@@ -2439,13 +2339,6 @@ $MainWindowXaml = @'
                 <TextBlock Style="{StaticResource Icon}" Text="&#xE81C;" FontSize="26" Foreground="#2563EB" HorizontalAlignment="Left"/>
                 <TextBlock Text="Журнал запуска приложений" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
                 <TextBlock Style="{StaticResource Muted}" Text="Какие программы и когда запускались на ПК"/>
-              </StackPanel>
-            </Button>
-            <Button x:Name="btnToolUninstall" Style="{StaticResource Tile}">
-              <StackPanel>
-                <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" FontSize="26" Foreground="#DC2626" HorizontalAlignment="Left"/>
-                <TextBlock Text="Удалить программу" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,4"/>
-                <TextBlock Style="{StaticResource Muted}" Text="Снять все ограничения и полностью удалить программу"/>
               </StackPanel>
             </Button>
           </UniformGrid>
@@ -2872,7 +2765,7 @@ function Show-MainWindow {
 
     #region Оформление и навигация
 
-    $ui.txtVersion.Text = "версия $AppVersion от $BuildDate"
+    $ui.txtVersion.Text = "версия $AppVersion"
     $ui.txtOS.Text = $os.Text
     if ($IsAdmin) {
         $ui.badgeAdmin.Background = Get-Brush '#14532D'
@@ -2886,7 +2779,7 @@ function Show-MainWindow {
     }
     if ($os.IsHome) { $ui.warnHome.Visibility = 'Visible' }
 
-    $ui.txtAboutVersion.Text = "Версия $AppVersion от $BuildDate"
+    $ui.txtAboutVersion.Text = "Версия $AppVersion"
     $ui.txtAboutOS.Text = $os.Text
     $ui.txtAboutAdmin.Text = if ($IsAdmin) { 'Администратор' } else { 'Без прав администратора' }
     $ui.txtAboutData.Text = $DataDir
@@ -2953,11 +2846,10 @@ function Show-MainWindow {
     $blockSites.Add_CollectionChanged({ Update-SitesCount })
     $allowSites.Add_CollectionChanged({ Update-SitesCount })
 
-
     function Get-SiteMode {
         if ($ui.rbModeWhite.IsChecked -eq $true) { return 'allow' }
-        if ($ui.rbModeCombo.IsChecked -eq $true) { return 'combined' }
-        return 'block'
+        if ($ui.rbModeBlack.IsChecked -eq $true) { return 'block' }
+        return 'combined'
     }
     function Update-ModeDesc {
         $t = switch (Get-SiteMode) {
@@ -3146,13 +3038,6 @@ function Show-MainWindow {
         'pari.ru', 'bet-boom.ru', 'betboom.ru', 'tennisi.bet', 'melbet.ru', '1xbet.com', '1xstavka.ru',
         'pin-up.ru', 'pinup.ru', 'vulkan.ru', 'joycasino.com', 'stake.com', 'csgorun.ru', 'csfail.com', 'ggdrop.com'
     ) -join ' '
-    # Развлекательные сервисы Google: поиск, почта и документы остаются доступны
-    $ui.btnQuickGoogle.Tag = @(
-        'youtube.com', 'youtu.be', 'youtubekids.com', 'youtube-nocookie.com', 'm.youtube.com',
-        'play.google.com', 'news.google.com', 'podcasts.google.com', 'earth.google.com',
-        'arts.google.com', 'artsandculture.google.com', 'stadia.google.com',
-        'google.com/games', 'blogger.com', 'chromewebstore.google.com', 'chrome.google.com/webstore'
-    ) -join ' '
     # Развлекательные сервисы Яндекса: поиск, почта и карты остаются доступны
     $ui.btnQuickYandex.Tag = @(
         'yandex.ru/games', 'yandex.ru/video', 'yandex.ru/efir', 'yandex.ru/chat', 'yandex.ru/gamecenter',
@@ -3163,7 +3048,7 @@ function Show-MainWindow {
         'kinopoisk.ru', 'hd.kinopoisk.ru', 'plus.yandex.ru', 'afisha.yandex.ru',
         'q.yandex.ru', 'yandex.ru/q', 'market.yandex.ru', 'ya.ru/games'
     ) -join ' '
-    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets, $ui.btnQuickYandex, $ui.btnQuickGoogle)) {
+    foreach ($b in @($ui.btnQuickSocial, $ui.btnQuickVideo, $ui.btnQuickGames, $ui.btnQuickMessengers, $ui.btnQuickCinema, $ui.btnQuickBets, $ui.btnQuickYandex)) {
         $b.Add_Click({
             param($s, $e)
             Invoke-Safe {
@@ -3249,10 +3134,8 @@ function Show-MainWindow {
             $ui.chkSites.IsChecked = $r.SitesEnabled
             foreach ($l in $Lockdowns) { $lockBoxes[$l.Id].IsChecked = [bool]$r.Lockdowns[$l.Id] }
         }
-        # Прогоняем через ConvertTo-Domain — нормализуем домены и IP, отсеиваем диапазоны/подсети
-        foreach ($x in @($r.BlockSites)) { Add-BlockSites @($x) }
-        foreach ($x in @($r.AllowSites)) { Add-AllowSites @($x) }
-        foreach ($x in @($r.LocalSites)) { Add-AllowSites @($x) }
+        foreach ($x in @($r.BlockSites)) { Add-UniqueItem $blockSites $x }
+        foreach ($x in @($r.AllowSites)) { Add-UniqueItem $allowSites $x }
         switch ($r.SitesMode) {
             'allow'    { $ui.rbModeWhite.IsChecked = $true }
             'combined' { $ui.rbModeCombo.IsChecked = $true }
@@ -3278,9 +3161,8 @@ function Show-MainWindow {
         $mode = Get-SiteMode
         $block = @($blockSites)
         $allow = @($allowSites)
-        $local = @()
         # В белом/совмещённом режиме нужен белый список; в чёрном — хотя бы один список
-        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0) } else { ($allow.Count -gt 0) }
+        $hasSites = if ($mode -eq 'block') { ($block.Count -gt 0 -or $allow.Count -gt 0) } else { $allow.Count -gt 0 }
         [pscustomobject]@{
             WhitelistEnabled = ($ui.chkWl.IsChecked -eq $true)
             Programs         = @($progs)
@@ -3288,7 +3170,6 @@ function Show-MainWindow {
             SitesMode        = $mode
             BlockSites       = $block
             AllowSites       = $allow
-            LocalSites       = $local
             HostsEnabled     = ($ui.chkHosts.IsChecked -eq $true)
             Lockdowns        = $lock
         }
@@ -3309,10 +3190,6 @@ function Show-MainWindow {
             if ($cfg.SitesMode -ne 'block') { Show-Error 'В этом режиме белый список пуст — так закроются все сайты. Добавьте разрешённые сайты в белый список.' }
             else { Show-Error 'Списки сайтов пусты. Добавьте сайты в чёрный или белый список, либо выключите ограничение сайтов.' }
             return
-        }
-        # Предупреждаем, если строгий/совмещённый режим закроет весь интернет (белый список без доменов)
-        if ($cfg.SitesEnabled -and $cfg.SitesMode -ne 'block' -and @($cfg.AllowSites).Count -eq 0) {
-            if (-not (Confirm-Action ("ВНИМАНИЕ: в белом списке нет сайтов, а режим — не «Чёрный список». Будет закрыт ВЕСЬ интернет.`r`n`r`nЧаще всего нужен режим «Чёрный список». Всё равно применить?"))) { return }
         }
         if ($AskConfirm -and -not (Confirm-Action ("Применить для всех пользователей без прав администратора?`r`n`r`n" + (Get-RestrictionSummary $cfg)))) { return }
 
@@ -3698,21 +3575,6 @@ function Show-MainWindow {
     })
     $ui.btnToolData.Add_Click({ Invoke-Safe { Start-Process explorer.exe -ArgumentList "`"$DataDir`"" } })
     $ui.btnToolAudit.Add_Click({ $ui.navAudit.IsChecked = $true })
-    $ui.btnToolUninstall.Add_Click({
-        Invoke-Safe {
-            if (-not $IsAdmin) { Show-Error 'Нужны права администратора, чтобы снять ограничения при удалении. Нажмите «Запустить от администратора».'; return }
-            $msg = "Полностью удалить программу?`r`n`r`nБудет сделано:`r`n" +
-                   "• сняты все ограничения со всех пользователей;`r`n" +
-                   "• удалены данные программы ($DataDir);`r`n" +
-                   "• удалена папка программы ($PSScriptRoot).`r`n`r`n" +
-                   'Это действие необратимо. Программа закроется.'
-            if (-not (Confirm-Action $msg)) { return }
-            Set-Busy $true
-            try { Remove-Application } finally { Set-Busy $false }
-            [void][System.Windows.MessageBox]::Show($window, 'Ограничения сняты, данные удалены. Папка программы будет удалена сразу после закрытия окна.', $AppName, 'OK', 'Information')
-            $window.Close()
-        }
-    })
 
     #endregion
 
