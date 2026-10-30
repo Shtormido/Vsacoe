@@ -321,7 +321,7 @@
       const g = this.g, CS = 8; let h = 17;
       for (let y = cy * CS - 2; y < cy * CS + CS + 2; y++) for (let x = cx * CS - 2; x < cx * CS + CS + 2; x++) {
         if (!g.inb(x, y)) continue; const i = y * g.W + x;
-        h = (Math.imul(h, 31) + g.terrain[i] + g.road[i] * 4 + g.zone[i] * 8 + (g.bld[i] >= 0 ? 32 : 0) + g.tree[i] * 64) | 0;
+        h = (Math.imul(h, 31) + g.terrain[i] + g.road[i] * 4 + g.zone[i] * 8 + (g.bld[i] >= 0 ? 32 : 0) + g.tree[i] * 64 + g.res[i] * 512) | 0;
       }
       return h;
     }
@@ -342,6 +342,7 @@
         if (t === 1) { const m = this.mask(x, y, (xx, yy) => g.terrain[g.idx(xx, yy)] !== 1); c.drawImage(gr.water[m ? 0 : 1][m], wx - ox, wy - oy, gw, gh); }
         else if (t === 2) c.drawImage(gr.sand[g.gv[i] % 3], wx - ox, wy - oy, gw, gh);
         else c.drawImage(gr.grass[g.tone[i]][g.gv[i] % 7 === 0 ? 2 : g.gv[i] % 13 === 0 ? 3 : g.gv[i] % 2], wx - ox, wy - oy, gw, gh);
+        if (g.res[i] && !g.road[i] && g.bld[i] < 0) c.drawImage(gr.dep[g.res[i]][g.gv[i] % 3], wx - ox, wy - oy, gw, gh);
         if (g.road[i]) { const m = this.mask(x, y, (xx, yy) => g.road[g.idx(xx, yy)]); c.drawImage(t === 1 ? gr.bridge[m] : gr.road[m], wx - ox, wy - oy, gw, gh); }
         else if (g.zone[i] && g.bld[i] < 0) c.drawImage(gr.zone[g.zone[i]], wx - ox, wy - oy, gw, gh);
         if (g.tree[i] && g.bld[i] < 0 && !g.road[i] && this.staticTree(x, y)) trees.push([x, y, SP().tree(g.tree[i], g.gv[i] % 6)]);
@@ -400,6 +401,16 @@
     }
     drawOverlay(c, vis) {
       const g = this.g, W = g.W, ov = this.overlay;
+      if (ov === 'res') {
+        for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+          const i = y * W + x, [wx, wy] = this.iso(x, y);
+          if (!vis(wx, wy, HW, 0, HW, TH)) continue;
+          if (g.res[i] === 1) c.fillStyle = '#e2e8f0'; else if (g.res[i] === 2) c.fillStyle = '#0f172a';
+          else if (g.tree[i]) c.fillStyle = G.alpha('#16a34a', 0.3 + g.tree[i] * 0.2); else continue;
+          dia(wx, wy); c.fill();
+        }
+        c.globalAlpha = 1; return;
+      }
       const res = G.RES.includes(ov);
       const field = { lv: g.lv, pol: g.pol, crime: g.crime }[ov] || g.cov[ov];
       const dia = (wx, wy) => { c.beginPath(); c.moveTo(wx, wy); c.lineTo(wx + HW, wy + HH); c.lineTo(wx, wy + TH); c.lineTo(wx - HW, wy + HH); c.closePath(); };
@@ -569,6 +580,8 @@
         else if (b.zone && !b.ruin && b.construct <= 0 && !b.abandoned) {
           for (const r of G.needsFor(b.lvl)) if (!b[r]) { ic = G.RES_INFO[r].icon; blink = true; break; }
         } else if (b.abandoned) { ic = '🏚️'; blink = true; }
+        else if (b.noFuel) { ic = '⚫'; ring = '#ef4444'; blink = true; }
+        else if (!b.zone && !b.ruin && b.rc < 0 && G.BLD[b.type]) { ic = '🛣️'; blink = true; }
         if (!ic) continue;
         const spr = sp.bld(b), [wx, wy] = this.iso(b.x + b.w / 2, b.y + b.h / 2);
         const [sx, sy] = this.toScreen(wx, wy - Math.min(spr.top, 120) - 4);
@@ -601,7 +614,7 @@
       const ZC = { 1: '#4cc361', 2: '#3d8bfd', 3: '#f2b632' };
       for (let y = 0; y < W; y++) for (let xx = 0; xx < W; xx++) {
         const i = y * W + xx, b = g.bld[i] >= 0 ? g.buildings.get(g.bld[i]) : null;
-        let col = g.terrain[i] === 1 ? '#3a9fd6' : g.terrain[i] === 2 ? '#e3d091' : g.tree[i] ? '#3f8a3a' : '#71bb4e';
+        let col = g.terrain[i] === 1 ? '#3a9fd6' : g.terrain[i] === 2 ? '#e3d091' : g.res[i] === 1 ? '#b8b8b0' : g.res[i] === 2 ? '#3a3a3a' : g.tree[i] ? '#3f8a3a' : '#71bb4e';
         if (g.road[i]) col = '#4b4f57';
         else if (b) col = b.ruin ? '#555' : b.fire ? '#ff5722' : b.zone ? (b.construct > 0 ? '#c9a46b' : G.shade(ZC[b.zone], 0.8)) : '#eeeeee';
         else if (g.zone[i]) col = ZC[g.zone[i]];

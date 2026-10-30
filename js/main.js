@@ -37,6 +37,21 @@
           1️⃣ Проложите <b>дорогу</b><br>2️⃣ Разметьте <b>жилую зону</b> рядом<br>3️⃣ Дайте домам <b>энергию</b> и <b>воду</b> — ставьте их у дороги<br>4️⃣ Добавьте <b>торговлю</b> и <b>промышленность</b> для рабочих мест<br><br>Следите за заданиями слева!</p>`, '<button class="btn primary" id="mOk">Начать строить!</button>'), 400);
       }
     },
+    switchCity(id) {
+      if (this.g.cityId === id) return;
+      this.g.save();
+      const g = G.Region.loadCity(id);
+      if (!g) { this.ui.toast('Не удалось загрузить город', 'bad'); return; }
+      G.Audio.play('quest'); this.ui.closePanel(); this.startGame(g);
+      this.ui.toast(`🌐 Вы в городе «${g.name.replace(/</g, '&lt;')}»`, 'good');
+    },
+    foundCity(name, spec) {
+      this.g.save();
+      const g = new G.Game();
+      g.newGame({ name, sandbox: G.Region.data.sandbox, mapKind: spec });
+      G.Region.addCity(g); g.save();
+      G.Audio.play('quest'); this.ui.closePanel(); this.startGame(g);
+    },
     findCenter() {
       const g = this.g; let sx = 0, sy = 0, n = 0;
       for (const b of g.buildings.values()) { sx += b.x; sy += b.y; n++; }
@@ -46,7 +61,7 @@
       this.playing = false; this.ui.show(false); this.ui.closePanel(); this.ui.hideInfo(); this.ui.closeSub();
       $('toolhint').classList.add('hidden'); this.setOverlay(null);
       $('start').classList.remove('hidden');
-      $('btnContinue').hidden = fresh || !G.Game.hasSave();
+      $('btnContinue').hidden = fresh || !G.Region.exists();
       $('startMain').hidden = !!fresh; $('startNew').hidden = !fresh;
       const demo = new G.Game(); demo.newGame({ seed: (Math.random() * 1e9) | 0, mapKind: 'river' }); demo.speed = 1;
       this.g = demo; this.r.setGame(demo); this.r.cam.z = 0.8;
@@ -72,7 +87,9 @@
       g.on('placed', b => { A.play('place'); const [x, y] = r.iso(b.x + b.w / 2, b.y + b.h / 2); r.puff(x, y, 'dust', 14); });
       g.on('built-road', () => A.play('road'));
       g.on('rect', t => A.play(t === 'bulldoze' ? 'bulldoze' : 'zone'));
-      g.on('day', b => { if (!g.sandbox) ui.toast(`📅 День ${g.day}: ${b.net >= 0 ? '+' : '−'}$${G.fmt(Math.abs(b.net))}`, b.net >= 0 ? 'good' : 'bad', () => ui.togglePanel('budget'), null, 2500); if (g.money < 0 && !g.sandbox) ui.toast('💸 Казна пуста! Повысьте налоги или сократите расходы', 'bad', () => ui.togglePanel('budget'), 'broke'); });
+      g.on('nofuel', () => ui.toast('⚫ Кончился уголь — ТЭС остановлены! Купите уголь или наладьте поставки', 'bad', () => ui.togglePanel('region'), 'nofuel', 5000));
+      g.on('day', (b, trade) => { if (trade) ui.toast(`🚚 Торговля: ${trade >= 0 ? '+' : '−'}$${G.fmt(Math.abs(trade))}`, trade >= 0 ? 'good' : '', () => ui.togglePanel('region'), null, 2500);
+        if (!g.sandbox) ui.toast(`📅 День ${g.day}: ${b.net >= 0 ? '+' : '−'}$${G.fmt(Math.abs(b.net))}`, b.net >= 0 ? 'good' : 'bad', () => ui.togglePanel('budget'), null, 2500); if (g.money < 0 && !g.sandbox) ui.toast('💸 Казна пуста! Повысьте налоги или сократите расходы', 'bad', () => ui.togglePanel('budget'), 'broke'); });
       g.on('festival', () => { ui.toast('🎉 В городе праздник!', 'gold'); A.play('quest'); });
       g.on('disaster', (k, d) => {
         A.play(k === 'meteor' ? 'fire' : 'boom');
@@ -94,14 +111,15 @@
     const demo = new G.Game(); demo.newGame({ seed: (Math.random() * 1e9) | 0, mapKind }); app.g = demo; app.r.setGame(demo); app.r.cam.z = 0.8;
   });
   $('btnNew').onclick = () => { $('startMain').hidden = true; $('startNew').hidden = false; G.Audio.play('click'); };
-  $('btnBack').onclick = () => { $('startMain').hidden = false; $('startNew').hidden = true; $('btnContinue').hidden = !G.Game.hasSave(); };
+  $('btnBack').onclick = () => { $('startMain').hidden = false; $('startNew').hidden = true; $('btnContinue').hidden = !G.Region.exists(); };
   $('btnStart').onclick = () => {
     G.Audio.play('quest');
+    G.Region.create(mode === 'sandbox');
     const g = new G.Game();
     g.newGame({ name: $('inName').value.trim() || 'Новоград', sandbox: mode === 'sandbox', mapKind, seed: app.g ? app.g.seed : undefined });
-    app.startGame(g); g.save();
+    G.Region.addCity(g); app.startGame(g); g.save();
   };
-  $('btnContinue').onclick = () => { const g = G.Game.loadSaved(); if (g) { G.Audio.play('quest'); app.startGame(g); } else app.ui.toast('Не удалось загрузить сохранение', 'bad'); };
+  $('btnContinue').onclick = () => { let g = null; try { G.Region.load(); g = G.Region.loadCity(G.Region.data.active || G.Region.data.cities[0].id); } catch (e) { console.error(e); } if (g) { G.Audio.play('quest'); app.startGame(g); } else app.ui.toast('Не удалось загрузить сохранение', 'bad'); };
   app.toStart(false);
 
   // ---------- Ввод ----------
@@ -124,7 +142,8 @@
     if (T.kind === 'place') {
       const [x, y] = anchorFor(tx, ty), ok = g.canPlace(app.tool, x, y);
       r.preview = { kind: 'place', type: app.tool, x, y, ok: ok.ok };
-      app.ui.updateHint(ok.ok ? `$${G.fmt(T.cost)}` : ok.why);
+      const ex = T.extract && g.inb(x, y) ? ` · ${G.GOODS[T.extract.res].icon} ${g.extractAt(app.tool, x, y)}/день` : '';
+      app.ui.updateHint(ok.ok ? `$${G.fmt(T.cost)}${ex}` : ok.why);
       return;
     }
     if (!drag || !drag.tool) { r.preview = { kind: 'rect', tiles: g.inb(tx, ty) ? [[tx, ty, true]] : [], col: T.zone ? G.alpha(G.ZONE[T.zone].color, 0.5) : null }; return; }

@@ -42,6 +42,7 @@
   </div>
 
   <div id="side" class="hidden">
+    <button class="round" data-panel="region" title="Регион и торговля">🌐</button>
     <button class="round" data-panel="quests" title="Задания">📋<em id="qBadge"></em></button>
     <button class="round" data-panel="budget" title="Бюджет и налоги">📊</button>
     <button class="round" data-panel="layers" title="Слои данных">🗺️</button>
@@ -84,7 +85,10 @@
         <div class="seg" id="segMap">
           <button data-v="river" class="on">🏞️ Река</button>
           <button data-v="lakes">💧 Озёра</button>
-          <button data-v="coast">🌊 Побережье</button>
+          <button data-v="mountains">⛰️ Горы</button>
+          <button data-v="coalfield">⚫ Уголь</button>
+          <button data-v="forest">🌲 Лес</button>
+          <button data-v="resort">🏖️ Курорт</button>
         </div>
         <div class="row">
           <button class="btn" id="btnBack">← Назад</button>
@@ -99,6 +103,7 @@
   <script src="js/config.js"></script>
   <script src="js/mapgen.js"></script>
   <script src="js/sprites.js"></script>
+  <script src="js/region.js"></script>
   <script src="js/game.js"></script>
   <script src="js/render.js"></script>
   <script src="js/audio.js"></script>

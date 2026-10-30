@@ -2,7 +2,6 @@
 (function (G) {
   const STEP = 15;            // шаг симуляции, игровые минуты
   const DAY = 1440;
-  const SAVE_KEY = 'gradostroi_save_v1';
 
   class Game extends G.Emitter {
     newGame(o) {
@@ -12,7 +11,8 @@
       this.sandbox = !!o.sandbox;
       this.mapKind = o.mapKind || 'river';
       const m = G.generateMap(W, W, this.seed, this.mapKind);
-      this.terrain = m.terrain; this.tree = m.tree; this.tone = m.tone;
+      this.terrain = m.terrain; this.tree = m.tree; this.tone = m.tone; this.res = m.res;
+      this.cityId = o.cityId || 0; this.stock = { stone: 120, coal: 120, wood: 120 };
       this.road = new Uint8Array(N); this.zone = new Uint8Array(N);
       this.buildings = new Map(); this.nextId = 1;
       this.money = this.sandbox ? 999999999 : 20000;
@@ -20,7 +20,7 @@
       this.taxes = { 1: 9, 2: 9, 3: 9 };
       this.stats = { placed: {}, history: [] };
       this.qDone = G.QUESTS.map(() => false);
-      this.disasters = true; this.festivalUntil = 0; this.maxPop = 0;
+      this.disasters = true; this.festivalUntil = 0; this.maxPop = 0; this.lastProd = {}; this.lastCons = {};
       this.init();
     }
     init() {
@@ -36,7 +36,7 @@
       this.acc = 0; this.stepN = 0; this.speed = 1; this.tornado = null; this.meteors = [];
       this.util = { produced: {}, used: {}, demanded: {} };
       Object.assign(this.stats, { pop: 0, jobsC: 0, jobsI: 0, capC: 0, capI: 0, happy: 0.6, demand: { 1: 0.6, 2: 0.3, 3: 0.4 }, zoneTiles: {}, lvl2: 0, lvl3: 0, lvl4: 0, roads: 0 });
-      this.workRatio = 0; this.globalHappy = 0;
+      this.workRatio = 0; this.globalHappy = 0; this.dayUse = { stone: 0, wood: 0 }; this.tour = { tourists: 0, attr: 0, cap: 0 };
       this.recalc(true);
     }
     idx(x, y) { return y * this.W + x; }
@@ -269,7 +269,8 @@
       for (const b of this.buildings.values()) {
         if (b.ruin || b.construct > 0) continue;
         const d = G.BLD[b.type];
-        if (d && d.provides && b.rc >= 0 && !b.fire) for (const r in d.provides) { sup[r][b.rc] += d.provides[r]; P[r] += d.provides[r]; }
+        b.noFuel = b.type === 'coal' && !this.sandbox && this.stock.coal <= 0;
+        if (d && d.provides && b.rc >= 0 && !b.fire && !b.noFuel) for (const r in d.provides) { sup[r][b.rc] += d.provides[r]; P[r] += d.provides[r]; }
         if (b.zone) cons.push(b);
       }
       cons.sort((a, b) => a.id - b.id);
@@ -311,6 +312,7 @@
         if ((b.zone === 1 || b.zone === 2) && b.occ > 0) { const s = b.occ / 70; area(cx, cy, 4, (i, t) => { this.crimeA[i] += s * (1 - t); }); }
       }
       this.globalHappy = Math.min(0.15, gh);
+      this.computeTourism();
       for (let i = 0; i < N; i++) {
         const tr = this.tree[i] ? 0.06 * this.tree[i] : 0;
         const p = this.pol[i] = G.clamp(this.pol[i] - tr - cov.park[i] * 0.15, 0, 1);
@@ -391,7 +393,7 @@
           b.unmet += STEP;
           if (b.unmet > DAY * 2) { b.abandoned = true; b.occ = 0; this.dirty = true; this.emit('abandoned', b); }
         } else b.unmet = 0;
-        if (met && Math.random() < 0.025 && dem[z] > -0.15 && this.canLevel(b)) {
+        if (met && Math.random() < 0.025 && dem[z] > -0.15 && this.canLevel(b) && this.useMat(b.lvl + 1)) {
           b.lvl++; b.var = (Math.random() * 1000) | 0; b.construct = 45; this.dirty = true;
           this.addXP(4 * b.lvl); this.emit('upgrade', b);
         }
@@ -432,7 +434,8 @@
         exp[b.type] = (exp[b.type] || 0) + d.upkeep; total += d.upkeep;
       }
       const roads = s.roads * 0.25; total += roads;
-      const income = inc[1] + inc[2] + inc[3];
+      inc[4] = this.tour.tourists * 3;
+      const income = inc[1] + inc[2] + inc[3] + inc[4];
       return { inc, income, exp, roads, upkeep: total, net: income - total };
     }
     dayEnd(prevDay) {
@@ -445,8 +448,62 @@
         if (this.level >= 5 && Math.random() < 0.035) this.startTornado();
         else if (this.level >= 7 && Math.random() < 0.025) this.dropMeteor();
       }
-      this.emit('day', b);
+      // ресурсы: добыча, топливо ТЭС
+      const prod = this.production(), cons = { stone: this.dayUse.stone, wood: this.dayUse.wood, coal: 0 };
+      for (const k in G.GOODS) this.stock[k] = (this.stock[k] || 0) + (prod[k] || 0);
+      let plants = 0; for (const p of this.buildings.values()) if (p.type === 'coal' && p.rc >= 0 && !p.ruin) plants++;
+      const need = plants * G.COAL_USE;
+      if (need && !this.sandbox) {
+        cons.coal = Math.min(need, this.stock.coal); this.stock.coal -= cons.coal;
+        if (this.stock.coal <= 0) this.emit('nofuel');
+      }
+      this.lastProd = prod; this.lastCons = { stone: cons.stone, wood: cons.wood, coal: need }; this.lastNet = b.net;
+      this.dayUse = { stone: 0, wood: 0 };
+      const trade = G.Region.tick(this);
+      this.emit('day', b, trade);
       this.save();
+    }
+    // ---------- Ресурсы и туризм ----------
+    extractAt(type, x, y) {
+      const d = G.BLD[type].extract, w = G.BLD[type].w, h = G.BLD[type].h, cx = x + w / 2, cy = y + h / 2;
+      let n = 0;
+      for (let yy = Math.floor(cy - d.r - 1); yy <= cy + d.r; yy++) for (let xx = Math.floor(cx - d.r - 1); xx <= cx + d.r; xx++) {
+        if (!this.inb(xx, yy) || Math.hypot(xx + 0.5 - cx, yy + 0.5 - cy) > d.r) continue;
+        const i = this.idx(xx, yy);
+        if (d.src === 'tree') n += this.tree[i]; else if (this.res[i] === d.src) n++;
+      }
+      return Math.min(d.max, Math.round(n * d.per));
+    }
+    production() {
+      const p = { stone: 0, coal: 0, wood: 0 };
+      for (const b of this.buildings.values()) {
+        const d = G.BLD[b.type];
+        if (!d || !d.extract || b.ruin || b.fire || b.rc < 0) continue;
+        p[d.extract.res] += this.extractAt(b.type, b.x, b.y);
+      }
+      return p;
+    }
+    useMat(L) {
+      const need = G.MAT[L]; if (!need || this.sandbox) return true;
+      for (const k in need) if ((this.stock[k] || 0) < need[k]) { this.matShort = this.t; return false; }
+      for (const k in need) { this.stock[k] -= need[k]; this.dayUse[k] += need[k]; }
+      return true;
+    }
+    computeTourism() {
+      let attr = 0, cap = 15;
+      for (const b of this.buildings.values()) {
+        const d = G.BLD[b.type]; if (!d || b.ruin || b.rc < 0 || b.construct > 0) continue;
+        if (d.tourism) attr += d.tourism;
+        if (d.hotel) cap += d.hotel;
+        if (d.beach) {
+          let sand = 0;
+          for (let yy = b.y - 4; yy < b.y + b.h + 4; yy++) for (let xx = b.x - 4; xx < b.x + b.w + 4; xx++)
+            if (this.inb(xx, yy) && this.terrain[this.idx(xx, yy)] === 2) sand++;
+          attr += Math.min(40, sand * 1.5);
+        }
+      }
+      const rp = G.Region.totalPop(this);
+      this.tour = { attr: Math.round(attr), cap, tourists: Math.round(Math.min(cap, attr * 3 * (1 + rp / 6000))) };
     }
 
     // ---------- Происшествия ----------
@@ -585,7 +642,7 @@
         return o;
       });
       return JSON.stringify({
-        v: 1, W: this.W, seed: this.seed, name: this.name, sandbox: this.sandbox, mapKind: this.mapKind,
+        v: 2, cityId: this.cityId, stock: this.stock, res: enc(this.res), lastProd: this.lastProd, lastCons: this.lastCons, lastNet: this.lastNet, W: this.W, seed: this.seed, name: this.name, sandbox: this.sandbox, mapKind: this.mapKind,
         terrain: enc(this.terrain), tree: enc(this.tree), tone: enc(this.tone), road: enc(this.road), zone: enc(this.zone),
         buildings: bs, nextId: this.nextId, money: this.money, xp: this.xp, level: this.level, t: this.t, taxes: this.taxes,
         placed: this.stats.placed, history: this.stats.history, qDone: this.qDone, disasters: this.disasters, festivalUntil: this.festivalUntil, maxPop: this.maxPop,
@@ -595,6 +652,7 @@
       const d = JSON.parse(str), W = d.W, N = W * W;
       const dec = s => { const a = new Uint8Array(N); for (let i = 0; i < N; i++) a[i] = s.charCodeAt(i) - 48; return a; };
       Object.assign(this, { W, H: W, N, seed: d.seed, name: d.name, sandbox: d.sandbox, mapKind: d.mapKind, nextId: d.nextId, money: d.money, xp: d.xp, level: d.level, t: d.t, taxes: d.taxes, disasters: d.disasters, festivalUntil: d.festivalUntil || 0, maxPop: d.maxPop || 0 });
+      this.res = d.res ? dec(d.res) : new Uint8Array(N); this.cityId = d.cityId || 0; this.stock = Object.assign({ stone: 120, coal: 120, wood: 120 }, d.stock); this.lastProd = d.lastProd || {}; this.lastCons = d.lastCons || {}; this.lastNet = d.lastNet || 0;
       this.terrain = dec(d.terrain); this.tree = dec(d.tree); this.tone = dec(d.tone); this.road = dec(d.road); this.zone = dec(d.zone);
       this.buildings = new Map();
       for (const o of d.buildings) this.buildings.set(o.id, Object.assign({ lvl: 1, var: 0, occ: 0, construct: 0, unmet: 0, fire: 0, ruinT: 0 }, o));
@@ -602,9 +660,7 @@
       this.qDone = G.QUESTS.map((q, i) => !!(d.qDone && d.qDone[i]));
       this.init();
     }
-    save() { try { localStorage.setItem(SAVE_KEY, this.serialize()); this.emit('saved'); return true; } catch (e) { return false; } }
-    static hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
-    static loadSaved() { try { const s = localStorage.getItem(SAVE_KEY); if (!s) return null; const g = new Game(); g.load(s); return g; } catch (e) { console.error(e); return null; } }
+    save() { const ok = G.Region.saveCity(this); if (ok) this.emit('saved'); return ok; }
   }
   G.Game = Game;
 })(window.G);

@@ -56,7 +56,7 @@
     closeSub() { this.cat = null; $('submenu').classList.add('hidden'); this.markCats(); this.updateHint(); }
     markCats() {
       const tc = G.CATS.find(c => (c.tools && c.tools.includes(this.app.tool)) || c.tool === this.app.tool);
-      document.querySelectorAll('.cat').forEach(b => b.classList.toggle('on', b.dataset.cat === this.cat || (!this.cat && tc && b.dataset.cat === tc.id)));
+      document.querySelectorAll('.cat').forEach(b => b.classList.toggle('on', !!(b.dataset.cat === this.cat || (!this.cat && tc && b.dataset.cat === tc.id))));
     }
     updateHint(extra) {
       const t = this.app.tool, h = $('toolhint');
@@ -139,6 +139,7 @@
           <div class="kv"><span>🏠 Налог с жителей</span><b class="pos">+$${G.fmt(b.inc[1])}</b></div>
           <div class="kv"><span>🏪 Налог с торговли</span><b class="pos">+$${G.fmt(b.inc[2])}</b></div>
           <div class="kv"><span>🏭 Налог с промышленности</span><b class="pos">+$${G.fmt(b.inc[3])}</b></div>
+          <div class="kv"><span>🏖️ Туризм (${G.fmt(g.tour.tourists)} чел./день)</span><b class="pos">+$${G.fmt(b.inc[4])}</b></div>
           <div class="kv"><span>🛣️ Содержание дорог</span><b class="neg">−$${G.fmt(b.roads)}</b></div>`;
         const ex = Object.entries(b.exp).sort((a, c) => c[1] - a[1]);
         for (const [k, v] of ex) h += `<div class="kv"><span>${G.BLD[k].icon} ${G.BLD[k].name}</span><b class="neg">−$${G.fmt(v)}</b></div>`;
@@ -178,13 +179,15 @@
             <button class="btn" data-dis="tornado" ${can ? '' : 'disabled'}>🌪️ Торнадо</button>
             <button class="btn" data-dis="meteor" ${can ? '' : 'disabled'}>☄️ Метеорит</button>
           </div>`;
+      } else if (id === 'region') {
+        h = this.regionHTML();
       } else if (id === 'settings') {
         h = `<h2>⚙️ Настройки</h2>
           <label class="note">Название города</label>
           <input id="setName" maxlength="24" value="${esc(g.name)}" style="width:100%;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:#fff;margin:6px 0 4px">
           <div class="toggle"><span>🔊 Звук</span><button class="switch ${G.Audio.on ? 'on' : ''}" id="swSnd"></button></div>
           <button class="btn full" id="btnSave">💾 Сохранить</button>
-          <button class="btn danger full" id="btnNewCity">✨ Новый город</button>
+          <button class="btn danger full" id="btnNewCity">✨ Новая игра (новый регион)</button>
           <h3>Управление</h3>
           <p class="note">ЛКМ — строить/выбирать · ПКМ или колесо — двигать карту · колесо — масштаб<br>
           WASD/стрелки — камера · Esc — отмена · P — пауза · 1–3 — скорость<br>
@@ -207,8 +210,89 @@
       const sn = $('setName'); if (sn) sn.onchange = () => { g.name = sn.value.trim() || g.name; this.update(); };
       const ss = $('swSnd'); if (ss) ss.onclick = () => { G.Audio.on = !G.Audio.on; try { localStorage.setItem('gradostroi_snd', G.Audio.on ? '1' : '0'); } catch (e) { } this.renderPanel(); };
       const bs = $('btnSave'); if (bs) bs.onclick = () => { if (g.save()) this.toast('💾 Город сохранён', 'good'); };
-      const bn = $('btnNewCity'); if (bn) bn.onclick = () => this.confirm('Начать новый город? Текущий прогресс будет потерян.', () => this.app.toStart(true));
+      const bn = $('btnNewCity'); if (bn) bn.onclick = () => this.confirm('Начать новую игру? Все города региона будут удалены.', () => this.app.toStart(true));
+      this.bindRegion(body);
       if ($('chPop')) { this.chart($('chPop'), g.stats.history.map(h => h.pop).concat([g.stats.pop]), '#5fd16f'); this.chart($('chMoney'), g.stats.history.map(h => h.money).concat([g.money]), '#ffcb47'); }
+    }
+    // ---------- Регион и торговля ----------
+    regionHTML() {
+      const g = this.app.g, R = G.Region.data;
+      if (!R) return '<h2>🌐 Регион</h2><p class="note">Регион недоступен.</p>';
+      G.Region.sync(g);
+      const st = c => Object.keys(G.GOODS).map(k => `${G.GOODS[k].icon} ${G.fmt(c.stock[k] || 0)}`).join(' &nbsp;');
+      let h = `<h2>🌐 Регион</h2><p class="note">Каждый город может специализироваться: добывать камень, уголь, древесину или принимать туристов — и торговать с соседями. Пока вы в одном городе, остальные живут сами: добывают ресурсы и копят деньги.</p><h3>Города</h3>`;
+      for (const c of R.cities) {
+        const sp = G.SPECS[c.spec] || G.SPECS.river, here = c.id === g.cityId;
+        h += `<div class="cityc ${here ? 'here' : ''}"><div><b>${sp.icon} ${esc(c.name)}</b><div class="note">${sp.name} · ур. ${c.level} · 👥 ${G.fmt(c.pop)} · 💰 ${R.sandbox ? '∞' : G.fmt(c.money)}${c.tourists ? ` · 🧳 ${G.fmt(c.tourists)}` : ''}</div><div class="note">${st(c)}</div></div>${here ? '<span class="here-tag">Вы здесь</span>' : `<button class="btn" data-goto="${c.id}">Перейти</button>`}</div>`;
+      }
+      const canFound = (g.sandbox || g.level >= G.REGION_LEVEL) && R.cities.length < G.MAX_CITIES;
+      h += `<button class="btn primary full" id="btnFound" ${canFound ? '' : 'disabled'}>➕ Основать новый город</button>`;
+      if (!canFound) h += `<p class="note">${R.cities.length >= G.MAX_CITIES ? `Максимум ${G.MAX_CITIES} города в регионе.` : `Откроется на ${G.REGION_LEVEL} уровне мэра.`}</p>`;
+      const pr = g.production(), plants = [...g.buildings.values()].filter(b => b.type === 'coal' && b.rc >= 0 && !b.ruin).length;
+      h += `<h3>Склад: ${esc(g.name)}</h3>`;
+      for (const k in G.GOODS) {
+        const G1 = G.GOODS[k], use = k === 'coal' ? plants * G.COAL_USE : (g.lastCons[k] || 0);
+        h += `<div class="kv"><span>${G1.icon} ${G1.name}</span><b>${G.fmt(g.stock[k] || 0)} <small style="color:var(--good)">+${pr[k]}</small> <small style="color:var(--bad)">−${use}</small></b></div>`;
+      }
+      h += `<p class="note">Камень и древесина нужны для роста зданий до 2–4 уровня, уголь — топливо для ТЭС (${G.COAL_USE}/день).</p>`;
+      h += `<h3>Внешний рынок</h3>`;
+      for (const k in G.GOODS) {
+        const p = G.GOODS[k].price;
+        h += `<div class="mkt"><span>${G.GOODS[k].icon} ${G.GOODS[k].name}</span><button class="btn" data-buy="${k}">Купить 50 · $${G.fmt(p * 50 * 1.6)}</button><button class="btn" data-sell="${k}">Продать 50 · $${G.fmt(p * 50 * 0.6)}</button></div>`;
+      }
+      h += `<h3>Торговые маршруты</h3>`;
+      if (!R.routes.length) h += `<p class="note">Маршрутов нет. Город-получатель платит отправителю $${G.GOODS.stone.price}–${G.GOODS.coal.price} за единицу.</p>`;
+      R.routes.forEach((r, i) => {
+        const a = G.Region.city(r.from), b = G.Region.city(r.to), G1 = G.GOODS[r.res];
+        h += `<div class="route ${r.last === 0 ? 'fail' : ''}"><span>${esc(a ? a.name : '?')} → ${esc(b ? b.name : '?')}: ${G1.icon} ${r.amt}/день · $${G.fmt(r.amt * G1.price)}<br><small class="note">вчера доставлено: ${r.last || 0}</small></span><button data-delroute="${i}" title="Удалить">✕</button></div>`;
+      });
+      if (R.cities.length >= 2) {
+        const opts = R.cities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+        h += `<div class="rform"><select id="rFrom">${opts}</select><select id="rTo">${R.cities.map((c, i) => `<option value="${c.id}" ${i === 1 ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+          <select id="rRes">${Object.keys(G.GOODS).map(k => `<option value="${k}">${G.GOODS[k].icon} ${G.GOODS[k].name}</option>`).join('')}</select>
+          <select id="rAmt"><option>10</option><option selected>20</option><option>40</option><option>60</option></select></div>
+          <button class="btn full" id="btnRoute">🚚 Добавить маршрут</button>`;
+      } else h += `<p class="note">Основайте второй город, чтобы торговать между городами.</p>`;
+      h += `<h3>Туризм</h3><div class="kv"><span>🧳 Туристов в день</span><b>${G.fmt(g.tour.tourists)}</b></div>
+        <div class="kv"><span>⭐ Привлекательность</span><b>${G.fmt(g.tour.attr)}</b></div>
+        <div class="kv"><span>🏨 Мест в отелях</span><b>${G.fmt(g.tour.cap)}</b></div>
+        <div class="kv"><span>💵 Доход от туристов</span><b class="pos">+$${G.fmt(g.tour.tourists * 3)}/день</b></div>
+        <p class="note">Туристов привлекают пляжи, парки и достопримечательности, а размещают отели. Чем больше население региона — тем больше гостей.</p>`;
+      return h;
+    }
+    bindRegion(body) {
+      const g = this.app.g;
+      body.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => this.app.switchCity(+b.dataset.goto));
+      const f = $('btnFound'); if (f) f.onclick = () => this.foundDialog();
+      body.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
+        const k = b.dataset.buy, c = Math.round(G.GOODS[k].price * 50 * 1.6);
+        if (!g.canPay(c)) { this.toast('⚠️ Недостаточно денег', 'bad'); G.Audio.play('error'); return; }
+        g.pay(c); g.stock[k] += 50; g.recalc(false); G.Audio.play('coin'); this.renderPanel();
+      });
+      body.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => {
+        const k = b.dataset.sell;
+        if ((g.stock[k] || 0) < 50) { this.toast('⚠️ На складе меньше 50', 'bad'); G.Audio.play('error'); return; }
+        g.stock[k] -= 50; if (!g.sandbox) g.money += Math.round(G.GOODS[k].price * 50 * 0.6); G.Audio.play('coin'); this.update(); this.renderPanel();
+      });
+      body.querySelectorAll('[data-delroute]').forEach(b => b.onclick = () => { G.Region.removeRoute(+b.dataset.delroute); this.renderPanel(); });
+      const br = $('btnRoute'); if (br) br.onclick = () => {
+        const from = +$('rFrom').value, to = +$('rTo').value;
+        if (from === to) { this.toast('⚠️ Выберите разные города', 'bad'); return; }
+        G.Region.addRoute(from, to, $('rRes').value, +$('rAmt').value); G.Audio.play('quest');
+        this.toast('🚚 Маршрут открыт — поставки каждый день', 'good'); this.renderPanel();
+      };
+    }
+    foundDialog() {
+      const specs = Object.keys(G.SPECS).map((k, i) => `<button data-v="${k}" class="${i === 2 ? 'on' : ''}">${G.SPECS[k].icon} ${G.SPECS[k].name}</button>`).join('');
+      this.modal(`<div class="em">🏗️</div><h1>Новый город</h1>
+        <p class="note">Выберите край — от него зависят ресурсы.</p>
+        <input id="fName" maxlength="24" value="Город ${G.Region.data.cities.length + 1}" style="width:100%;font:inherit;font-size:16px;padding:12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:#fff;margin:8px 0">
+        <div class="seg" id="fSpec">${specs}</div><p class="note" id="fDesc">${G.SPECS.mountains.desc}</p>`,
+        '<button class="btn" id="mNo">Отмена</button><button class="btn primary" id="mYes">Основать</button>');
+      let spec = 'mountains';
+      document.querySelectorAll('#fSpec button').forEach(b => b.onclick = () => { spec = b.dataset.v; document.querySelectorAll('#fSpec button').forEach(x => x.classList.toggle('on', x === b)); $('fDesc').textContent = G.SPECS[spec].desc; });
+      $('mNo').onclick = () => this.closeModal();
+      $('mYes').onclick = () => { const n = $('fName').value.trim() || 'Новый город'; this.closeModal(); this.app.foundCity(n, spec); };
     }
     chart(cv, data, col) {
       const x = cv.getContext('2d'), W = cv.width, H = cv.height, pad = 24;
@@ -253,6 +337,8 @@
           const nn = G.needsFor(b.lvl + 1).filter(r => !b[r]);
           if (nn.length) hints.push('для роста нужно: ' + nn.map(r => G.RES_INFO[r].name.toLowerCase()).join(', '));
           else if (g.lv[i] < 0.5) hints.push('для роста повысьте стоимость земли (парки, школы, вода рядом)');
+          const mat = G.MAT[b.lvl + 1];
+          if (mat && !g.sandbox && Object.keys(mat).some(k => g.stock[k] < mat[k])) hints.push('не хватает стройматериалов (' + Object.keys(mat).map(k => G.GOODS[k].icon + ' ' + G.GOODS[k].name.toLowerCase()).join(', ') + ') — добывайте или покупайте в 🌐 Регионе');
         }
         if (hints.length) h += `<p class="note">💡 ${hints.join('<br>💡 ')}</p>`;
       } else {
@@ -262,6 +348,10 @@
         h += `<div class="kv"><span>Подключено к дорогам</span><b class="${b.rc >= 0 ? 'pos' : 'neg'}">${b.rc >= 0 ? 'Да' : 'Нет — постройте дорогу рядом'}</b></div>`;
         if (d.provides) for (const r in d.provides) h += `<div class="kv"><span>${G.RES_INFO[r].icon} Производит</span><b>${d.provides[r]}</b></div>`;
         if (d.service) h += `<div class="kv"><span>Радиус охвата</span><b>${d.service.r} клеток</b></div>`;
+        if (d.extract) h += `<div class="kv"><span>${G.GOODS[d.extract.res].icon} Добыча</span><b>${b.rc >= 0 ? g.extractAt(b.type, b.x, b.y) : 0} / день</b></div><p class="note">Склад: ${G.fmt(g.stock[d.extract.res])}. Излишки можно продать или отправить соседям (🌐 Регион).</p>`;
+        if (d.hotel) h += `<div class="kv"><span>🏨 Мест для туристов</span><b>${d.hotel}</b></div>`;
+        if (d.tourism) h += `<div class="kv"><span>⭐ Привлекательность</span><b>+${d.tourism}</b></div>`;
+        if (b.type === 'coal') h += `<div class="kv"><span>⚫ Уголь на складе</span><b class="${g.stock.coal > 0 ? '' : 'neg'}">${G.fmt(g.stock.coal)} (−${G.COAL_USE}/день)</b></div>${b.noFuel ? '<p class="note" style="color:var(--bad)">Нет угля — станция стоит! Купите уголь в 🌐 Регионе.</p>' : ''}`;
       }
       if (b.fire) h += `<button class="btn primary full" id="ibFire">🚒 Потушить пожар${g.cov.fire[i] > 0 ? '' : ' ($250)'}</button>`;
       if (b.crimeT) h += `<button class="btn primary full" id="ibCrime">🚓 Вызвать полицию</button>`;

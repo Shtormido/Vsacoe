@@ -168,8 +168,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #startNew label { text-align: left; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
 #startNew input { font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.08); color: #fff; outline: none; }
 #startNew input:focus { border-color: var(--accent); }
-.seg { display: flex; background: rgba(255,255,255,.06); border-radius: 14px; padding: 4px; gap: 4px; }
-.seg button { flex: 1; padding: 10px 6px; border-radius: 11px; font-weight: 700; font-size: 14px; }
+.seg { display: flex; flex-wrap: wrap; background: rgba(255,255,255,.06); border-radius: 14px; padding: 4px; gap: 4px; }
+.seg button { flex: 1 1 30%; padding: 10px 6px; border-radius: 11px; font-weight: 700; font-size: 14px; }
 .seg button.on { background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,203,71,.6); }
 .row { display: flex; gap: 10px; }
 .row .btn { flex: 1; }
@@ -207,3 +207,17 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   .sheet.small { left: 8px; right: 8px; width: auto; bottom: 86px; }
   #toasts { top: auto; bottom: 150px; }
 }
+
+/* ---------- Регион ---------- */
+.cityc { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,0.06); margin-bottom: 8px; border: 1px solid transparent; }
+.cityc.here { border-color: rgba(255,203,71,.6); background: rgba(255,203,71,.1); }
+.cityc b { font-size: 15px; }
+.cityc .here-tag { font-size: 12px; font-weight: 800; color: var(--accent); white-space: nowrap; }
+.cityc .btn { padding: 8px 12px; }
+.mkt { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; margin: 6px 0; font-size: 14px; }
+.mkt .btn { padding: 7px 10px; font-size: 12.5px; }
+.route { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.06); margin-bottom: 6px; font-size: 13.5px; }
+.route button { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.1); flex: 0 0 auto; }
+.route.fail { opacity: .6; }
+.rform { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.rform select { font: inherit; font-size: 13px; padding: 9px 8px; border-radius: 10px; border: 1px solid var(--line); background: #24304f; color: #fff; }
