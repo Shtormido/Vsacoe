@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#14213d">
+  <title>Градострой</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <!-- Верхняя панель -->
+  <div id="hud" class="hidden">
+    <div class="pill city" id="cityPill">
+      <div class="lvlbadge"><span id="lvl">1</span></div>
+      <div class="citymeta">
+        <b id="cityName">Новоград</b>
+        <div class="xpbar"><i id="xpFill"></i></div>
+      </div>
+    </div>
+    <div class="pill stat" title="Бюджет"><span class="ico">💰</span><b id="money">0</b><small id="net"></small></div>
+    <div class="pill stat" title="Население"><span class="ico">👥</span><b id="pop">0</b></div>
+    <div class="pill stat" title="Счастье"><span class="ico" id="happyIco">😊</span><b id="happy">0%</b></div>
+    <div class="pill rci" title="Спрос: жильё / торговля / промышленность">
+      <div class="bar r"><i id="dR"></i><span>R</span></div>
+      <div class="bar c"><i id="dC"></i><span>C</span></div>
+      <div class="bar i"><i id="dI"></i><span>I</span></div>
+    </div>
+    <div class="pill clock">
+      <span class="ico" id="clockIco">☀️</span>
+      <div><b id="date">День 1</b><small id="time">08:00</small></div>
+      <div class="speeds">
+        <button data-speed="0" title="Пауза (P)">⏸</button>
+        <button data-speed="1" class="on" title="Скорость 1">▶</button>
+        <button data-speed="2" title="Скорость 2">⏩</button>
+        <button data-speed="3" title="Скорость 3">⏭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="side" class="hidden">
+    <button class="round" data-panel="quests" title="Задания">📋<em id="qBadge"></em></button>
+    <button class="round" data-panel="budget" title="Бюджет и налоги">📊</button>
+    <button class="round" data-panel="layers" title="Слои данных">🗺️</button>
+    <button class="round" data-panel="stats" title="Статистика">📈</button>
+    <button class="round" data-panel="disasters" title="Бедствия">🌪️</button>
+    <button class="round" data-panel="settings" title="Настройки">⚙️</button>
+  </div>
+
+  <div id="questMini" class="hidden"></div>
+
+  <div id="minimapWrap" class="hidden"><canvas id="minimap" width="256" height="128"></canvas></div>
+
+  <div id="layerLegend" class="hidden"></div>
+
+  <div id="submenu" class="hidden"></div>
+  <div id="toolbar" class="hidden"></div>
+  <div id="toolhint" class="hidden"></div>
+
+  <div id="panel" class="sheet hidden"><button class="close" data-close>✕</button><div id="panelBody"></div></div>
+  <div id="info" class="sheet small hidden"><button class="close" data-close>✕</button><div id="infoBody"></div></div>
+
+  <div id="toasts"></div>
+  <div id="modal" class="hidden"><div class="modal-card" id="modalCard"></div></div>
+
+  <!-- Стартовый экран -->
+  <div id="start">
+    <div class="start-card">
+      <div class="logo">ГРАДО<span>СТРОЙ</span></div>
+      <p class="tag">Построй город своей мечты — от первой улицы до сверкающих небоскрёбов</p>
+      <div id="startMain">
+        <button class="btn primary big" id="btnContinue" hidden>▶ Продолжить</button>
+        <button class="btn big" id="btnNew">✨ Новый город</button>
+      </div>
+      <div id="startNew" hidden>
+        <label>Название города<input id="inName" maxlength="24" value="Новоград"></label>
+        <div class="seg" id="segMode">
+          <button data-v="career" class="on">🏆 Карьера</button>
+          <button data-v="sandbox">🏖️ Песочница</button>
+        </div>
+        <div class="seg" id="segMap">
+          <button data-v="river" class="on">🏞️ Река</button>
+          <button data-v="lakes">💧 Озёра</button>
+          <button data-v="coast">🌊 Побережье</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnBack">← Назад</button>
+          <button class="btn primary" id="btnStart">Основать город</button>
+        </div>
+      </div>
+      <p class="hint">Мышь: ЛКМ — действие, ПКМ/колесо — камера. Телефон: два пальца — камера.</p>
+    </div>
+  </div>
+
+  <script src="js/util.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/mapgen.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
