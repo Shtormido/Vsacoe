@@ -3,14 +3,16 @@ local Se = { sel = 1, drag = nil, back = nil }
 local lg = love.graphics
 
 Se.DEFAULTS = {
-  volume = 0.8, music = 0.7, sfx = 1.0, bright = 1.0,
+  volume = 0.8, music = 0.7, sfx = 1.0, bright = 1.0, voice = true, voiceVol = 0.9,
   grain = true, fx = true, shake = true, hints = true, fullscreen = false,
 }
 
 local ITEMS = {
   { key = "volume", label = "Общая громкость", kind = "slider", min = 0, max = 1, step = 0.05 },
   { key = "music", label = "Музыка", kind = "slider", min = 0, max = 1, step = 0.05 },
-  { key = "sfx", label = "Звуки и голоса", kind = "slider", min = 0, max = 1, step = 0.05 },
+  { key = "sfx", label = "Звуки", kind = "slider", min = 0, max = 1, step = 0.05 },
+  { key = "voice", label = "Озвучка персонажей", kind = "toggle" },
+  { key = "voiceVol", label = "Громкость озвучки", kind = "slider", min = 0, max = 1, step = 0.05 },
   { key = "bright", label = "Яркость", kind = "slider", min = 0.5, max = 1.6, step = 0.05 },
   { key = "grain", label = "Зерно плёнки", kind = "toggle" },
   { key = "fx", label = "Искажения при испуге", kind = "toggle" },
@@ -170,13 +172,13 @@ function Se.draw()
   end
   -- калибровка яркости: левый квадрат должен быть едва виден
   local b = G.settings.bright
-  local by = PY + h + 8
+  local by = PY + h + 6
   for i, v in ipairs({ 0.03, 0.07, 0.14 }) do
     local c = v * b * 1.6
     lg.setColor(c, c, c * 1.1, 1)
-    lg.rectangle("fill", W / 2 - 42 + (i - 1) * 30, by, 24, 14)
+    lg.rectangle("fill", PX + (i - 1) * 22, by, 18, 12)
   end
-  Gx.textOc("Яркость: левый квадрат должен быть едва виден", W / 2, by + 18, P.gray3)
+  Gx.text("Яркость: левый квадрат должен быть едва виден", PX + 72, by, P.gray3)
   Gx.textOc("Стрелки или A/D — изменить, Esc — назад", W / 2, H - 14, P.gray2)
 end
 

@@ -250,11 +250,13 @@ local function step(dt)
     return
   end
   if UI.modal == "settings" then
+    Dialog.setPaused(true)
     Audio.update(dt)
     return
   end
   local m = UI.modal
   local paused = m == "pause" or m == "journal" or m == "map" or m == "doc"
+  Dialog.setPaused(paused or m == "settings")
   if not paused then
     Script.update(dt)
     Dialog.update(dt)

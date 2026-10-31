@@ -260,6 +260,9 @@ local function run()
     scene("dawnA") sleep(3) shot("dawnA")
   end
   untilTrue(function() return App.mode == "title" end, 200)
+  local st = Dialog.stat or { voiced = 0, silent = 0, missing = {} }
+  log("озвучено реплик", st.voiced, "без озвучки", st.silent)
+  for i = 1, math.min(5, #st.missing) do log("  нет файла:", st.missing[i]) end
   log("ПРОХОЖДЕНИЕ ЗАВЕРШЕНО, концовка " .. ending)
   T.done = true
 end
