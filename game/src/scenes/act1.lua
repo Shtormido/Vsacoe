@@ -13,6 +13,7 @@ local function descend()
 end
 
 reg("surface", {
+  cold = true,
   w = 560, spawn = 200, surface = "gravel", noChalk = true,
   ambient = { 0.34, P.blue2 },
   amb = { wind = 0.45 },
@@ -47,6 +48,21 @@ reg("surface", {
     Gx.r(P.dk1, SHAFT_X - 10, 202, 14, 1)
     -- скобы
     for y = 186, 230, 6 do Gx.r(P.gray2, SHAFT_X + 24, y, 6, 1) end
+  end,
+  draw = function(sc)
+    -- облака плывут по луне, летят сухие листья
+    local t = sc.t
+    for i = 1, 6 do
+      local x = (Gx.hash(i, 21) * 700 + t * (2 + i)) % 760 - 120
+      local y = 18 + i * 14
+      Gx.r(P.night, x, y, 110 + i * 12, 5, 0.55)
+      Gx.r(P.night, x + 16, y - 3, 60, 4, 0.5)
+    end
+    for i = 1, 10 do
+      local lx = (Gx.hash(i, 31) * sc.w + t * (14 + i * 3)) % (sc.w + 20) - 10
+      local ly = 150 + (Gx.hash(i, 32) * 80 + t * (6 + i)) % 90
+      Gx.r(P.rust, lx + math.sin(t * 3 + i) * 5, ly, 2, 1, 0.9)
+    end
   end,
   front = function(sc)
     love.graphics.push()

@@ -12,6 +12,7 @@ Script = require("src.script")
 Dialog = require("src.dialog")
 State = require("src.state")
 World = require("src.world")
+Fx = require("src.fx")
 UI = require("src.ui")
 Settings = require("src.settings")
 
@@ -63,7 +64,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   } else {
     px = Texel(tex, tc).rgb;
   }
-  vec3 light = (vec3(0.55) + Amb.rgb * 0.9) * Amb.a * 1.25;
+  vec3 light = (vec3(0.55) + Amb.rgb * 0.9) * Amb.a * 1.55;
   vec3 haze = vec3(0.0);
   for (int i = 0; i < 14; i++) {
     if (float(i) >= L_n) break;
@@ -129,6 +130,14 @@ end
 -------------------------------------------------------------- загрузка
 function love.load(args)
   App.args = args or {}
+  if App.args[1] == "--test" then
+    love.errorhandler = function(msg)
+      print("[test] ОШИБКА: " .. tostring(msg))
+      print(debug.traceback())
+      io.stdout:flush()
+      os.exit(1)
+    end
+  end
   love.mouse.setVisible(false)
   Fonts = {}
   worldCanvas = love.graphics.newCanvas(W, H)
@@ -320,6 +329,11 @@ function love.draw()
     lg.scale(scale)
     local sc = World.sc
     World.drawMotes()
+    lg.push()
+    lg.translate(-math.floor(World.camx) + World.camx, 0)
+    Fx.drawShafts(World.camx)
+    Fx.drawGlints(World.camx)
+    lg.pop()
     if sc.def.postLight then
       lg.push()
       lg.translate(-math.floor(World.camx), 0)

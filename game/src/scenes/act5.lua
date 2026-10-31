@@ -156,6 +156,7 @@ local function depotChase(sc)
 end
 
 reg("depot", {
+  wallProps = false,
   w = 1600, spawn = 30, surface = "concrete", echo = true,
   ambient = { 0.035, P.orange1 },
   amb = { hum = 0.05, choir = 0.25 },
@@ -370,6 +371,7 @@ reg("depot", {
 
 -------------------------------------------------------------- 5.3 Затопленный перегон
 reg("flooded", {
+  cold = true, props = false, puddles = false,
   w = 1300, spawn = 30, surface = "water", echo = true, sink = 10, speed = 42,
   ambient = { 0.03, P.blue2 },
   amb = { hum = 0.05, water = 0.35 },
@@ -444,6 +446,8 @@ reg("flooded", {
 local WALL_X = 520
 
 reg("laptev_store", {
+  vents = false,
+  cold = true, props = false, puddles = false,
   w = 640, spawn = 40, surface = "water", sink = 4,
   ambient = { 0.04, P.blue2 },
   amb = { hum = 0.04, water = 0.2 },
@@ -563,6 +567,7 @@ reg("laptev_store", {
 
 -------------------------------------------------------------- 5.4 Тоннель к «Липовой»: светящиеся ладошки
 reg("glow_tunnel", {
+  wallTop = 120,
   w = 700, spawn = 30, surface = "concrete",
   ambient = { 0.03, P.blue2 },
   amb = { hum = 0.05 },
@@ -598,6 +603,7 @@ reg("glow_tunnel", {
 
 -------------------------------------------------------------- 5.5 Лёха начинает меняться
 reg("tunnel_pokr", {
+  cold = true,
   w = 1300, spawn = 30, surface = "gravel", echo = true,
   ambient = { 0.025, P.blue2 },
   amb = { hum = 0.05, choir = 0.3 },

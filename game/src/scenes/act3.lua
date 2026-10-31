@@ -94,6 +94,7 @@ reg("clock_platform", {
 
 -------------------------------------------------------------- 3.3 Ладошки и 3.4 Станции не по порядку
 reg("hands_passage", {
+  wallTop = 130,
   w = 900, spawn = 30, surface = "concrete", echo = false,
   ambient = { 0.035, P.blue2 },
   amb = { hum = 0.12, drone = 0.25 },
@@ -175,6 +176,7 @@ local DOOR_X, NICHE_X = 640, 420
 local function act5m() return G.flags.krotsDone end
 
 reg("monastyrskaya", {
+  wallProps = false,
   w = 1000, spawn = 30, surface = "tile", echo = true,
   ambient = { 0.04, P.blue2 },
   amb = { hum = 0.1 },
@@ -387,6 +389,8 @@ end)(mon.update)
 
 -------------------------------------------------------------- 3.6 Служебный тоннель №3
 reg("tunnel3", {
+  vents = false,
+  wallProps = false,
   w = 1400, spawn = 30, surface = "concrete", echo = false, drain = 3,
   ambient = { 0.025, P.blue2 },
   amb = { hum = 0.08, drone = 0.2 },
@@ -504,6 +508,7 @@ reg("tunnel3", {
 local BRANCH_X, NICHE_K = 820, 1060
 
 reg("mirror", {
+  props = false, puddles = false,
   w = 1300, spawn = 30, surface = "tile", echo = true,
   ambient = { 0.04, P.blue2 },
   amb = { hum = 0.1 },

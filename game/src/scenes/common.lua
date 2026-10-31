@@ -24,12 +24,22 @@ function K.floor(x, y, w, col1, col2, h)
 end
 
 function K.column(x, y0, y1, col, col2, skirt)
+  -- цилиндрическая светотень: тёмный край, основной тон, блик, тёмный край
   Gx.r(col, x, y0, 18, y1 - y0)
   Gx.r(col2, x, y0, 3, y1 - y0)
-  Gx.r(col2, x + 15, y0, 3, y1 - y0, 0.6)
-  for yy = y0, y1, 9 do Gx.r(col2, x, yy, 18, 1, 0.5) end
-  if skirt then Gx.r(skirt, x - 1, y1 - 12, 20, 12) end
+  Gx.r(col2, x + 3, y0, 1, y1 - y0, 0.5)
+  Gx.r(P.white, x + 11, y0, 2, y1 - y0, 0.18)
+  Gx.r(P.white, x + 12, y0, 1, y1 - y0, 0.12)
+  Gx.r(col2, x + 15, y0, 3, y1 - y0, 0.7)
+  Gx.r(P.black, x + 17, y0, 1, y1 - y0, 0.35)
+  for yy = y0, y1, 9 do Gx.r(col2, x, yy, 18, 1, 0.4) end
+  if skirt then
+    Gx.r(skirt, x - 1, y1 - 12, 20, 12)
+    Gx.r(P.white, x - 1, y1 - 12, 20, 1, 0.15)
+  end
   Gx.r(col2, x - 2, y0, 22, 4)
+  Gx.r(P.white, x - 2, y0, 22, 1, 0.15)
+  Gx.r(P.black, x - 2, y0 + 4, 22, 2, 0.3)
 end
 
 function K.bellLamp(x, y, broken)

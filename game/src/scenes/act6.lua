@@ -127,6 +127,7 @@ end
 
 -------------------------------------------------------------- «Покровская»
 reg("pokrovskaya", {
+  cold = true, wallProps = false,
   w = 1300, spawn = 40, surface = "tile", echo = true,
   ambient = { 0.035, P.blue2 },
   amb = { hum = 0.0, choir = 0.35 },

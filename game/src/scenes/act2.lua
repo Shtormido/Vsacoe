@@ -103,6 +103,7 @@ reg("tunnel_drip", {
 
 -------------------------------------------------------------- 2.3 Следы в пыли
 reg("side_passage", {
+  wallProps = false,
   w = 820, spawn = 30, surface = "concrete", echo = false,
   ambient = { 0.035, P.blue2 },
   amb = { hum = 0.15 },
@@ -155,6 +156,8 @@ reg("side_passage", {
 
 -------------------------------------------------------------- 2.4 Будка обходчика и фрагмент карты №1
 reg("booth", {
+  vents = false,
+  wallProps = false,
   w = 600, spawn = 30, surface = "concrete",
   ambient = { 0.04, P.blue2 },
   amb = { hum = 0.15 },
@@ -227,6 +230,7 @@ reg("booth", {
 local BENCH_X = 300
 
 reg("niche_dict", {
+  wallProps = false,
   w = 760, spawn = 30, surface = "concrete",
   ambient = { 0.045, P.blue2 },
   amb = { hum = 0.2 },
@@ -304,6 +308,7 @@ reg("niche_dict", {
 
 -------------------------------------------------------------- 2.6 Ложная тревога
 reg("cable_tunnel", {
+  wallProps = false,
   w = 1300, spawn = 30, surface = "concrete", echo = true,
   ambient = { 0.035, P.blue2 },
   amb = { hum = 0.0 },

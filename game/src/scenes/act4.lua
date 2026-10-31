@@ -47,6 +47,7 @@ local function namelessEvent(sc)
 end
 
 reg("admin_corridor", {
+  wallProps = false, props = "light",
   w = 1000, spawn = 30, surface = "concrete", echo = false,
   ambient = { 0.05, P.blue2 },
   amb = { hum = 0.18 },
@@ -178,6 +179,8 @@ local function phoneEvent(sc)
 end
 
 reg("office", {
+  vents = false,
+  props = false, puddles = false,
   w = 640, spawn = 40, surface = "concrete",
   ambient = { 0.05, P.blue2 },
   amb = { hum = 0.12 },
@@ -340,6 +343,8 @@ reg("office", {
 
 -------------------------------------------------------------- 4.5 «Кроты»
 reg("krots", {
+  vents = false,
+  wallProps = false,
   w = 640, spawn = 40, surface = "concrete",
   ambient = { 0.03, P.blue2 },
   amb = { hum = 0.08 },

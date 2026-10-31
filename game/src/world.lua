@@ -55,9 +55,15 @@ function Wd.updateParticles(dt)
       parts[#parts + 1] = { kind = "dust", x = Wd.camx + love.math.random() * W, y = 20 + love.math.random() * 60, vy = 3 + love.math.random() * 4, t = 0 }
     end
   end
+  Fx.updateBreath(sc, dt, parts)
   for i = #parts, 1, -1 do
     local q = parts[i]
-    if q.kind == "drip" then
+    if q.kind == "breath" then
+      q.t = q.t + dt
+      q.x = q.x + q.vx * dt
+      q.y = q.y - 5 * dt
+      if q.t > 1.6 then table.remove(parts, i) end
+    elseif q.kind == "drip" then
       q.vy = q.vy + dt * 320
       q.y = q.y + q.vy * dt
       if q.y >= FLOOR + 4 then
@@ -80,7 +86,10 @@ end
 
 function Wd.drawParticles()
   for _, q in ipairs(Wd.parts) do
-    if q.kind == "drip" then
+    if q.kind == "breath" then
+      local s = q.t * 3
+      Gx.r(P.gray4, q.x - s, q.y - s / 2, 2 + s * 2, 1 + s, 0.2 * (1 - q.t / 1.6))
+    elseif q.kind == "drip" then
       Gx.r(P.blue3, q.x, q.y, 1, 2, 0.7)
     elseif q.kind == "splash" then
       local k = q.t * 24
@@ -152,6 +161,9 @@ function Wd.enter(id, x, facing)
   local sc = { def = def, id = id, t = 0, w = def.w or W, actors = {}, enemies = {}, v = {}, running = {}, lights = {} }
   Wd.sc = sc
   Wd.parts = {}
+  Fx.sparks = {}
+  Fx.flash = 0
+  if not def.custom and (def.ambient or { 0.05 })[1] < 0.2 then Fx.makePuddles(sc) else Fx.puddles = {} Fx.vents = {} end
   local p, l = Wd.player, Wd.leha
   p.x = x or def.spawn or 40
   p.tx, p.pending = nil, nil
@@ -175,7 +187,10 @@ function Wd.enter(id, x, facing)
     lg.origin()
     Gx.world = true
     def.static(sc)
-    if not def.custom and def.grime ~= false and (def.ambient or { 0.05 })[1] < 0.2 then Gx.grime(sc) end
+    if not def.custom and def.grime ~= false and (def.ambient or { 0.05 })[1] < 0.2 then
+      Gx.grime(sc)
+      Fx.decorate(sc)
+    end
     Gx.world = false
     lg.pop()
   end
@@ -575,6 +590,8 @@ function Wd.update(dt)
 
   if def.update then def.update(sc, dt) end
   Wd.updateParticles(dt)
+  Fx.updateFlash(sc, dt)
+  Fx.updateSparks(sc, dt)
   Wd.processTriggers(sc)
 end
 
@@ -640,6 +657,7 @@ end
 
 function Wd.drawActor(a, sc)
   if a.visible == false then return end
+  Fx.spiritAura(a, sc)
   local t = sc.t
   if a.kind == "evd" then Gx.evdokia(a.x, a.y or FLOOR, t, a.a)
   elseif a.kind == "alesha" then Gx.alesha(a.x, a.y or FLOOR, t, a.a, a.horse)
@@ -681,6 +699,8 @@ function Wd.drawWorld()
     lg.setColor(1, 1, 1, 1)
     lg.draw(sc.canvas, 0, 0)
   end
+  Fx.drawPuddles()
+  Fx.drawVents()
   if def.draw then def.draw(sc) end
   Wd.drawMarks()
   for _, o in ipairs(Wd.objects()) do
@@ -688,6 +708,7 @@ function Wd.drawWorld()
   end
   for _, a in pairs(sc.actors) do if a.behind then Wd.drawActor(a, sc) end end
   local p, l = Wd.player, Wd.leha
+  Fx.drawCastShadows(sc)
   -- контактные тени
   local sink = def.sink or 0
   if not def.noShadow then
@@ -699,6 +720,7 @@ function Wd.drawWorld()
     end
   end
   Wd.drawParticles()
+  Fx.drawSparks()
   local function drawLeha()
     if l.visible then
       Gx.leha(l.x, FLOOR + (def.sink or 0), { facing = l.facing, frame = l.frame, pose = l.pose, eyesRed = l.eyesRed })
@@ -713,7 +735,10 @@ function Wd.drawWorld()
     drawDima()
   end
   for _, a in pairs(sc.actors) do if not a.behind then Wd.drawActor(a, sc) end end
-  for _, e in ipairs(sc.enemies) do Wd.drawActor(e, sc) end
+  for _, e in ipairs(sc.enemies) do
+    if e.kind == "nameless" then Fx.drawTrail(e, sc) end
+    Wd.drawActor(e, sc)
+  end
   if def.front then def.front(sc) end
   if Wd.underground() then
     if not def.noFog then Wd.drawFog() end
@@ -734,6 +759,7 @@ function Wd.lightData()
   if def.lights then
     for _, L in ipairs(def.lights(sc) or {}) do add(L[1], L[2], L[3], L[4] or P.orange2, L[5] or 1) end
   end
+  Fx.lights(function(x, y, r, col, k) add(x, y, r, col, k) end)
   local worldLights = {}
   Wd.lastLights = worldLights
   for _, L in ipairs(lights) do worldLights[#worldLights + 1] = { L[1] + cx - Wd.drawOffX, L[2] - Wd.drawOffY, L[3] } end
@@ -772,8 +798,8 @@ function Wd.lightData()
     if sc.flicker or Wd.spiritNear() then
       if love.math.random() < 0.1 then k = k * 0.2 end
     end
-    cone = { hx - cx + Wd.drawOffX, hy + Wd.drawOffY, dx, dy, G.dim and 120 or 200, G.dim and 0.3 or 0.42, k * (G.dim and 0.7 or 1) }
-    Wd.coneWorld = { hx, hy, dx, dy, G.dim and 120 or 200, G.dim and 0.3 or 0.42 }
+    cone = { hx - cx + Wd.drawOffX, hy + Wd.drawOffY, dx, dy, G.dim and 140 or 240, G.dim and 0.36 or 0.52, k * (G.dim and 0.7 or 1) }
+    Wd.coneWorld = { hx, hy, dx, dy, G.dim and 140 or 240, G.dim and 0.36 or 0.52 }
   else
     Wd.coneWorld = nil
   end
@@ -820,6 +846,7 @@ function Wd.updateEnemies(dt, opts)
     local dir = chasing and U.sign(dx) or e.dir
     e.facing = dir
     if e.kind == "nameless" then
+      Fx.trail(e, dt)
       -- движение рывками
       if e.jt <= 0 then
         e.jt = 0.25 + love.math.random() * 0.35
