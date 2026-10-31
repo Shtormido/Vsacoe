@@ -116,6 +116,8 @@ end
 
 function sfx(name, vol, pitch, wx)
   Audio.play(name, vol, pitch, wx)
+  if name == "sting" or name == "inhale" then World.scareFX(3)
+  elseif name == "crash" or name == "flask" or name == "collapse" then World.scareFX(1.5) end
 end
 
 function shake(amount, dur)

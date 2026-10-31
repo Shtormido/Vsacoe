@@ -13,23 +13,16 @@ Dialog = require("src.dialog")
 State = require("src.state")
 World = require("src.world")
 UI = require("src.ui")
+Settings = require("src.settings")
 
 App = { mode = "title", titleSel = 1, args = {} }
 
-local worldCanvas, finalCanvas, lightShader
+local worldCanvas, finalCanvas, lightShader, fadeShader
 local scale, offX, offY = 3, 0, 0
 
 -------------------------------------------------------------- шейдер света
 -- Конус фонаря, точечные источники, дизеринг Байера 4×4 и виньетка
-local shaderCode = [[
-extern vec3 L_pos[14];
-extern vec3 L_col[14];
-extern number L_n;
-extern vec4 C_a;
-extern vec4 C_b;
-extern vec4 Amb;
-extern vec2 Size;
-
+local BAYER = [[
 number bayer(vec2 p) {
   int x = int(mod(p.x, 4.0));
   int y = int(mod(p.y, 4.0));
@@ -41,16 +34,43 @@ number bayer(vec2 p) {
   else if (i == 12) m = 15.0; else if (i == 13) m = 7.0; else if (i == 14) m = 13.0; else m = 5.0;
   return m / 16.0;
 }
+]]
+
+-- Свет: конус фонаря с объёмным лучом, точечные источники со свечением воздуха,
+-- дизеринг Байера, холодные тени, зерно плёнки, хроматическая аберрация, виньетка паники
+local shaderCode = [[
+extern vec3 L_pos[14];
+extern vec3 L_col[14];
+extern number L_n;
+extern vec4 C_a;
+extern vec4 C_b;
+extern vec4 Amb;
+extern vec2 Size;
+extern number Bright;
+extern number Time;
+extern number Grain;
+extern number Aberr;
+extern number Panic;
+]] .. BAYER .. [[
+number hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
-  vec4 px = Texel(tex, tc);
   vec2 p = floor(tc * Size);
+  vec3 px;
+  if (Aberr > 0.01) {
+    vec2 o = vec2(Aberr / Size.x, 0.0);
+    px = vec3(Texel(tex, tc + o).r, Texel(tex, tc).g, Texel(tex, tc - o).b);
+  } else {
+    px = Texel(tex, tc).rgb;
+  }
   vec3 light = (vec3(0.55) + Amb.rgb * 0.9) * Amb.a * 1.25;
+  vec3 haze = vec3(0.0);
   for (int i = 0; i < 14; i++) {
     if (float(i) >= L_n) break;
     number d = distance(p, L_pos[i].xy);
     number a = clamp(1.0 - d / L_pos[i].z, 0.0, 1.0);
     light += L_col[i] * a * a;
+    haze += L_col[i] * a * a * a * 0.12;
   }
   if (C_b.w > 0.0) {
     vec2 v = p - C_a.xy;
@@ -61,19 +81,44 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
       number inner = cos(C_b.y * 0.55);
       number ang = smoothstep(edge, inner, cs);
       number fall = clamp(1.0 - dist / C_b.x, 0.0, 1.0);
-      light += vec3(1.0, 0.86, 0.62) * ang * sqrt(fall) * 1.15 * C_b.w;
+      // пятно фонаря с кольцами отражателя
+      number ring = 0.92 + 0.08 * sin(dist * 0.35 - cs * 30.0);
+      light += vec3(1.0, 0.86, 0.62) * ang * sqrt(fall) * 1.15 * C_b.w * ring;
+      // объёмный луч в воздухе
+      haze += vec3(1.0, 0.82, 0.55) * ang * fall * fall * 0.085 * C_b.w;
     }
     number halo = clamp(1.0 - distance(p, C_a.xy) / 34.0, 0.0, 1.0);
     light += vec3(1.0, 0.85, 0.6) * halo * 0.35 * C_b.w;
   }
-  // квантование с дизерингом
+  light *= Bright;
   number b = bayer(p);
-  vec3 q = floor(light * 5.0 + b) / 5.0;
-  q = min(q, vec3(1.25));
-  // виньетка
+  vec3 q = floor(light * 6.0 + b) / 6.0;
+  q = min(q, vec3(1.3));
+  vec3 hz = floor(haze * Bright * 40.0 + b) / 40.0;
+  vec3 c = px * q + hz;
+  // холодные тени
+  number l = dot(c, vec3(0.3, 0.59, 0.11));
+  c += vec3(-0.004, 0.003, 0.02) * (1.0 - smoothstep(0.0, 0.22, l));
+  // паника выцветает картинку и сужает обзор
+  c = mix(c, vec3(l), Panic * 0.35);
   vec2 uv = tc - 0.5;
-  number vig = 1.0 - dot(uv, uv) * 0.9;
-  return vec4(px.rgb * q * vig, 1.0);
+  number vig = clamp(1.0 - dot(uv, uv) * (0.9 + Panic * 1.8), 0.0, 1.0);
+  // зерно плёнки (по пикселям мира, 12 кадров в секунду)
+  number g = hash(p + vec2(floor(Time * 12.0) * 17.0, floor(Time * 12.0) * 29.0)) - 0.5;
+  c += g * 0.07 * Grain * (0.4 + l);
+  return vec4(c * vig, 1.0);
+}
+]]
+
+-- Переход «пиксельным растворением»
+local fadeCode = [[
+extern number Fade;
+extern number Scale;
+]] .. BAYER .. [[
+vec4 effect(vec4 color, Image t, vec2 tc, vec2 sc) {
+  number b = bayer(floor(sc / Scale));
+  if (b >= Fade * 1.07 - 0.04) discard;
+  return vec4(0.0, 0.0, 0.0, 1.0);
 }
 ]]
 
@@ -88,9 +133,10 @@ function love.load(args)
   Fonts = {}
   worldCanvas = love.graphics.newCanvas(W, H)
   lightShader = love.graphics.newShader(shaderCode)
+  fadeShader = love.graphics.newShader(fadeCode)
   G = { settings = State.loadSettings() }
   Audio.init()
-  Audio.master = G.settings.volume or 0.8
+  Audio.startMusicThread()
   require("src.scenes.act1")
   require("src.scenes.act2")
   require("src.scenes.act3")
@@ -100,6 +146,7 @@ function love.load(args)
   require("src.scenes.endings")
   App.makeIcon()
   App.resize()
+  Settings.apply(false)
   App.toTitle()
   if App.args[1] == "--test" then App.test = require("src.selftest") App.test.start(App.args) end
 end
@@ -121,7 +168,7 @@ end
 
 -- Шрифт-обёртка: растеризуется в size*k, рисуется с масштабом 1/k
 local function makeFont(size, k)
-  local f = love.graphics.newFont("assets/PodFont.ttf", size * k, "mono")
+  local f = love.graphics.newFont("assets/Handjet.ttf", size * k, "mono")
   f:setFilter("nearest", "nearest")
   local o = { f = f, s = 1 / k }
   function o:getWidth(t) return self.f:getWidth(t) * self.s end
@@ -141,10 +188,10 @@ function App.resize()
   offY = math.floor((wh - H * scale) / 2)
   if fontScale ~= scale then
     fontScale = scale
-    Fonts.small = makeFont(10, scale)
-    Fonts.big = makeFont(20, scale)
-    Fonts.wsmall = Fonts.wsmall or makeFont(10, 1)
-    Fonts.wbig = Fonts.wbig or makeFont(20, 1)
+    Fonts.small = makeFont(12, scale)
+    Fonts.big = makeFont(24, scale)
+    Fonts.wsmall = Fonts.wsmall or makeFont(13, 1)
+    Fonts.wbig = Fonts.wbig or makeFont(24, 1)
     finalCanvas = love.graphics.newCanvas(W * scale, H * scale)
   end
 end
@@ -156,7 +203,8 @@ function App.toTitle()
   Dialog.clear()
   UI.modal = nil
   Audio.stopAll()
-  Audio.amb("wind", 0.35, 0.3)
+  Audio.amb("wind", 0.25, 0.3)
+  Audio.setMusic("title", 0.6)
   App.mode = "title"
   App.titleT = 0
   App.titleSel = 1
@@ -192,6 +240,10 @@ local function step(dt)
     Audio.update(dt)
     return
   end
+  if UI.modal == "settings" then
+    Audio.update(dt)
+    return
+  end
   local m = UI.modal
   local paused = m == "pause" or m == "journal" or m == "map" or m == "doc"
   if not paused then
@@ -214,47 +266,7 @@ function love.update(dt)
   end
 end
 
-local function drawTitle()
-  local lg = love.graphics
-  lg.clear(P.black)
-  local t = App.titleT
-  -- ночной пустырь
-  for y = 0, 150 do
-    local k = y / 150
-    lg.setColor(P.night[1] * (1 - k) + P.blue1[1] * k * 0.6, P.night[2] * (1 - k) + P.blue1[2] * k * 0.6, P.night[3] * (1 - k) + P.blue1[3] * k * 0.6)
-    lg.rectangle("fill", 0, y, W, 1)
-  end
-  lg.setColor(P.cream)
-  lg.circle("fill", 400, 44, 9)
-  lg.setColor(P.night)
-  lg.circle("fill", 404, 41, 8)
-  Gx.r(P.dk1, 0, 150, W, 120)
-  Gx.px(P.yellow, 60, 148) Gx.px(P.yellow, 64, 148) Gx.px(P.yellow, 140, 147)
-  for i = 0, 120 do
-    local x = (i * 37) % W
-    local h = 6 + Gx.hash(i, 3) * 14
-    local sway = math.sin(t * 1.5 + i) * 1.5
-    Gx.line(P.green1, x, 270, x + sway, 270 - h - 100 * 0)
-  end
-  Gx.r(P.rust, 300, 120, 30, 34)
-  Gx.r(P.gray1, 294, 112, 42, 8)
-  Gx.r(P.dk1, 306, 128, 18, 8)
-  Gx.textOc("ПОД ФУНДАМЕНТОМ", W / 2, 54, P.white, math.min(1, t / 2), Fonts.big)
-  Gx.textOc("ночь на 27 октября", W / 2, 80, P.gray3, math.min(1, t / 3))
-  local items = { "Новая игра", "Продолжить", "Полный экран (F11)", "Выход" }
-  App.titleRects = {}
-  for i, it in ipairs(items) do
-    local dis = (i == 2 and not State.hasSave())
-    local y = 168 + (i - 1) * 16
-    local w = 140
-    App.titleRects[i] = { W / 2 - w / 2, y, w, 13 }
-    local hov = UI.mx >= W / 2 - w / 2 and UI.mx <= W / 2 + w / 2 and UI.my >= y and UI.my <= y + 13
-    if hov then App.titleSel = i end
-    UI.box(W / 2 - w / 2, y, w, 13, 0.8, (App.titleSel == i and not dis) and P.blue3 or P.gray1)
-    Gx.textOc(it, W / 2, y + 2, dis and P.gray2 or (App.titleSel == i and P.white or P.gray4))
-  end
-  Gx.textOc("Наушники обязательны. Боёв нет. Смерти нет.", W / 2, 252, P.gray2)
-end
+local Title = require("src.title")
 
 function love.draw()
   local lg = love.graphics
@@ -263,7 +275,7 @@ function love.draw()
     lg.clear(0, 0, 0, 1)
     lg.push()
     lg.scale(scale)
-    drawTitle()
+    Title.draw(App.titleT)
     UI.drawCursor()
     lg.pop()
     lg.setCanvas()
@@ -294,6 +306,12 @@ function love.draw()
     local ac = amb[2] or P.blue2
     sendSafe(lightShader, "Amb", { ac[1], ac[2], ac[3], amb[1] })
     sendSafe(lightShader, "Size", { W, H })
+    local st = G.settings
+    sendSafe(lightShader, "Bright", st.bright or 1)
+    sendSafe(lightShader, "Time", love.timer.getTime() % 1000)
+    sendSafe(lightShader, "Grain", st.grain and 1 or 0)
+    sendSafe(lightShader, "Aberr", st.fx and World.fx.aberr or 0)
+    sendSafe(lightShader, "Panic", (World.sc.def.custom and 0 or (G.panic or 0) / 100) * (st.fx and 1 or 0.4))
     lg.setShader(lightShader)
     lg.setColor(1, 1, 1, 1)
     lg.draw(worldCanvas, 0, 0, 0, scale, scale)
@@ -301,6 +319,7 @@ function love.draw()
     lg.push()
     lg.scale(scale)
     local sc = World.sc
+    World.drawMotes()
     if sc.def.postLight then
       lg.push()
       lg.translate(-math.floor(World.camx), 0)
@@ -312,8 +331,12 @@ function love.draw()
     UI.drawOverlay()
     UI.draw()
     if World.fade > 0 then
-      lg.setColor(0, 0, 0, World.fade)
+      sendSafe(fadeShader, "Fade", World.fade)
+      sendSafe(fadeShader, "Scale", scale)
+      lg.setShader(fadeShader)
+      lg.setColor(0, 0, 0, 1)
       lg.rectangle("fill", 0, 0, W, H)
+      lg.setShader()
     end
     if sc.def.overFade then sc.def.overFade(sc) end
     if World.fade < 0.95 or UI.modal then UI.drawCursor() end
@@ -332,6 +355,7 @@ local function toCanvas(x, y) return (x - offX) / scale, (y - offY) / scale end
 function love.mousepressed(x, y, b)
   local cx, cy = toCanvas(x, y)
   if App.mode == "title" then
+    if UI.modal == "settings" then Settings.mousepressed(cx, cy, b) return end
     for i, r in ipairs(App.titleRects or {}) do
       if cx >= r[1] and cx <= r[1] + r[3] and cy >= r[2] and cy <= r[2] + r[4] then App.titleAction(i) end
     end
@@ -369,16 +393,23 @@ end
 function App.titleAction(i)
   if i == 1 then App.newGame()
   elseif i == 2 then if State.hasSave() then App.continueGame() end
-  elseif i == 3 then love.window.setFullscreen(not love.window.getFullscreen()) App.resize()
+  elseif i == 3 then Settings.open(nil)
   elseif i == 4 then love.event.quit() end
+end
+
+function App.toggleFullscreen()
+  G.settings.fullscreen = not love.window.getFullscreen()
+  love.window.setFullscreen(G.settings.fullscreen)
+  App.resize()
+  State.saveSettings()
 end
 
 function love.keypressed(k)
   if k == "f11" or (k == "return" and love.keyboard.isDown("lalt", "ralt")) then
-    love.window.setFullscreen(not love.window.getFullscreen())
-    App.resize()
+    App.toggleFullscreen()
     return
   end
+  if App.mode == "title" and UI.modal == "settings" then Settings.keypressed(k) return end
   if App.mode == "title" then
     if k == "up" or k == "w" then App.titleSel = (App.titleSel - 2) % 4 + 1
     elseif k == "down" or k == "s" then App.titleSel = App.titleSel % 4 + 1

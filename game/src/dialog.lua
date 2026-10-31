@@ -93,7 +93,7 @@ function D.draw(camx, shakeX, shakeY)
   local _, lines = font:getWrap(text, maxw)
   local w = 0
   for _, l in ipairs(full) do w = math.max(w, font:getWidth(l)) end
-  local lh = 10
+  local lh = 12
   local h = #full * lh + 6
   w = w + 10
   local x, y, tailx

@@ -22,7 +22,7 @@ function St.new()
     notes = {}, docs = {}, voices = {}, objectives = {},
     battery = 1, spares = 0, panic = 0, trust = 0, strange = 0,
     time = 0, marks = {}, mapFrag = {}, examined = {}, seen = {},
-    rest = nil, settings = G and G.settings or { hints = true, volume = 0.8 },
+    rest = nil, settings = Settings.fill(G and G.settings),
   }
 end
 
@@ -103,7 +103,7 @@ function St.load()
   if not t then return false end
   local settings = G and G.settings
   G = t
-  G.settings = settings or G.settings or { hints = true, volume = 0.8 }
+  G.settings = Settings.fill(settings or G.settings)
   return true
 end
 
@@ -115,9 +115,9 @@ function St.loadSettings()
   local s = love.filesystem.read("settings.lua")
   if s then
     local t = U.deser(s)
-    if t then return t end
+    if t then return Settings.fill(t) end
   end
-  return { hints = true, volume = 0.8 }
+  return Settings.fill({})
 end
 
 return St

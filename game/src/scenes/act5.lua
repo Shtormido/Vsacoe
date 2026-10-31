@@ -149,6 +149,7 @@ local function depotChase(sc)
   sc.actors.PREACHER = nil
   sc.enemies = { { kind = "preacher", x = 1500, dir = -1, speed = 22, minX = 120, maxX = 1530, a = 0.95 } }
   sc.danger = true
+  Audio.setMusic("act6", 0.55)
   sc.hide = WAGONS
   G.flags.depotChase = true
   hint("Прячься за вагонами. ПРОБЕЛ — замри и не смотри на него", 7)

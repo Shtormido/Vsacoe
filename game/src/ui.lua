@@ -42,11 +42,11 @@ local function choiceRects()
   local c = UI.choice
   local rects = {}
   local font = Fonts.small
-  local y = H - 14 - #c.options * 13
+  local y = H - 16 - #c.options * 15
   for i, o in ipairs(c.options) do
     local text = type(o) == "table" and o.text or o
     local w = font:getWidth(i .. ". " .. text) + 12
-    rects[i] = { x = math.floor(W / 2 - w / 2), y = y + (i - 1) * 13, w = w, h = 12, text = i .. ". " .. text, dis = type(o) == "table" and o.disabled }
+    rects[i] = { x = math.floor(W / 2 - w / 2), y = y + (i - 1) * 15, w = w, h = 14, text = i .. ". " .. text, dis = type(o) == "table" and o.disabled }
   end
   return rects
 end
@@ -251,6 +251,7 @@ end
 
 -------------------------------------------------------------- ввод
 function UI.mousepressed(x, y, b)
+  if UI.modal == "settings" then return Settings.mousepressed(x, y, b) end
   if UI.modal == "choice" then
     for i, r in ipairs(choiceRects()) do
       if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then pickChoice(i) return true end
@@ -324,6 +325,7 @@ function UI.mousepressed(x, y, b)
 end
 
 function UI.mousereleased(x, y, b)
+  if UI.modal == "settings" then Settings.mousereleased() return end
   if UI.kalka then UI.kalka.drag = false end
   if UI.modal == "map" and UI.kalka and G.flags.kalkaGot and not G.flags.kalkaDone then
     local k = UI.kalka
@@ -338,6 +340,7 @@ function UI.mousereleased(x, y, b)
 end
 
 function UI.mousemoved(x, y)
+  if UI.modal == "settings" then Settings.mousemoved(x, y) return end
   if UI.modal == "map" and UI.kalka and UI.kalka.drag then
     UI.kalka.x = x - UI.kalka.ox
     UI.kalka.y = y - UI.kalka.oy
@@ -377,6 +380,7 @@ function UI.pickName(i)
 end
 
 function UI.keypressed(k)
+  if UI.modal == "settings" then return Settings.keypressed(k) end
   if UI.modal == "choice" then
     local n = tonumber(k)
     if n then pickChoice(n) end
@@ -396,8 +400,8 @@ function UI.keypressed(k)
     return true
   elseif UI.modal == "pause" then
     if k == "escape" then UI.modal = nil
-    elseif k == "up" or k == "w" then UI.pauseSel = (UI.pauseSel - 2) % 5 + 1
-    elseif k == "down" or k == "s" then UI.pauseSel = UI.pauseSel % 5 + 1
+    elseif k == "up" or k == "w" then UI.pauseSel = (UI.pauseSel - 2) % 3 + 1
+    elseif k == "down" or k == "s" then UI.pauseSel = UI.pauseSel % 3 + 1
     elseif k == "return" or k == "space" then UI.pauseAction(UI.pauseSel) end
     return true
   elseif UI.modal == "names" then
@@ -412,14 +416,8 @@ end
 
 function UI.pauseAction(i)
   if i == 1 then UI.modal = nil
-  elseif i == 2 then G.settings.hints = not G.settings.hints State.saveSettings()
-  elseif i == 3 then
-    G.settings.volume = (G.settings.volume + 0.2) % 1.2
-    if G.settings.volume > 1.01 then G.settings.volume = 0 end
-    Audio.master = G.settings.volume
-    State.saveSettings()
-  elseif i == 4 then love.window.setFullscreen(not love.window.getFullscreen())
-  elseif i == 5 then UI.modal = nil App.toTitle() end
+  elseif i == 2 then Settings.open("pause")
+  elseif i == 3 then UI.modal = nil App.toTitle() end
 end
 
 -------------------------------------------------------------- отрисовка
@@ -543,7 +541,7 @@ function UI.drawListen()
       local s = U.usub(L.src.text, 1, n2)
       local font = Fonts.small
       local _, lines = font:getWrap(s, 300)
-      for i, ln in ipairs(lines) do Gx.textOc(ln, W / 2, 168 + (i - 1) * 10, L.src.kind == "bad" and P.red2 or P.violet2) end
+      for i, ln in ipairs(lines) do Gx.textOc(ln, W / 2, 168 + (i - 1) * 12, L.src.kind == "bad" and P.red2 or P.violet2) end
       local key = World.sceneId .. ":" .. L.src.id
       if UI.listen.recorded[key] then Gx.textOc("* ЗАПИСАНО", W / 2, 200, P.green3) else
         Gx.r(P.dk2, W / 2 - 30, 200, 60, 3)
@@ -630,11 +628,11 @@ function UI.drawJournal()
     x = x + w + 3
   end
   local content = UI.journalContent(UI.tab)
-  local maxScroll = math.max(0, #content * 10 - 200)
+  local maxScroll = math.max(0, #content * 12 - 200)
   UI.scroll = math.min(UI.scroll, maxScroll)
   local y0 = 46 - UI.scroll
   for i, l in ipairs(content) do
-    local y = y0 + (i - 1) * 10
+    local y = y0 + (i - 1) * 12
     if y > 42 and y < H - 22 then Gx.text(l[1], 24, y, l[2]) end
   end
   Gx.text("Tab — закрыть, A/D — разделы, колесо — прокрутка", 22, H - 21, P.gray2)
@@ -646,11 +644,11 @@ function UI.drawDoc()
   lg.rectangle("fill", 0, 0, W, H)
   local x, y, w = 70, 30, W - 140
   local ls = wrapLines(d.text, w - 20)
-  local h = 40 + #ls * 10
+  local h = 40 + #ls * 12
   Gx.r(P.cream, x, y, w, h)
   Gx.r(P.cream2, x + 2, y + 2, w - 4, 1)
   Gx.text(d.title, x + 10, y + 8, P.brown1)
-  for i, l in ipairs(ls) do Gx.text(l, x + 10, y + 24 + (i - 1) * 10, P.black) end
+  for i, l in ipairs(ls) do Gx.text(l, x + 10, y + 24 + (i - 1) * 12, P.black) end
   Gx.textOc("клик — закрыть", W / 2, y + h + 6, P.gray3)
 end
 
@@ -920,7 +918,7 @@ function UI.drawChoice()
   end
 end
 
-local pauseItems = { "Продолжить", "Подсказки", "Громкость", "Полный экран (F11)", "Выйти в меню" }
+local pauseItems = { "Продолжить", "Настройки", "Выйти в меню" }
 function UI.drawPause()
   lg.setColor(0, 0, 0, 0.7)
   lg.rectangle("fill", 0, 0, W, H)
@@ -928,8 +926,6 @@ function UI.drawPause()
   UI.pauseRects = {}
   for i, it in ipairs(pauseItems) do
     local label = it
-    if i == 2 then label = it .. ": " .. (G.settings.hints and "вкл" or "выкл") end
-    if i == 3 then label = it .. ": " .. math.floor(G.settings.volume * 100 + 0.5) .. "%" end
     local y = 100 + (i - 1) * 16
     local w = 150
     UI.pauseRects[i] = { W / 2 - w / 2, y, w, 13 }
@@ -1021,6 +1017,9 @@ function UI.draw()
   elseif UI.modal == "journal" then UI.drawJournal()
   elseif UI.modal == "map" then UI.drawMap()
   elseif UI.modal == "pause" then UI.drawPause()
+  elseif UI.modal == "settings" then
+    if Settings.back == "pause" then UI.drawPause() end
+    Settings.draw()
   elseif UI.modal == "candle" then UI.drawCandle()
   elseif UI.modal == "bricks" then UI.drawBricks()
   elseif UI.modal == "names" then UI.drawNames()

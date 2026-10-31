@@ -29,7 +29,7 @@ end
 
 -------------------------------------------------------------- Концовка A: подъём по Н-4 (25 секунд)
 reg("climb_n4", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "endA",
   ambient = { 0.2, P.blue2 },
   amb = { choir = 0.25, wind = 0.15 },
   setup = function(sc) sc.v.y = 0 sc.v.rung = 0 sc.v.look = 0 end,
@@ -96,7 +96,7 @@ reg("climb_n4", {
 })
 
 reg("dawnA", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "endA",
   ambient = { 0.9, P.white },
   amb = { wind = 0.4 },
   speakerPos = function(sc, sp)
@@ -177,7 +177,7 @@ reg("dawnA", {
 
 -------------------------------------------------------------- Концовка B: эскалатор, рассвет, открытки
 reg("escalator", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "endB",
   ambient = { 0.35, P.yellow },
   amb = { hum = 0.1 },
   drawCustom = function(sc)
@@ -207,7 +207,7 @@ reg("escalator", {
 })
 
 reg("dawnB", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "endB",
   ambient = { 0.9, P.white },
   amb = { wind = 0.3, sing = 0.15 },
   speakerPos = function(sc, sp)
@@ -310,7 +310,7 @@ local CARDS = {
 }
 
 reg("postcards", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "endB",
   ambient = { 0.95, P.white },
   amb = { sing = 0.12 },
   setup = function(sc) sc.v.card = 1 end,
@@ -381,7 +381,7 @@ reg("postcards", {
 })
 
 reg("finalB", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "endB",
   ambient = { 0.95, P.white },
   amb = {},
   speakerPos = function(sc, sp)

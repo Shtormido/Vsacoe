@@ -24,7 +24,7 @@ mkdir -p "$DIST"
 cat "$SRC/love.exe" "$WORK/game.love" > "$DIST/$NAME.exe"
 cp "$SRC"/*.dll "$DIST/"
 cp "$SRC/license.txt" "$DIST/LOVE-license.txt"
-cp "$ROOT/game/assets/OFL-PodFont.txt" "$DIST/"
+cp "$ROOT/game/assets/OFL-Handjet.txt" "$DIST/"
 cp "$ROOT/build/README-windows.txt" "$DIST/README.txt"
 
 mkdir -p "$OUT"

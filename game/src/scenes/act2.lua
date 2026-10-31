@@ -343,6 +343,7 @@ reg("cable_tunnel", {
       })
       State.panic(5)
       G.flags.drone = true
+      Audio.resumeMusic(0.15)
       Audio.amb("hum", 0.2, 0.3)
       Audio.amb("drone", 0.25, 0.1)
       wait(1)

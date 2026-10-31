@@ -13,7 +13,8 @@
   E / Enter — пропустить реплику      Esc — пауза      F11 — полный экран
 
 Сохранение — на скамейках и у свечей.
+Настройки (громкость, музыка, яркость, эффекты) — в главном меню и в паузе (Esc).
 Файлы сохранения: %APPDATA%\LOVE\pod_fundamentom\
 
 Движок: LÖVE 11.5 (zlib license, см. LOVE-license.txt).
-Шрифт: на основе Pixelify Sans (SIL OFL 1.1, см. OFL-PodFont.txt).
+Шрифт: Handjet (SIL OFL 1.1, см. OFL-Handjet.txt).

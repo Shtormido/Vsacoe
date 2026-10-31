@@ -92,11 +92,23 @@ end
 local function scene(id) untilTrue(function() return World.sceneId == id end, 200) log("сцена", id) end
 
 local function runScene(id)
+  if id == "title" or id == "settings" then
+    App.toTitle()
+    sleep(4)
+    if id == "settings" then Settings.open(nil) sleep(0.5) end
+    shot(id)
+    sleep(0.5)
+    T.done = true
+    return
+  end
   App.newGame()
   G.flags.rest_evd, G.flags.rest_laptev, G.flags.rest_alesha = true, true, true
   sleep(1)
-  World.enter(id)
+  World.enter(id, T.px)
   World.fade = 0
+  G.flags.lightTut = true
+  G.light = true
+  if T.act then G.act = T.act end
   sleep(3)
   shot("scene_" .. id)
   sleep(0.5)
@@ -254,7 +266,7 @@ end
 
 function T.start(args)
   ending = args[2] or "B"
-  if ending == "scene" then T.only = args[3] end
+  if ending == "scene" then T.only = args[3] T.px = tonumber(args[4]) end
   local orig = love.keyboard.isDown
   love.keyboard.isDown = function(...)
     if T.hold then

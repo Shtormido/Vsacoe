@@ -6,6 +6,7 @@ local Wd = {
   camx = 0, fade = 1, fadeTarget = 0, fadeSpeed = 1,
   shakeT = 0, shakeA = 0, hover = nil, noiseT = 0,
   breath = { t = 0, ok = false, releasedAt = nil, active = false, flash = 0, last = "" },
+  fx = { aberr = 0, aberrT = 0 }, parts = {}, motes = {},
 }
 
 FLOOR = 232
@@ -22,8 +23,123 @@ function Wd.fadeTo(v, t)
 end
 
 function Wd.shake(a, d)
+  if G.settings and not G.settings.shake then return end
   Wd.shakeA = a
   Wd.shakeT = d
+end
+
+-- Испуг: хроматическая аберрация на пару секунд
+function Wd.scareFX(k)
+  Wd.fx.aberrT = math.max(Wd.fx.aberrT, k or 3)
+end
+
+-- Подземелье? (для тумана, капель и пыли в луче)
+function Wd.underground()
+  local def = Wd.sc.def
+  if def.custom or def.noFx then return false end
+  local amb = def.ambient or { 0.05 }
+  return amb[1] < 0.2
+end
+
+-------------------------------------------------------------- частицы: капли и пыль
+function Wd.updateParticles(dt)
+  local sc = Wd.sc
+  local parts = Wd.parts
+  if Wd.underground() then
+    sc.dripT = (sc.dripT or 0) - dt
+    if sc.dripT <= 0 then
+      sc.dripT = 0.5 + love.math.random() * 1.4
+      parts[#parts + 1] = { kind = "drip", x = Wd.camx + love.math.random() * W, y = 24 + love.math.random() * 30, vy = 0 }
+    end
+    if love.math.random() < dt * 3 then
+      parts[#parts + 1] = { kind = "dust", x = Wd.camx + love.math.random() * W, y = 20 + love.math.random() * 60, vy = 3 + love.math.random() * 4, t = 0 }
+    end
+  end
+  for i = #parts, 1, -1 do
+    local q = parts[i]
+    if q.kind == "drip" then
+      q.vy = q.vy + dt * 320
+      q.y = q.y + q.vy * dt
+      if q.y >= FLOOR + 4 then
+        q.kind = "splash"
+        q.t = 0
+        if love.math.random() < 0.15 then Audio.play("drip", 0.12, 0.9 + love.math.random() * 0.3, q.x) end
+      end
+    elseif q.kind == "splash" then
+      q.t = q.t + dt
+      if q.t > 0.25 then table.remove(parts, i) end
+    else
+      q.t = q.t + dt
+      q.y = q.y + q.vy * dt
+      q.x = q.x + math.sin(q.t * 1.7 + q.y) * dt * 3
+      if q.y > FLOOR or q.t > 12 then table.remove(parts, i) end
+    end
+  end
+  if #parts > 160 then table.remove(parts, 1) end
+end
+
+function Wd.drawParticles()
+  for _, q in ipairs(Wd.parts) do
+    if q.kind == "drip" then
+      Gx.r(P.blue3, q.x, q.y, 1, 2, 0.7)
+    elseif q.kind == "splash" then
+      local k = q.t * 24
+      Gx.px(P.blue3, q.x - k, FLOOR + 3 - k * 0.6, 0.6)
+      Gx.px(P.blue3, q.x + k, FLOOR + 3 - k * 0.6, 0.6)
+      Gx.r(P.blue3, q.x - 2, FLOOR + 4, 5, 1, 0.4 * (1 - q.t * 4))
+    else
+      Gx.px(P.gray3, q.x, q.y, 0.5)
+    end
+  end
+end
+
+-- Туман у пола: освещается фонарём
+function Wd.drawFog()
+  local sc = Wd.sc
+  local t = sc.t
+  local x0 = math.floor(Wd.camx / 4) * 4 - 8
+  for layer = 1, 2 do
+    for x = x0, x0 + W + 16, 4 do
+      local n = love.math.noise(x * 0.015 + t * 0.03 * layer, layer * 7.3)
+      local h = math.floor(4 + n * 16)
+      Gx.r(P.gray3, x, H - 6 - layer * 14 - h + 24, 4, h, 0.035 + layer * 0.02)
+    end
+  end
+end
+
+-- Пыль в луче фонаря и у источников света (рисуется после освещения)
+function Wd.drawMotes()
+  local sc = Wd.sc
+  if not Wd.underground() then return end
+  local m = Wd.motes
+  if #m == 0 then
+    for i = 1, 110 do m[i] = { x = love.math.random() * W, y = 20 + love.math.random() * 220, s = 0.5 + love.math.random(), ph = love.math.random() * 6 } end
+  end
+  local t = love.timer.getTime()
+  local c = Wd.coneWorld
+  local lights = Wd.lastLights or {}
+  for _, q in ipairs(m) do
+    local wx = (q.x + t * 2 * q.s - Wd.camx * 0.15) % W + Wd.camx
+    local wy = q.y + math.sin(t * 0.6 * q.s + q.ph) * 6
+    local a = 0
+    if c then
+      local vx, vy = wx - c[1], wy - c[2]
+      local d = math.sqrt(vx * vx + vy * vy)
+      if d > 4 and d < c[5] then
+        local cs = (vx * c[3] + vy * c[4]) / d
+        local edge = math.cos(c[6])
+        if cs > edge then a = math.min(1, (cs - edge) / (1 - edge) * 3) * (1 - d / c[5]) end
+      end
+    end
+    for _, L in ipairs(lights) do
+      local d = math.sqrt((wx - L[1]) ^ 2 + (wy - L[2]) ^ 2)
+      if d < L[3] * 0.6 then a = a + (1 - d / (L[3] * 0.6)) * 0.5 end
+    end
+    if a > 0.05 then
+      local tw = 0.6 + 0.4 * math.sin(t * 5 * q.s + q.ph)
+      Gx.px(P.yellow, wx - Wd.camx, wy, math.min(0.9, a * tw))
+    end
+  end
 end
 
 -------------------------------------------------------------- вход в сцену
@@ -35,6 +151,7 @@ function Wd.enter(id, x, facing)
   G.scene = id
   local sc = { def = def, id = id, t = 0, w = def.w or W, actors = {}, enemies = {}, v = {}, running = {}, lights = {} }
   Wd.sc = sc
+  Wd.parts = {}
   local p, l = Wd.player, Wd.leha
   p.x = x or def.spawn or 40
   p.tx, p.pending = nil, nil
@@ -58,6 +175,7 @@ function Wd.enter(id, x, facing)
     lg.origin()
     Gx.world = true
     def.static(sc)
+    if not def.custom and def.grime ~= false and (def.ambient or { 0.05 })[1] < 0.2 then Gx.grime(sc) end
     Gx.world = false
     lg.pop()
   end
@@ -69,6 +187,10 @@ function Wd.enter(id, x, facing)
     if n == "choir" and G.flags.choir and not amb.noChoir then v = math.max(v, 0.18) end
     Audio.amb(n, v, 0.4)
   end
+  -- музыка: по сцене или по акту
+  local mus = def.music
+  if mus == nil then mus = ({ "act1", "act2", "act3", "act3", "act5", "act6" })[G.act or 1] or "act3" end
+  if mus then Audio.setMusic(mus, def.musicVol or 0.5) else Audio.musicMult(0, 0.5) end
   if def.setup then def.setup(sc) end
   Wd.snapCamera()
   if def.enter then Script.run(function() def.enter(sc) end, def.enterBlock ~= false, "enter") end
@@ -369,6 +491,12 @@ function Wd.update(dt)
   if Wd.fade ~= Wd.fadeTarget then Wd.fade = U.approach(Wd.fade, Wd.fadeTarget, dt * Wd.fadeSpeed) end
   if Wd.shakeT > 0 then Wd.shakeT = Wd.shakeT - dt end
   if Wd.noiseT > 0 then Wd.noiseT = Wd.noiseT - dt end
+  do
+    local fx = Wd.fx
+    fx.aberrT = math.max(0, fx.aberrT - dt * 2.5)
+    local base = (Wd.sc and not Wd.sc.def.custom and Wd.spiritNear()) and 0.6 or 0
+    fx.aberr = U.approach(fx.aberr, base + fx.aberrT, dt * 8)
+  end
   if modal then return end
   sc.t = sc.t + dt
   G.time = G.time + dt
@@ -446,6 +574,7 @@ function Wd.update(dt)
   Audio.listenerX = Wd.camx + W / 2
 
   if def.update then def.update(sc, dt) end
+  Wd.updateParticles(dt)
   Wd.processTriggers(sc)
 end
 
@@ -530,7 +659,7 @@ function Wd.drawWorld()
     sx = love.math.random(-Wd.shakeA, Wd.shakeA)
     sy = love.math.random(-Wd.shakeA, Wd.shakeA)
   end
-  if G.flags.tremble and not def.custom then sx = sx + love.math.random(-1, 1) end
+  if G.flags.tremble and not def.custom and G.settings.shake then sx = sx + love.math.random(-1, 1) end
   Wd.drawOffX, Wd.drawOffY = sx, sy
   lg.clear(P.black[1], P.black[2], P.black[3], 1)
   if def.custom then
@@ -559,6 +688,17 @@ function Wd.drawWorld()
   end
   for _, a in pairs(sc.actors) do if a.behind then Wd.drawActor(a, sc) end end
   local p, l = Wd.player, Wd.leha
+  -- контактные тени
+  local sink = def.sink or 0
+  if not def.noShadow then
+    for _, e in ipairs({ p, l.visible and l or nil }) do
+      if e and not e.hiddenSprite then
+        Gx.r(P.black, e.x - 8, FLOOR - 1 + sink, 16, 2, 0.45)
+        Gx.r(P.black, e.x - 5, FLOOR + 1 + sink, 10, 1, 0.3)
+      end
+    end
+  end
+  Wd.drawParticles()
   local function drawLeha()
     if l.visible then
       Gx.leha(l.x, FLOOR + (def.sink or 0), { facing = l.facing, frame = l.frame, pose = l.pose, eyesRed = l.eyesRed })
@@ -575,6 +715,10 @@ function Wd.drawWorld()
   for _, a in pairs(sc.actors) do if not a.behind then Wd.drawActor(a, sc) end end
   for _, e in ipairs(sc.enemies) do Wd.drawActor(e, sc) end
   if def.front then def.front(sc) end
+  if Wd.underground() then
+    if not def.noFog then Wd.drawFog() end
+    if not def.noDeco then Gx.frontDeco(sc, Wd.camx) end
+  end
   lg.pop()
 end
 
@@ -590,6 +734,9 @@ function Wd.lightData()
   if def.lights then
     for _, L in ipairs(def.lights(sc) or {}) do add(L[1], L[2], L[3], L[4] or P.orange2, L[5] or 1) end
   end
+  local worldLights = {}
+  Wd.lastLights = worldLights
+  for _, L in ipairs(lights) do worldLights[#worldLights + 1] = { L[1] + cx - Wd.drawOffX, L[2] - Wd.drawOffY, L[3] } end
   for _, a in pairs(sc.actors) do
     if a.glow and a.visible ~= false then add(a.x, (a.y or FLOOR) - (a.gy or 30), a.glowR or 60, a.glowCol or P.violet2, a.glow * (a.a or 1)) end
   end
@@ -601,6 +748,10 @@ function Wd.lightData()
   if not def.custom then
     -- слабое свечение вокруг героев, чтобы силуэт читался
     add(Wd.player.x, FLOOR - 24, 26, P.blue3, 0.12)
+    if G.light and G.battery > 0 then
+      -- рассеянный свет налобного фонаря на самих героях
+      add(Wd.player.x + Wd.player.facing * 8, FLOOR - 28, 46, P.orange2, 0.3)
+    end
   end
   local amb = sc.ambient or def.ambient or { 0.05, P.blue2 }
   local cone = nil

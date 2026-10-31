@@ -1,7 +1,8 @@
 -- Процедурный звук: всё синтезируется при запуске, файлов нет.
 local A = {
   data = {}, pool = {}, loops = {}, ambVol = {}, ambTarget = {}, ambSpeed = {},
-  master = 0.8, ok = true, listenerX = 240,
+  master = 0.8, sfx = 1, mus = 0.7, ok = true, listenerX = 240,
+  tracks = {}, music = { cur = nil, vol = 0, base = 0, mult = 1, multTarget = 1, multSpeed = 1, fading = {} },
 }
 
 local SR = 22050
@@ -481,7 +482,7 @@ function A.play(name, vol, pitch, wx)
       p[#p + 1] = src
     end
   end
-  src:setVolume((vol or 1) * A.master)
+  src:setVolume((vol or 1) * A.master * A.sfx)
   src:setPitch(pitch or 1)
   if wx then
     local dx = U.clamp((wx - A.listenerX) / 260, -1, 1)
@@ -501,21 +502,103 @@ end
 
 function A.silenceAll(speed)
   for n in pairs(A.ambTarget) do A.ambTarget[n] = 0 A.ambSpeed[n] = speed or 2 end
+  A.musicMult(0, speed or 2)
+end
+
+-------------------------------------------------------------- музыка (треки синтезируются в фоновом потоке)
+function A.startMusicThread()
+  if not A.ok or A.thread then return end
+  local ok = pcall(function()
+    A.chan = love.thread.getChannel("music")
+    A.thread = love.thread.newThread("src/musicthread.lua")
+    A.thread:start()
+  end)
+  if not ok then A.thread = nil end
+end
+
+function A.pollMusic()
+  if not A.chan then return end
+  local msg = A.chan:pop()
+  while msg do
+    if msg.data then
+      local src = love.audio.newSource(msg.data, "static")
+      src:setLooping(true)
+      src:setVolume(0)
+      A.tracks[msg.name] = src
+    elseif msg.err then
+      print("Музыка " .. msg.name .. ": " .. msg.err)
+    end
+    msg = A.chan:pop()
+  end
+  if A.thread and A.thread:getError() then
+    print("Поток музыки: " .. A.thread:getError())
+    A.thread = nil
+  end
+end
+
+-- Сменить трек с перекрёстным затуханием
+function A.setMusic(name, vol)
+  local m = A.music
+  vol = vol or 0.55
+  if name ~= m.cur then
+    if m.cur then table.insert(m.fading, { name = m.cur, vol = m.vol }) end
+    m.cur = name
+    m.vol = 0
+    for i = #m.fading, 1, -1 do
+      if m.fading[i].name == name then m.vol = m.fading[i].vol table.remove(m.fading, i) end
+    end
+  end
+  m.base = vol
+  A.musicMult(1, 0.5)
+end
+
+function A.musicMult(v, speed)
+  A.music.multTarget = v
+  A.music.multSpeed = speed or 1
+end
+
+function A.resumeMusic(speed) A.musicMult(1, speed or 0.3) end
+
+local function updateMusic(dt, duck)
+  local m = A.music
+  m.mult = U.approach(m.mult, m.multTarget, dt * m.multSpeed)
+  if m.cur then
+    m.vol = U.approach(m.vol, m.base, dt * 0.35)
+    local src = A.tracks[m.cur]
+    if src then
+      local v = m.vol * m.mult * A.master * A.mus * duck
+      src:setVolume(v)
+      if v > 0.001 and not src:isPlaying() then src:play() end
+    end
+  end
+  for i = #m.fading, 1, -1 do
+    local f = m.fading[i]
+    f.vol = f.vol - dt * 0.4
+    local src = A.tracks[f.name]
+    if f.vol <= 0 then
+      if src then src:stop() end
+      table.remove(m.fading, i)
+    elseif src then
+      src:setVolume(f.vol * m.mult * A.master * A.mus * duck)
+    end
+  end
 end
 
 function A.phone(on)
   if not A.ok then return end
-  if on then A.loops.phone:setVolume(0.7 * A.master) A.loops.phone:play() else A.loops.phone:stop() end
+  if on then A.loops.phone:setVolume(0.7 * A.master * A.sfx) A.loops.phone:play() else A.loops.phone:stop() end
 end
 
 function A.update(dt, duck)
   if not A.ok then return end
   duck = duck or 1
+  A.pollMusic()
+  updateMusic(dt, duck)
   for n, s in pairs(A.loops) do
     if n ~= "phone" then
       local v = U.approach(A.ambVol[n], A.ambTarget[n], dt * A.ambSpeed[n])
       A.ambVol[n] = v
-      local out = v * A.master * duck
+      local out = v * A.master * A.sfx * duck
       s:setVolume(out)
       if out > 0.001 then
         if not s:isPlaying() then s:play() end
@@ -531,6 +614,11 @@ function A.stopAll()
   for n in pairs(A.ambTarget) do A.ambTarget[n] = 0 A.ambVol[n] = 0 end
   for _, s in pairs(A.loops) do s:stop() end
   for _, p in pairs(A.pool) do for _, s in ipairs(p) do s:stop() end end
+  for _, s in pairs(A.tracks) do s:stop() end
+  A.music.cur = nil
+  A.music.vol = 0
+  A.music.fading = {}
+  A.music.mult, A.music.multTarget = 1, 1
 end
 
 return A

@@ -299,6 +299,7 @@ reg("monastyrskaya", {
       State.panic(10)
       strange(9, true)
       G.flags.monScare = true
+      Audio.resumeMusic(0.1)
       Audio.amb("hum", 0.12, 0.2)
       Audio.amb("drone", 0.25, 0.2)
     end },

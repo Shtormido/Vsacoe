@@ -123,7 +123,7 @@ reg("surface", {
 
 -------------------------------------------------------------- спуск по скобам (~12 секунд)
 reg("descent", {
-  custom = true, noHud = true,
+  custom = true, noHud = true, music = "act1",
   ambient = { 0.16, P.blue2 },
   amb = { hum = 0.15, wind = 0.1 },
   setup = function(sc) sc.v.rung = 0 sc.v.y = 0 end,
@@ -437,7 +437,10 @@ reg("tunnel_sl", {
     if not G.done["tunnel_sl:t:silence"] then Audio.amb("hum", 0.25) end
   end,
   update = function(sc, dt)
-    if sc.t > 20 and sc.t < 31 and not G.done["tunnel_sl:t:listen"] then Audio.amb("hum", 0.05, 1) end
+    if sc.t > 20 and sc.t < 31 and not G.done["tunnel_sl:t:listen"] then
+      Audio.amb("hum", 0.05, 1)
+      Audio.musicMult(0.15, 0.5)
+    end
   end,
   timers = {
     { id = "rats", t = 10, block = false, fn = function()
@@ -455,6 +458,7 @@ reg("tunnel_sl", {
     end },
     { id = "listen", t = 31, block = false, fn = function()
       Audio.amb("hum", 0.25, 0.3)
+      Audio.resumeMusic()
       talk({
         { L, "Слышишь?" },
         { D, "Что?" },
