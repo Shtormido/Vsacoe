@@ -207,6 +207,11 @@ function Wd.enter(id, x, facing)
   if mus == nil then mus = ({ "act1", "act2", "act3", "act3", "act5", "act6" })[G.act or 1] or "act3" end
   if mus then Audio.setMusic(mus, def.musicVol or 0.5) else Audio.musicMult(0, 0.5) end
   if def.setup then def.setup(sc) end
+  -- заставка нового акта (первый акт открывается титрами сцены)
+  if not def.custom and (G.act or 1) > (G.actShown or 1) then
+    G.actShown = G.act
+    UI.showAct(G.act)
+  end
   Wd.snapCamera()
   if def.enter then Script.run(function() def.enter(sc) end, def.enterBlock ~= false, "enter") end
 end
@@ -486,7 +491,7 @@ local function moveEntity(e, dt, speed, isLeha)
   e.facing = U.sign(dx)
   e.pose = "walk"
   e.dist = e.dist + s
-  e.frame = math.floor(e.dist / 6) % 4
+  e.frame = math.floor(e.dist / 6) % 60
   e.stepAcc = (e.stepAcc or 0) + s
   if e.stepAcc > stepDist then
     e.stepAcc = 0
@@ -773,10 +778,11 @@ function Wd.lightData()
   end
   if not def.custom then
     -- слабое свечение вокруг героев, чтобы силуэт читался
-    add(Wd.player.x, FLOOR - 24, 26, P.blue3, 0.12)
+    add(Wd.player.x, FLOOR - 24, 30, P.blue3, 0.2)
+    if Wd.leha.visible then add(Wd.leha.x, FLOOR - 24, 26, P.blue3, 0.14) end
     if G.light and G.battery > 0 then
       -- рассеянный свет налобного фонаря на самих героях
-      add(Wd.player.x + Wd.player.facing * 8, FLOOR - 28, 46, P.orange2, 0.3)
+      add(Wd.player.x + Wd.player.facing * 6, FLOOR - 26, 54, P.orange2, 0.55)
     end
   end
   local amb = sc.ambient or def.ambient or { 0.05, P.blue2 }

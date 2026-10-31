@@ -46,7 +46,7 @@ local function lightFigure(a, sc)
   if a.who == "evd" then Gx.evdokia(a.x, FLOOR, sc.t, a.a)
   elseif a.who == "alesha" then Gx.alesha(a.x, FLOOR, sc.t, a.a, true)
   else
-    Gx.human(a.x, FLOOR, { facing = -1, pose = "idle", alpha = a.a * 0.7, jacket = P.white, jacket2 = P.gray4, pants = P.gray4, hair = P.gray4, hat = P.gray4 })
+    Gx.laptevFigure(a.x, FLOOR, sc.t, a.a, -1)
   end
 end
 

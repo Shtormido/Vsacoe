@@ -492,7 +492,23 @@ function Gx.human(x, y, o)
   bodyPass(o, fr, pose, t)
 end
 
+-- Спрайты из референса (src/sprites.lua); без них — отрисовка кодом
+local DIMA_POSE = { idle = "idle", walk = "walk", inspect = "inspect", freeze = "freeze", sit = "sit",
+  kneel = "kneel", climb = "climb", fear = "idle" }
+local LEHA_POSE = { idle = "idle", walk = "walk", inspect = "inspect", freeze = "freeze", sit = "sit",
+  kneel = "cry", fear = "freeze" }
+
+local function spriteFrame(o, an)
+  if an == "idle" then return math.floor(love.timer.getTime() * 0.9 + (o.seed or 0)) end
+  return o.frame or 0
+end
+
 function Gx.dima(x, y, o)
+  local an = DIMA_POSE[o.pose or "idle"]
+  if Sprites.ok and an and not o.procedural then
+    Sprites.draw("dima", an, spriteFrame(o, an), x, y, o.facing, o.alpha)
+    return
+  end
   o.jacket, o.jacket2, o.jacketL = P.blue1, P.night, P.blue2
   o.pants, o.pantsD = P.dk2, P.dk1
   o.hair = P.brown1
@@ -504,6 +520,14 @@ function Gx.dima(x, y, o)
 end
 
 function Gx.leha(x, y, o)
+  local an = LEHA_POSE[o.pose or "idle"]
+  if o.eyesRed and (an == "walk" or an == "idle") then an = "possessed" end
+  if Fx and Fx.flash > 0 and (o.pose == "inspect" or o.pose == "idle") then an = "photo" end
+  if Sprites.ok and an and not o.procedural then
+    o.seed = 2
+    Sprites.draw("leha", an, spriteFrame(o, an), x, y, o.facing, o.alpha)
+    return
+  end
   o.jacket, o.jacket2, o.jacketL = P.orange1, P.rust, P.orange2
   o.pants, o.pantsD = P.gray1, P.dk2
   o.hair = P.dk2
@@ -515,6 +539,15 @@ function Gx.leha(x, y, o)
   Gx.human(x, y, o)
 end
 
+-- Лаптев в полный рост (финальный ритуал и концовка «Покой»)
+function Gx.laptevFigure(x, y, t, a, facing)
+  if Sprites.has("laptev") then
+    Sprites.draw("laptev", "idle", t * 2, x, y, facing or -1, a * (0.85 + 0.15 * math.sin(t * 8)))
+    return
+  end
+  Gx.human(x, y, { facing = facing or -1, pose = "idle", alpha = a * 0.7, jacket = P.white, jacket2 = P.gray4, pants = P.gray4, hair = P.gray4, hat = P.gray4 })
+end
+
 -------------------------------------------------------------- духи
 -- «Призрачные» строки: через одну строку прозрачнее, с дрожью
 local function ghostRow(col, x, y, w, a, t, k)
@@ -524,6 +557,11 @@ end
 
 function Gx.evdokia(x, y, t, a)
   a = a or 1
+  if Sprites.has("evd") then
+    local fl = 0.88 + 0.12 * math.sin(t * 9)
+    Sprites.draw("evd", "idle", t * 2.5, x, y + math.sin(t * 1.4) * 1.5, 1, a * fl)
+    return
+  end
   x, y = floor(x), floor(y + math.sin(t * 1.4) * 1.5)
   -- подол растворяется книзу
   for i = 0, 36 do
@@ -546,8 +584,13 @@ function Gx.evdokia(x, y, t, a)
   Gx.candle(x + 4, y - 29, t, true)
 end
 
-function Gx.alesha(x, y, t, a, horse)
+function Gx.alesha(x, y, t, a, horse, wave)
   a = a or 1
+  if Sprites.has("alesha") then
+    local an = (horse and not wave) and "idle" or "wave"
+    Sprites.draw("alesha", an, t * 2, x, y, -1, a * (0.85 + 0.15 * math.sin(t * 7)))
+    return
+  end
   x, y = floor(x), floor(y)
   -- босые ноги, мокрые следы
   Gx.r(P.skin, x - 4, y - 4, 3, 4, a) Gx.r(P.skin, x + 1, y - 4, 3, 4, a)
@@ -585,6 +628,11 @@ end
 function Gx.nameless(x, y, t, a, variant)
   a = a or 1
   variant = variant or 1
+  if Sprites.has("nameless") then
+    local jit = (math.sin(t * 9 + variant * 1.7) > 0.8) and ((Gx.hash(variant, math.floor(t * 20)) > 0.5) and 2 or -2) or 0
+    Sprites.draw("nameless", "idle", variant - 1 + math.floor(t * 1.5) % 2, x + jit, y, 1, a * 0.9)
+    return
+  end
   x, y = floor(x), floor(y)
   local h = 46 + variant * 3
   local glitch = math.sin(t * 9 + variant * 1.7) > 0.75
@@ -615,6 +663,10 @@ end
 -- Проповедник: ряса из мешковины, рваный подол, лица нет
 function Gx.preacher(x, y, t, a, facing)
   a = a or 1
+  if Sprites.has("preacher") then
+    Sprites.draw("preacher", "idle", t * 2, x, y, facing or 1, a)
+    return
+  end
   x, y = floor(x), floor(y)
   local f = facing or 1
   for i = 0, 46 do

@@ -176,6 +176,7 @@ function UI.update(dt)
     if t.t <= 0 then table.remove(UI.toasts, i) end
   end
   if UI.hintT > 0 then UI.hintT = UI.hintT - dt if UI.hintT <= 0 then UI.hintText = nil end end
+  UI.updateAct(dt)
   UI.updateListen(dt)
 
   local m = UI.mini
@@ -996,6 +997,47 @@ function UI.drawCursor()
     Gx.r(P.white, x, y - 3, 1, 7)
     Gx.r(P.white, x - 3, y, 7, 1)
   end
+end
+
+-------------------------------------------------------------- заставка акта (арт станции из референса)
+local ACTS = { "Прогулка", "Мелочи", "Странности", "Открытие", "Могилы", "Участок 7" }
+local ROMAN = { "I", "II", "III", "IV", "V", "VI" }
+local actArt
+
+function UI.showAct(n)
+  UI.act = { n = n, t = 0 }
+end
+
+function UI.updateAct(dt)
+  if UI.act then
+    UI.act.t = UI.act.t + dt
+    if UI.act.t > 5 then UI.act = nil end
+  end
+end
+
+function UI.drawAct()
+  local c = UI.act
+  if not c then return end
+  if actArt == nil then
+    actArt = love.filesystem.getInfo("assets/art/station.png") and lg.newImage("assets/art/station.png") or false
+    if actArt then actArt:setFilter("nearest", "nearest") end
+  end
+  local t = c.t
+  local a = math.min(1, t / 0.8) * math.min(1, (5 - t) / 1.0)
+  if actArt then
+    lg.setColor(0.55, 0.55, 0.6, a)
+    lg.draw(actArt, -t * 3, 0, 0, 1.03, 1.03)
+  else
+    lg.setColor(0, 0, 0, a)
+    lg.rectangle("fill", 0, 0, W, H)
+  end
+  for i = 0, 70 do
+    lg.setColor(0, 0, 0, a * 0.8 * (1 - i / 70))
+    lg.rectangle("fill", 0, H - i, W, 1)
+    lg.rectangle("fill", 0, i, W, 1)
+  end
+  Gx.textOc("АКТ " .. ROMAN[c.n], W / 2, 196, P.gray3, a)
+  Gx.textOc("«" .. ACTS[c.n] .. "»", W / 2, 210, P.white, a, Fonts.big)
 end
 
 function UI.draw()

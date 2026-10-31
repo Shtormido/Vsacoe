@@ -39,7 +39,78 @@ local function buildSky()
   lg.pop()
 end
 
+-- Арт из референса (assets/art/title.png) с живыми слоями поверх: дождь, туман, фонарь, лужи
+local art
+local function drawArt(t)
+  lg.setColor(1, 1, 1, 1)
+  lg.draw(art, 0, 0)
+  lg.setBlendMode("add")
+  -- фонарь на столбе мигает
+  local fl = (Gx.hash(floor(t * 9), 5) > 0.9) and 0.25 or (0.85 + 0.15 * math.sin(t * 3))
+  for r = 30, 4, -3 do
+    lg.setColor(0.35, 0.3, 0.18, 0.05 * fl)
+    lg.circle("fill", 132, 62, r)
+  end
+  for y = 66, 214, 2 do
+    local k = (y - 66) / 148
+    local half = 3 + k * 22
+    lg.setColor(0.32, 0.28, 0.16, 0.035 * fl * (1 - k * 0.7))
+    lg.rectangle("fill", 132 - half, y, half * 2, 1)
+  end
+  -- лампа в переходе метро
+  local tube = (Gx.hash(floor(t * 6), 9) > 0.8) and 0.2 or 1
+  lg.setColor(0.25, 0.3, 0.35, 0.18 * tube)
+  lg.rectangle("fill", 330, 149, 30, 2)
+  for r = 20, 4, -4 do
+    lg.setColor(0.18, 0.22, 0.28, 0.04 * tube)
+    lg.circle("fill", 345, 152, r)
+  end
+  -- лунный ореол
+  for r = 22, 8, -3 do
+    lg.setColor(0.2, 0.24, 0.32, 0.035)
+    lg.circle("fill", 376, 42, r)
+  end
+  lg.setBlendMode("alpha")
+  -- туман у земли
+  for layer = 1, 3 do
+    for x = 0, W, 4 do
+      local n = love.math.noise(x * 0.012 + t * 0.025 * (layer + 1), layer * 4.7)
+      local h = floor(5 + n * 16)
+      Gx.r(P.gray3, x, 196 + layer * 10 - h, 4, h, 0.035 + layer * 0.015)
+    end
+  end
+  -- круги на лужах
+  for i = 1, 6 do
+    local ph = (t * 0.8 + i * 0.37) % 1
+    local x = 140 + Gx.hash(i, floor(t * 0.8 + i * 0.37)) * 300
+    local y = 222 + Gx.hash(i, 2) * 20
+    lg.setColor(0.55, 0.62, 0.72, 0.3 * (1 - ph))
+    lg.ellipse("line", x, y, 2 + ph * 8, 1 + ph * 2)
+  end
+  -- косой дождь
+  for i = 1, 160 do
+    local sp = 260 + Gx.hash(i, 3) * 120
+    local x = (Gx.hash(i, 1) * (W + 60) + t * 40) % (W + 60) - 30
+    local y = (Gx.hash(i, 2) * H + t * sp) % (H + 20) - 10
+    Gx.line(P.blue3, x, y, x - 2, y + 6, 0.16 + Gx.hash(i, 4) * 0.12)
+  end
+  -- затемнение под меню
+  for i = 0, 90 do
+    Gx.r(P.black, 0, 180 + i, W, 1, math.min(0.75, i / 90 * 0.8))
+  end
+  for i = 0, 40 do Gx.r(P.black, 0, i, W, 1, 0.5 * (1 - i / 40)) end
+end
+
 function Ti.draw(t)
+  if art == nil then
+    art = love.filesystem.getInfo("assets/art/title.png") and lg.newImage("assets/art/title.png") or false
+    if art then art:setFilter("nearest", "nearest") end
+  end
+  if art then
+    drawArt(t)
+    Ti.overlay(t)
+    return
+  end
   if not skyCanvas then buildSky() end
   lg.setColor(1, 1, 1, 1)
   lg.draw(skyCanvas, 0, 0)
@@ -120,6 +191,10 @@ function Ti.draw(t)
     Gx.r(P.rust, lx + math.sin(t * 2 + i) * 4, ly, 2, 1, 0.8)
   end
 
+  Ti.overlay(t)
+end
+
+function Ti.overlay(t)
   -- заголовок с редким сбоем
   local a = math.min(1, t / 2.5)
   local glitch = Gx.hash(floor(t * 10), 7) > 0.96

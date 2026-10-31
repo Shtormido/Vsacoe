@@ -226,9 +226,9 @@ reg("dawnB", {
     local a = sc.v.figA or 0
     if a > 0 then
       Gx.evdokia(360, 222, sc.t, a)
-      Gx.human(378, 210, { facing = -1, alpha = a * 0.75, jacket = P.white, jacket2 = P.gray4, pants = P.gray4, hair = P.gray4, hat = P.gray4 })
-      Gx.alesha(395, 200, sc.t, a, true)
-      if sc.v.wave then Gx.r(P.skin, 400, 174 - (math.floor(sc.t * 6) % 2) * 2, 2, 5, a) end
+      Gx.laptevFigure(378, 210, sc.t, a * 0.85, -1)
+      Gx.alesha(395, 200, sc.t, a, true, sc.v.wave)
+      if sc.v.wave and not Sprites.has("alesha") then Gx.r(P.skin, 400, 174 - (math.floor(sc.t * 6) % 2) * 2, 2, 5, a) end
     end
     Gx.dima(230, 232, { facing = -1 })
     Gx.leha(270, 232, { facing = -1 })
