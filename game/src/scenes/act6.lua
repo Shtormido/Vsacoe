@@ -144,6 +144,19 @@ reg("pokrovskaya", {
       Gx.r(P.violet1, x + 72, 44, 16, 16, 0.3)
     end
     Gx.tiles(0, 50, sc.w, 156, 12, 7, P.gray2, P.gray1, 0.15)
+    K.tileArt("vault", 0, sc.w, 1, 64)
+    -- лик святого над плитой: лицо стёрто
+    local mos = K.art("mosaic")
+    if mos then
+      local mx, my = PLATE_X - 73, 60
+      love.graphics.setColor(0.85, 0.85, 0.9, 0.9)
+      love.graphics.draw(mos, mx, my)
+      for y = my + 28, my + 52 do
+        for x = mx + 47, mx + 66 do
+          if Gx.hash(x, y) < 0.75 then Gx.px((Gx.hash(y, x) > 0.5) and P.gray2 or P.gray1, x, y, 1) end
+        end
+      end
+    end
     for x = 60, sc.w, 160 do
       K.column(x, 50, 232, P.gray2, P.gray1, P.dk2)
       Gx.r(P.gray1, x - 14, 50, 46, 6)

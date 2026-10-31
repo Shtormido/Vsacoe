@@ -14,7 +14,32 @@ function K.vgrad(x, y, w, h, c1, c2)
 end
 
 -- Пол с «перспективой»: полосы и шум
+-- Куски арта из референсов (assets/art, нарезка build/art/cut_art.py)
+local artCache = {}
+function K.art(name)
+  if artCache[name] == nil then
+    local p = "assets/art/" .. name .. ".png"
+    artCache[name] = love.filesystem.getInfo(p) and love.graphics.newImage(p) or false
+    if artCache[name] then artCache[name]:setFilter("nearest", "nearest") end
+  end
+  return artCache[name]
+end
+
+-- Повторить арт по горизонтали (rows — сколько строк картинки взять сверху)
+function K.tileArt(name, y, w, alpha, rows, tint)
+  local img = K.art(name)
+  if not img then return false end
+  local iw, ih = img:getDimensions()
+  rows = math.min(rows or ih, ih)
+  local q = love.graphics.newQuad(0, 0, iw, rows, iw, ih)
+  local c = tint or { 1, 1, 1 }
+  love.graphics.setColor(c[1], c[2], c[3], alpha or 1)
+  for x = 0, w, iw do love.graphics.draw(img, q, x, y) end
+  return true
+end
+
 function K.floor(x, y, w, col1, col2, h)
+  if w >= 400 then Gx.lastFloorY = y end
   h = h or (H - y)
   Gx.r(col1, x, y, w, h)
   for i = 0, h, 7 do Gx.r(col2, x, y + i + math.floor(i / 10), w, 1, 0.5) end
@@ -70,11 +95,14 @@ function K.station(sc, o)
   Gx.r(o.ceil or P.dk1, 0, 0, w, 30)
   Gx.tiles(0, 30, w, 118, o.tw or 10, o.th or 6, wallC, groutC, o.wear)
   Gx.r(o.band or P.green1, 0, 120, w, 28)
+  K.tileArt("vault", 0, w, 1, 58)
   Gx.r(P.black, 0, 148, w, 46)
-  Gx.r(P.dk1, 0, 186, w, 8)
-  for x = 0, w, 12 do Gx.r(P.brown1, x, 182, 8, 4) end
-  Gx.r(P.rust, 0, 180, w, 2)
-  Gx.r(P.gray2, 0, 180, w, 1, 0.5)
+  if not K.tileArt("trackpit", 152, w, 1) then
+    Gx.r(P.dk1, 0, 186, w, 8)
+    for x = 0, w, 12 do Gx.r(P.brown1, x, 182, 8, 4) end
+    Gx.r(P.rust, 0, 180, w, 2)
+    Gx.r(P.gray2, 0, 180, w, 1, 0.5)
+  end
   Gx.r(P.gray1, 0, 194, w, 4)
   Gx.r(o.edge or P.cream2, 0, 198, w, 3)
   K.floor(0, 201, w, o.floor or P.gray1, o.floor2 or P.dk2)

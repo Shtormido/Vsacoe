@@ -188,6 +188,17 @@ reg("monastyrskaya", {
     end
     for i = 1, 8 do Gx.stain(Gx.hash(i, 71) * sc.w, 22, 18, 8, P.violet1, 0.35, i + 70) end
     Gx.tiles(0, 34, sc.w, 114, 10, 6, P.green3, P.green2, 0.08)
+    K.tileArt("vault", 0, sc.w, 0.9, 50, { 0.8, 0.95, 0.9 })
+    -- остатки росписи под сводом: мозаика, местами осыпавшаяся
+    local mos = K.art("mosaic")
+    if mos then
+      love.graphics.setColor(0.8, 0.85, 0.8, 0.8)
+      love.graphics.draw(mos, 190, 36)
+      for i = 1, 260 do
+        local x, y = 190 + Gx.hash(i, 501) * 146, 36 + Gx.hash(i, 502) * 85
+        if Gx.hash(i, 503) > 0.45 then Gx.r(P.green2, x, y, 2 + Gx.hash(i, 504) * 5, 2, 0.9) end
+      end
+    end
     -- рельефные кресты, которые герои считают узором
     for x = 30, sc.w, 60 do
       Gx.r(P.green2, x, 60, 2, 12)

@@ -109,6 +109,15 @@ function Gx.tiles(x, y, w, h, tw, th, col, grout, wear)
         if hh > 2 then Gx.r(P.black, x + tx, y + ty + hh - 1, ww, 1, 0.18) end
         if hx > 0.85 then Gx.px(grout, x + tx + 2, y + ty + 1, 0.6) end
         if hx < 0.04 then Gx.line(grout, x + tx + 1, y + ty + 1, x + tx + ww - 2, y + ty + hh - 1, 0.8) end
+        -- разнотон плитки и отбитые плитки
+        local tv = Gx.hash(x + tx * 3, y + ty * 7)
+        if tv < 0.18 then Gx.r(P.black, x + tx, y + ty, ww, hh, 0.12)
+        elseif tv > 0.86 then Gx.r(P.white, x + tx, y + ty, ww, hh, 0.07) end
+        if tv > 0.975 then
+          Gx.r(P.gray1, x + tx, y + ty, ww, hh)
+          Gx.px(P.dk2, x + tx + 1, y + ty + 1)
+          Gx.px(P.dk2, x + tx + ww - 2, y + ty + hh - 2)
+        end
       end
     end
   end
@@ -256,6 +265,25 @@ function Gx.skeleton(x, y, sitting, jacket)
     Gx.px(P.black, x - 15, y - 6) Gx.px(P.black, x - 13, y - 6)
     Gx.r(P.bone, x + 15, y - 4, 3, 2)
   end
+end
+
+-------------------------------------------------------------- мокрый пол: отражение стены и света
+function Gx.reflect(canvas, w, fy, depth, alpha)
+  local copy = lg.newCanvas(w, H)
+  lg.setCanvas(copy)
+  lg.clear(0, 0, 0, 0)
+  lg.setColor(1, 1, 1, 1)
+  lg.draw(canvas)
+  lg.setCanvas(canvas)
+  for i = 0, depth - 1 do
+    local src = fy - 1 - i
+    if src < 0 then break end
+    local a = alpha * (1 - i / depth) ^ 1.5
+    local off = floor(math.sin(i * 1.3) * 1.5)
+    lg.setColor(0.7, 0.8, 1, a)
+    lg.draw(copy, lg.newQuad(0, src, w, 1, w, H), off, fy + i)
+  end
+  copy:release()
 end
 
 -------------------------------------------------------------- грязь, подтёки, трещины

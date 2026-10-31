@@ -167,6 +167,17 @@ reg("depot", {
       Gx.line(P.dk1, x, 20, x + 80, 0)
     end
     Gx.concrete(0, 60, sc.w, 146, P.dk2, P.gray1, 91)
+    K.tileArt("vault", 0, sc.w, 0.7, 56, { 0.75, 0.7, 0.65 })
+    -- ряды старых вагонов у дальней стены
+    local wag = K.art("wagon")
+    if wag then
+      for x = 0, sc.w, wag:getWidth() + 18 do
+        if not (x > 160 and x < 270) and not (x > 1020 and x < 1170) then
+          love.graphics.setColor(0.6, 0.6, 0.62, 0.9)
+          love.graphics.draw(wag, x, 146)
+        end
+      end
+    end
     -- большой рисунок: человек в рясе с раскинутыми руками
     Gx.r(P.white, 640, 70, 2, 70, 0.5)
     Gx.r(P.white, 600, 90, 82, 2, 0.5)

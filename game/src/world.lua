@@ -186,10 +186,13 @@ function Wd.enter(id, x, facing)
     lg.clear(0, 0, 0, 1)
     lg.origin()
     Gx.world = true
+    Gx.lastFloorY = nil
     def.static(sc)
     if not def.custom and def.grime ~= false and (def.ambient or { 0.05 })[1] < 0.2 then
       Gx.grime(sc)
       Fx.decorate(sc)
+      local fy = def.floorY or Gx.lastFloorY
+      if fy and def.wet ~= false then Gx.reflect(sc.canvas, sc.w, fy, 34, def.wetAlpha or 0.22) end
     end
     Gx.world = false
     lg.pop()

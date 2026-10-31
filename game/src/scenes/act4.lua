@@ -179,6 +179,7 @@ local function phoneEvent(sc)
 end
 
 reg("office", {
+  wet = false,
   vents = false,
   props = false, puddles = false,
   w = 640, spawn = 40, surface = "concrete",
