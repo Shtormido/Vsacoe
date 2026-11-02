@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.4'
+$AppVersion  = '2.5'
 $BuildDate   = '02.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -2803,6 +2803,17 @@ $MainWindowXaml = @'
 
             <Border Style="{StaticResource Card}">
               <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Агент на этом компьютере"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Если этот ПК тоже должен быть под контролем — добавьте агент в автозапуск, чтобы он стартовал при включении (задача в Планировщике, права SYSTEM). Рядом должен лежать Zapreshatel3000-Agent.ps1 и заполненный agent-config.json. На других ПК используйте файл Install-Autostart.bat из клиентского комплекта."/>
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="btnAutostartOn" Style="{StaticResource BtnPrimary}" Content="Установить агент в автозапуск"/>
+                  <Button x:Name="btnAutostartOff" Style="{StaticResource Btn}" Content="Убрать из автозапуска" Margin="10,0,0,0"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
                 <TextBlock Style="{StaticResource H2}" Text="Рассылка ограничений"/>
                 <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Берёт текущие настройки со вкладки «Ограничения» и публикует их для всех клиентов. Клиенты применят их автоматически при следующей связи. Исключения для отдельных ПК задаются ниже."/>
                 <StackPanel Orientation="Horizontal">
@@ -4151,6 +4162,19 @@ function Show-MainWindow {
             Show-Toast "Отправлено: $($r.sent), не удалось: $($r.fail)."
         }
     })
+
+    function Invoke-AgentAutostart([bool]$Install) {
+        $agentPath = Join-Path $PSScriptRoot 'Zapreshatel3000-Agent.ps1'
+        if (-not (Test-Path -LiteralPath $agentPath)) { Show-Error "Рядом нет Zapreshatel3000-Agent.ps1 — положите файл агента в папку программы."; return }
+        $sw = if ($Install) { '-InstallAutostart' } else { '-RemoveAutostart' }
+        $p = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$agentPath`"", $sw, '-NoElevate') -WindowStyle Hidden -Wait -PassThru
+        if ($p.ExitCode -eq 0) {
+            if ($Install) { Show-Info "Агент добавлен в автозапуск этого ПК (задача «Zapreshatel3000 Agent»).`r`n`r`nПроверьте, что рядом лежит заполненный agent-config.json — агент возьмёт настройки сервера из него." }
+            else { Show-Toast 'Агент убран из автозапуска этого ПК.' }
+        } else { Show-Error 'Не удалось изменить автозапуск. Нужны права администратора.' }
+    }
+    $ui.btnAutostartOn.Add_Click({ Invoke-Safe { Invoke-AgentAutostart $true } })
+    $ui.btnAutostartOff.Add_Click({ Invoke-Safe { Invoke-AgentAutostart $false } })
 
     function Load-ExceptionFields([string]$Pc) {
         $ui.txtExPc.Text = if ($Pc) { "Компьютер: $Pc" } else { 'Выберите компьютер в списке выше' }

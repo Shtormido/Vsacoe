@@ -19,12 +19,36 @@ param(
     [string]$Password,
     [int]$IntervalSec = 0,
     [int]$ListenPort = 0,
+    [switch]$InstallAutostart,
+    [switch]$RemoveAutostart,
     [switch]$NoElevate
 )
 $ErrorActionPreference = 'Stop'
+$AutostartTask = 'Zapreshatel3000 Agent'
 
 $AgentVersion = '2.4'
 $here = Split-Path -Parent $PSCommandPath
+
+# Установка/удаление автозапуска (не требует настроек сервера). Делаем это первым делом.
+if ($InstallAutostart -or $RemoveAutostart) {
+    $principal0 = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal0.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -and -not $NoElevate) {
+        $sw = if ($RemoveAutostart) { '-RemoveAutostart' } else { '-InstallAutostart' }
+        try { Start-Process powershell.exe -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", $sw) } catch { Write-Error 'Нужны права администратора.'; exit 1 }
+        exit
+    }
+    if ($RemoveAutostart) {
+        & schtasks /Delete /TN "$AutostartTask" /F 2>&1 | Out-Null
+        Write-Host 'Агент убран из автозапуска.'
+    } else {
+        $tr = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $PSCommandPath
+        & schtasks /Create /TN "$AutostartTask" /TR $tr /SC ONSTART /RU SYSTEM /RL HIGHEST /F 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { Write-Host "Агент добавлен в автозапуск (задача «$AutostartTask»). Будет стартовать при включении ПК." }
+        else { Write-Error 'Не удалось создать задачу автозапуска.' }
+    }
+    Start-Sleep -Seconds 1
+    exit
+}
 
 # Настройки из файла, если не заданы параметрами
 $cfgFile = Join-Path $here 'agent-config.json'
