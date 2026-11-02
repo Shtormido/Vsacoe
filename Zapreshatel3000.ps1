@@ -30,8 +30,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.2'
-$BuildDate   = '29.10.2026'
+$AppVersion  = '2.3'
+$BuildDate   = '02.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
 $IsCli       = $List -or $ApplyProfile -or $Backup -or $Restore -or $ExportRestrictions -or $ImportRestrictions
@@ -1508,9 +1508,10 @@ $script:RemoteListenerScript = {
                         } else {
                             $respObj = @{ ok = $true; id = ''; config = $null }
                         }
+                        $lp = 0; [void][int]::TryParse([string]$data.listenPort, [ref]$lp)
                         $R.Clients[$name] = @{
                             Pc = $name; Ip = $ip; User = [string]$data.user; Version = [string]$data.clientVersion
-                            AppliedId = [string]$data.appliedId; WantId = $id; Excluded = $excluded; LastSeen = (Get-Date)
+                            AppliedId = [string]$data.appliedId; WantId = $id; Excluded = $excluded; LastSeen = (Get-Date); ListenPort = $lp
                         }
                     }
                 }
@@ -1627,6 +1628,61 @@ function Get-RemoteClientSnapshot {
         }
     }
     return , @($rows | Sort-Object Pc)
+}
+
+# Итоговая конфигурация для конкретного ПК (база + его исключения). Должна совпадать
+# с расчётом в потоке-слушателе, чтобы id (версия) были одинаковыми при push и опросе.
+function Get-EffectiveRemoteConfig([string]$Name) {
+    if (-not (Test-Path -LiteralPath $RemotePublishedFile)) { return $null }
+    $base = $null
+    try { $base = Get-Content -LiteralPath $RemotePublishedFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
+    if (-not $base) { return $null }
+    $exAllow = @(); $exBlock = @(); $excluded = $false
+    $ex = Get-RemoteExceptions
+    if ($ex -and $ex.$Name) { $e = $ex.$Name; $exAllow = @($e.allow); $exBlock = @($e.block); $excluded = [bool]$e.exclude }
+    if ($excluded) {
+        $config = [ordered]@{
+            app = 'Zapreshatel3000'; type = 'restrictions'; version = 1
+            programs = [ordered]@{ enabled = $false; list = @() }
+            sites    = [ordered]@{ enabled = $false; mode = 'block'; block = @(); allow = @(); hosts = $false }
+            lockdowns = @{}
+        }
+    } else {
+        $allow = @(@($base.sites.allow) + @($exAllow) | Where-Object { $_ } | Select-Object -Unique)
+        $block = @(@($base.sites.block) + @($exBlock) | Where-Object { $_ } | Select-Object -Unique)
+        $lock = [ordered]@{}; foreach ($p in $base.lockdowns.PSObject.Properties) { $lock[$p.Name] = [bool]$p.Value }
+        $config = [ordered]@{
+            app = 'Zapreshatel3000'; type = 'restrictions'; version = 1
+            programs = [ordered]@{ enabled = [bool]$base.programs.enabled; list = @($base.programs.list) }
+            sites    = [ordered]@{ enabled = [bool]$base.sites.enabled; mode = [string]$base.sites.mode; block = $block; allow = $allow; hosts = [bool]$base.sites.hosts }
+            lockdowns = $lock
+        }
+    }
+    $json = $config | ConvertTo-Json -Depth 6 -Compress
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    $id = ([BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($json))) -replace '-', '').Substring(0, 12)
+    return @{ id = $id; config = $config }
+}
+
+# Принудительная отправка (push) настроек всем онлайн-клиентам
+function Push-RemoteConfigToClients {
+    $sent = 0; $fail = 0
+    $now = Get-Date
+    $clients = $script:Remote.Clients
+    foreach ($key in @($clients.Keys)) {
+        $c = $clients[$key]
+        if (-not $c) { continue }
+        if (($now - $c.LastSeen).TotalSeconds -ge 90) { continue }   # только онлайн
+        if (-not $c.ListenPort) { continue }
+        $eff = Get-EffectiveRemoteConfig $c.Pc
+        if (-not $eff) { continue }
+        $body = @{ password = $script:Remote.Password; id = $eff.id; config = $eff.config } | ConvertTo-Json -Depth 6
+        try {
+            Invoke-RestMethod -Uri ("http://{0}:{1}/push" -f $c.Ip, $c.ListenPort) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 5 | Out-Null
+            $sent++
+        } catch { $fail++ }
+    }
+    return @{ sent = $sent; fail = $fail }
 }
 
 #endregion
@@ -2750,7 +2806,8 @@ $MainWindowXaml = @'
                 <TextBlock Style="{StaticResource H2}" Text="Рассылка ограничений"/>
                 <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Берёт текущие настройки со вкладки «Ограничения» и публикует их для всех клиентов. Клиенты применят их автоматически при следующей связи. Исключения для отдельных ПК задаются ниже."/>
                 <StackPanel Orientation="Horizontal">
-                  <Button x:Name="btnPublish" Style="{StaticResource Btn}" Content="Разослать текущие ограничения"/>
+                  <Button x:Name="btnPublish" Style="{StaticResource BtnPrimary}" Content="Разослать текущие ограничения"/>
+                  <Button x:Name="btnPushNow" Style="{StaticResource Btn}" Content="Отправить принудительно сейчас" Margin="10,0,0,0"/>
                   <TextBlock x:Name="txtPubStatus" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource Muted}" Text="Пока ничего не опубликовано"/>
                 </StackPanel>
               </StackPanel>
@@ -4074,10 +4131,23 @@ function Show-MainWindow {
 
     $ui.btnPublish.Add_Click({
         Invoke-Safe {
+            if (-not $script:Remote.Running) { Show-Error 'Сначала запустите сервер.'; return }
             $cfg = Get-RestrictionsFromUI
             Publish-RemoteConfig $cfg
             Update-RemoteServerUi
-            Show-Toast 'Ограничения опубликованы. Клиенты применят их при следующей связи.'
+            Set-Busy $true
+            try { $r = Push-RemoteConfigToClients } finally { Set-Busy $false }
+            Show-Info ("Ограничения опубликованы и отправлены клиентам.`r`n`r`nОтправлено сейчас: $($r.sent), не удалось: $($r.fail).`r`nПК, которые сейчас офлайн, получат настройки при следующем включении.")
+        }
+    })
+
+    $ui.btnPushNow.Add_Click({
+        Invoke-Safe {
+            if (-not $script:Remote.Running) { Show-Error 'Сначала запустите сервер.'; return }
+            if (-not $script:Remote.PublishedId) { Show-Error 'Сначала нажмите «Разослать текущие ограничения».'; return }
+            Set-Busy $true
+            try { $r = Push-RemoteConfigToClients } finally { Set-Busy $false }
+            Show-Toast "Отправлено: $($r.sent), не удалось: $($r.fail)."
         }
     })
 

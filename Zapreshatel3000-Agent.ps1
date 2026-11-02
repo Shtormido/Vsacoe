@@ -4,12 +4,10 @@
     Клиент Zapreshatel3000 — агент для удалённого управления по локальной сети.
 
 .DESCRIPTION
-    Периодически связывается с главным приложением (сервером), сообщает свой статус
-    (имя ПК, пользователь, версия, применённая версия настроек) и автоматически
-    применяет присланные ограничения. Требует прав администратора (для применения).
-
-    Настройки берутся из параметров или из файла agent-config.json рядом со скриптом.
-    Рядом должен лежать основной файл Zapreshatel3000.ps1 — через него применяются ограничения.
+    Принимает настройки, которые СЕРВЕР отправляет принудительно (push), и применяет их
+    сразу. Дополнительно периодически связывается с сервером как подстраховка (если ПК был
+    выключен в момент рассылки — догонит при следующем запуске) и сообщает свой статус.
+    Требует прав администратора. Рядом должен лежать Zapreshatel3000.ps1.
 
 .EXAMPLE
     .\Zapreshatel3000-Agent.ps1 -Server 192.168.1.10 -Port 8777 -Password секрет
@@ -20,11 +18,12 @@ param(
     [int]$Port = 0,
     [string]$Password,
     [int]$IntervalSec = 0,
+    [int]$ListenPort = 0,
     [switch]$NoElevate
 )
 $ErrorActionPreference = 'Stop'
 
-$AgentVersion = '2.1'
+$AgentVersion = '2.3'
 $here = Split-Path -Parent $PSCommandPath
 
 # Настройки из файла, если не заданы параметрами
@@ -32,23 +31,25 @@ $cfgFile = Join-Path $here 'agent-config.json'
 if (Test-Path -LiteralPath $cfgFile) {
     try {
         $c = Get-Content -LiteralPath $cfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (-not $Server -and $c.server)      { $Server = [string]$c.server }
-        if (-not $Password -and $c.password)  { $Password = [string]$c.password }
-        if ($Port -le 0 -and $c.port)         { $Port = [int]$c.port }
+        if (-not $Server -and $c.server)         { $Server = [string]$c.server }
+        if (-not $Password -and $c.password)     { $Password = [string]$c.password }
+        if ($Port -le 0 -and $c.port)            { $Port = [int]$c.port }
         if ($IntervalSec -le 0 -and $c.interval) { $IntervalSec = [int]$c.interval }
+        if ($ListenPort -le 0 -and $c.listenPort){ $ListenPort = [int]$c.listenPort }
     } catch { Write-Warning "Не удалось прочитать agent-config.json: $($_.Exception.Message)" }
 }
 if ($Port -le 0) { $Port = 8777 }
 if ($IntervalSec -le 0) { $IntervalSec = 30 }
+if ($ListenPort -le 0) { $ListenPort = 8778 }
 
 if (-not $Server) { Write-Error 'Не задан адрес сервера. Укажите -Server или server в agent-config.json.'; exit 1 }
 
-# Самоповышение до администратора — применение ограничений требует прав админа
+# Самоповышение до администратора — применение ограничений и приёмник требуют прав админа
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 $IsAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $IsAdmin -and -not $NoElevate) {
     $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"",
-           '-Server', $Server, '-Port', "$Port", '-Password', "`"$Password`"", '-IntervalSec', "$IntervalSec")
+           '-Server', $Server, '-Port', "$Port", '-Password', "`"$Password`"", '-IntervalSec', "$IntervalSec", '-ListenPort', "$ListenPort")
     try { Start-Process powershell.exe -Verb RunAs -ArgumentList $a } catch { Write-Error 'Не удалось получить права администратора.'; exit 1 }
     exit
 }
@@ -56,34 +57,100 @@ if (-not $IsAdmin -and -not $NoElevate) {
 $main = Join-Path $here 'Zapreshatel3000.ps1'
 if (-not (Test-Path -LiteralPath $main)) { Write-Error "Рядом нет Zapreshatel3000.ps1 — он нужен для применения настроек ($main)."; exit 1 }
 
-# Запоминаем, какая версия настроек уже применена (чтобы не применять одно и то же)
+# Разрешаем входящий порт приёмника в брандмауэре (мы админ — можем сами)
+try {
+    & netsh advfirewall firewall delete rule name="Zapreshatel3000 Agent" 2>&1 | Out-Null
+    & netsh advfirewall firewall add rule name="Zapreshatel3000 Agent" dir=in action=allow protocol=TCP localport=$ListenPort 2>&1 | Out-Null
+} catch { }
+
+# Запоминаем, какая версия настроек уже применена
 $stateDir = Join-Path $env:LOCALAPPDATA 'Zapreshatel3000'
 $stateFile = Join-Path $stateDir 'agent_state.json'
 $appliedId = ''
 if (Test-Path -LiteralPath $stateFile) { try { $appliedId = [string]((Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json).appliedId) } catch { } }
 
-$uri = "http://{0}:{1}/heartbeat" -f $Server, $Port
-Write-Host "Агент Zapreshatel3000 $AgentVersion. Сервер: $uri. Интервал: $IntervalSec с. Ctrl+C для выхода."
+# Общее состояние (делится между приёмником и циклом-подстраховкой)
+$S = [hashtable]::Synchronized(@{
+    AppliedId = $appliedId; Lock = (New-Object object); Main = $main
+    StateFile = $stateFile; StateDir = $stateDir; Password = $Password
+    ListenPort = $ListenPort; Running = $true; Listener = $null
+})
 
-while ($true) {
+# Единая логика применения конфигурации (используется и приёмником, и циклом)
+$applyScript = {
+    param($S, $configObj, $id)
+    if (-not $id) { return $false }
+    [System.Threading.Monitor]::Enter($S.Lock)
     try {
-        $body = @{ name = $env:COMPUTERNAME; user = $env:USERNAME; clientVersion = $AgentVersion; appliedId = $appliedId; password = $Password } | ConvertTo-Json
-        $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 15
-        if ($resp.ok -and $resp.id -and $resp.id -ne $appliedId -and $resp.config) {
-            $tmp = Join-Path $env:TEMP ('zap_remote_{0}.json' -f ([guid]::NewGuid().ToString('N')))
-            ($resp.config | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $tmp -Encoding UTF8
-            Write-Host ("[{0:HH:mm:ss}] Получены новые настройки ({1}) — применяю..." -f (Get-Date), $resp.id)
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $main -ImportRestrictions $tmp -NoElevate 2>&1 | Out-Null
-            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-            $appliedId = [string]$resp.id
-            try {
-                New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-                @{ appliedId = $appliedId; appliedAt = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
-            } catch { }
-            Write-Host ("[{0:HH:mm:ss}] Применено." -f (Get-Date))
-        }
-    } catch {
-        Write-Host ("[{0:HH:mm:ss}] Нет связи с сервером: {1}" -f (Get-Date), $_.Exception.Message)
+        if ([string]$id -eq [string]$S.AppliedId) { return $false }
+        $tmp = Join-Path $env:TEMP ('zap_remote_{0}.json' -f ([guid]::NewGuid().ToString('N')))
+        ($configObj | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $tmp -Encoding UTF8
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $S.Main -ImportRestrictions $tmp -NoElevate 2>&1 | Out-Null
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        $S.AppliedId = [string]$id
+        try {
+            New-Item -ItemType Directory -Path $S.StateDir -Force | Out-Null
+            @{ appliedId = $S.AppliedId; appliedAt = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath $S.StateFile -Encoding UTF8
+        } catch { }
+        return $true
+    } finally { [System.Threading.Monitor]::Exit($S.Lock) }
+}
+$applyText = $applyScript.ToString()
+
+# Приёмник push от сервера (фоновый поток)
+$listenerScript = {
+    param($S, $ApplyText)
+    $apply = [scriptblock]::Create($ApplyText)
+    $listener = New-Object System.Net.HttpListener
+    $listener.Prefixes.Add("http://+:$($S.ListenPort)/")
+    try { $listener.Start() } catch { return }
+    $S.Listener = $listener
+    while ($S.Running) {
+        $ctx = $null
+        try { $ctx = $listener.GetContext() } catch { break }
+        try {
+            $req = $ctx.Request
+            $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
+            $raw = $reader.ReadToEnd(); $reader.Close()
+            $data = $null; try { $data = $raw | ConvertFrom-Json } catch { }
+            $resp = @{ ok = $false }
+            if ($data -and ([string]$data.password -eq [string]$S.Password) -and $req.Url.AbsolutePath -eq '/push') {
+                $applied = & $apply $S $data.config ([string]$data.id)
+                $resp = @{ ok = $true; applied = [bool]$applied }
+            }
+            $out = [System.Text.Encoding]::UTF8.GetBytes(($resp | ConvertTo-Json))
+            $ctx.Response.ContentType = 'application/json; charset=utf-8'
+            $ctx.Response.OutputStream.Write($out, 0, $out.Length)
+        } catch { } finally { try { $ctx.Response.Close() } catch { } }
     }
-    Start-Sleep -Seconds $IntervalSec
+    try { $listener.Stop(); $listener.Close() } catch { }
+}
+
+$rs = [runspacefactory]::CreateRunspace(); $rs.ApartmentState = 'MTA'; $rs.ThreadOptions = 'ReuseThread'; $rs.Open()
+$psListener = [powershell]::Create(); $psListener.Runspace = $rs
+[void]$psListener.AddScript($listenerScript.ToString()).AddArgument($S).AddArgument($applyText)
+[void]$psListener.BeginInvoke()
+
+$uri = "http://{0}:{1}/heartbeat" -f $Server, $Port
+Write-Host "Агент Zapreshatel3000 $AgentVersion. Сервер: $uri. Приём push на порту $ListenPort. Ctrl+C для выхода."
+
+# Цикл-подстраховка: регистрируемся на сервере, сообщаем статус, догоняем настройки если push не дошёл
+try {
+    while ($true) {
+        try {
+            $body = @{ name = $env:COMPUTERNAME; user = $env:USERNAME; clientVersion = $AgentVersion; appliedId = $S.AppliedId; listenPort = $ListenPort; password = $Password } | ConvertTo-Json
+            $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 15
+            if ($resp.ok -and $resp.id -and $resp.id -ne $S.AppliedId -and $resp.config) {
+                Write-Host ("[{0:HH:mm:ss}] Догоняю настройки ({1})..." -f (Get-Date), $resp.id)
+                [void](& $applyScript $S $resp.config ([string]$resp.id))
+                Write-Host ("[{0:HH:mm:ss}] Применено." -f (Get-Date))
+            }
+        } catch {
+            Write-Host ("[{0:HH:mm:ss}] Нет связи с сервером: {1}" -f (Get-Date), $_.Exception.Message)
+        }
+        Start-Sleep -Seconds $IntervalSec
+    }
+} finally {
+    $S.Running = $false
+    try { if ($S.Listener) { $S.Listener.Stop() } } catch { }
 }
