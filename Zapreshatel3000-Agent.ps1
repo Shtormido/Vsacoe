@@ -26,7 +26,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $AutostartTask = 'Zapreshatel3000 Agent'
 
-$AgentVersion = '2.4'
+$AgentVersion = '2.6'
 $here = Split-Path -Parent $PSCommandPath
 
 # Установка/удаление автозапуска (не требует настроек сервера). Делаем это первым делом.
@@ -98,6 +98,7 @@ $S = [hashtable]::Synchronized(@{
     AppliedId = $appliedId; Lock = (New-Object object); Main = $main
     StateFile = $stateFile; StateDir = $stateDir; Password = $Password
     ListenPort = $ListenPort; Running = $true; Listener = $null
+    Log = [System.Collections.Queue]::Synchronized((New-Object System.Collections.Queue))
 })
 
 # Единая логика применения конфигурации (используется и приёмником, и циклом)
@@ -109,13 +110,17 @@ $applyScript = {
         if ([string]$id -eq [string]$S.AppliedId) { return $false }
         $tmp = Join-Path $env:TEMP ('zap_remote_{0}.json' -f ([guid]::NewGuid().ToString('N')))
         ($configObj | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $tmp -Encoding UTF8
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $S.Main -ImportRestrictions $tmp -NoElevate 2>&1 | Out-Null
+        $S.Log.Enqueue(("[{0:HH:mm:ss}] Получены новые ограничения (версия {1}). Применяю:" -f (Get-Date), $id))
+        # Вывод применения (в т.ч. сводку «какие ограничения вводятся») показываем в окне агента
+        $outp = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $S.Main -ImportRestrictions $tmp -NoElevate 2>&1
+        foreach ($line in $outp) { $t = [string]$line; if ($t.Trim()) { $S.Log.Enqueue('    ' + $t) } }
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
         $S.AppliedId = [string]$id
         try {
             New-Item -ItemType Directory -Path $S.StateDir -Force | Out-Null
             @{ appliedId = $S.AppliedId; appliedAt = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath $S.StateFile -Encoding UTF8
         } catch { }
+        $S.Log.Enqueue(("[{0:HH:mm:ss}] Ограничения применены." -f (Get-Date)))
         return $true
     } finally { [System.Threading.Monitor]::Exit($S.Lock) }
 }
@@ -170,16 +175,18 @@ try {
                 $connected = $true
             }
             if ($resp.ok -and $resp.id -and $resp.id -ne $S.AppliedId -and $resp.config) {
-                Write-Host ("[{0:HH:mm:ss}] Догоняю настройки ({1})..." -f (Get-Date), $resp.id)
                 [void](& $applyScript $S $resp.config ([string]$resp.id))
-                Write-Host ("[{0:HH:mm:ss}] Применено." -f (Get-Date))
             }
         } catch {
             if ($connected) { Write-Host ("[{0:HH:mm:ss}] Потеряна связь с сервером." -f (Get-Date)) -ForegroundColor Yellow }
             else { Write-Host ("[{0:HH:mm:ss}] Нет связи с сервером: {1}" -f (Get-Date), $_.Exception.Message) }
             $connected = $false
         }
-        Start-Sleep -Seconds $IntervalSec
+        # Ждём до следующей проверки, попутно выводим журнал применения (в т.ч. от push из фонового потока)
+        for ($i = 0; $i -lt $IntervalSec; $i++) {
+            while ($S.Log.Count -gt 0) { Write-Host ([string]$S.Log.Dequeue()) }
+            Start-Sleep -Seconds 1
+        }
     }
 } finally {
     $S.Running = $false

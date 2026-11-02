@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.5'
+$AppVersion  = '2.6'
 $BuildDate   = '02.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -4149,7 +4149,8 @@ function Show-MainWindow {
             Update-RemoteServerUi
             Set-Busy $true
             try { $r = Push-RemoteConfigToClients } finally { Set-Busy $false }
-            Show-Info ("Ограничения опубликованы и отправлены клиентам.`r`n`r`nОтправлено сейчас: $($r.sent), не удалось: $($r.fail).`r`nПК, которые сейчас офлайн, получат настройки при следующем включении.")
+            Show-Info ("Отправлены следующие ограничения:`r`n`r`n" + (Get-RestrictionSummary $cfg) +
+                "`r`n`r`nОтправлено сейчас: $($r.sent), не удалось: $($r.fail).`r`nПК, которые сейчас офлайн, получат настройки при следующем включении.")
         }
     })
 
