@@ -23,7 +23,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$AgentVersion = '2.3'
+$AgentVersion = '2.4'
 $here = Split-Path -Parent $PSCommandPath
 
 # Настройки из файла, если не заданы параметрами
@@ -135,18 +135,25 @@ $uri = "http://{0}:{1}/heartbeat" -f $Server, $Port
 Write-Host "Агент Zapreshatel3000 $AgentVersion. Сервер: $uri. Приём push на порту $ListenPort. Ctrl+C для выхода."
 
 # Цикл-подстраховка: регистрируемся на сервере, сообщаем статус, догоняем настройки если push не дошёл
+$connected = $false
 try {
     while ($true) {
         try {
             $body = @{ name = $env:COMPUTERNAME; user = $env:USERNAME; clientVersion = $AgentVersion; appliedId = $S.AppliedId; listenPort = $ListenPort; password = $Password } | ConvertTo-Json
             $resp = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 15
+            if (-not $connected) {
+                Write-Host ("[{0:HH:mm:ss}] Подключился к серверу {1}" -f (Get-Date), $uri) -ForegroundColor Green
+                $connected = $true
+            }
             if ($resp.ok -and $resp.id -and $resp.id -ne $S.AppliedId -and $resp.config) {
                 Write-Host ("[{0:HH:mm:ss}] Догоняю настройки ({1})..." -f (Get-Date), $resp.id)
                 [void](& $applyScript $S $resp.config ([string]$resp.id))
                 Write-Host ("[{0:HH:mm:ss}] Применено." -f (Get-Date))
             }
         } catch {
-            Write-Host ("[{0:HH:mm:ss}] Нет связи с сервером: {1}" -f (Get-Date), $_.Exception.Message)
+            if ($connected) { Write-Host ("[{0:HH:mm:ss}] Потеряна связь с сервером." -f (Get-Date)) -ForegroundColor Yellow }
+            else { Write-Host ("[{0:HH:mm:ss}] Нет связи с сервером: {1}" -f (Get-Date), $_.Exception.Message) }
+            $connected = $false
         }
         Start-Sleep -Seconds $IntervalSec
     }

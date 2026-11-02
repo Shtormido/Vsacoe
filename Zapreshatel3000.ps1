@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.3'
+$AppVersion  = '2.4'
 $BuildDate   = '02.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -4099,6 +4099,7 @@ function Show-MainWindow {
     $ui.txtSrvPass.Text = [string]$script:Remote.Password
     $ui.txtSrvAddr.Text = "IP этого компьютера для клиентов: $(Get-LocalIPv4)"
     $script:RemoteSelectedPc = ''
+    $script:RemoteOnlineSeen = @{}
     $clientRows = New-Object System.Collections.ObjectModel.ObservableCollection[object]
     $ui.lvClients.ItemsSource = $clientRows
 
@@ -4194,6 +4195,13 @@ function Show-MainWindow {
         Invoke-Safe {
             if (-not $script:Remote.Running) { return }
             $snap = @(Get-RemoteClientSnapshot)
+            # Уведомление, когда ПК выходит на связь (новый или вернулся из офлайна)
+            foreach ($r in $snap) {
+                $isOnline = ($r.Online -eq 'онлайн')
+                $was = [bool]$script:RemoteOnlineSeen[$r.Pc]
+                if ($isOnline -and -not $was) { Show-Toast "$($r.Pc) подключился к серверу" }
+                $script:RemoteOnlineSeen[$r.Pc] = $isOnline
+            }
             $clientRows.Clear()
             foreach ($r in $snap) { [void]$clientRows.Add($r) }
             $online = @($snap | Where-Object { $_.Online -eq 'онлайн' }).Count
