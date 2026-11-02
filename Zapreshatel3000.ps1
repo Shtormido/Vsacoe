@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.6'
+$AppVersion  = '2.7'
 $BuildDate   = '02.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1678,7 +1678,7 @@ function Push-RemoteConfigToClients {
         if (-not $eff) { continue }
         $body = @{ password = $script:Remote.Password; id = $eff.id; config = $eff.config } | ConvertTo-Json -Depth 6
         try {
-            Invoke-RestMethod -Uri ("http://{0}:{1}/push" -f $c.Ip, $c.ListenPort) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 5 | Out-Null
+            Invoke-RestMethod -Uri ("http://{0}:{1}/push" -f $c.Ip, $c.ListenPort) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 3 | Out-Null
             $sent++
         } catch { $fail++ }
     }

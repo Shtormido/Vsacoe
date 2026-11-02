@@ -26,7 +26,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $AutostartTask = 'Zapreshatel3000 Agent'
 
-$AgentVersion = '2.6'
+$AgentVersion = '2.7'
 $here = Split-Path -Parent $PSCommandPath
 
 # Установка/удаление автозапуска (не требует настроек сервера). Делаем это первым делом.
@@ -63,7 +63,7 @@ if (Test-Path -LiteralPath $cfgFile) {
     } catch { Write-Warning "Не удалось прочитать agent-config.json: $($_.Exception.Message)" }
 }
 if ($Port -le 0) { $Port = 8777 }
-if ($IntervalSec -le 0) { $IntervalSec = 30 }
+if ($IntervalSec -le 0) { $IntervalSec = 15 }
 if ($ListenPort -le 0) { $ListenPort = 8778 }
 
 if (-not $Server) { Write-Error 'Не задан адрес сервера. Укажите -Server или server в agent-config.json.'; exit 1 }
@@ -99,6 +99,7 @@ $S = [hashtable]::Synchronized(@{
     StateFile = $stateFile; StateDir = $stateDir; Password = $Password
     ListenPort = $ListenPort; Running = $true; Listener = $null
     Log = [System.Collections.Queue]::Synchronized((New-Object System.Collections.Queue))
+    ReportNow = $false
 })
 
 # Единая логика применения конфигурации (используется и приёмником, и циклом)
@@ -121,6 +122,7 @@ $applyScript = {
             @{ appliedId = $S.AppliedId; appliedAt = (Get-Date).ToString('s') } | ConvertTo-Json | Set-Content -LiteralPath $S.StateFile -Encoding UTF8
         } catch { }
         $S.Log.Enqueue(("[{0:HH:mm:ss}] Ограничения применены." -f (Get-Date)))
+        $S.ReportNow = $true   # сообщить серверу о применении немедленно, не ждать цикла
         return $true
     } finally { [System.Threading.Monitor]::Exit($S.Lock) }
 }
@@ -182,9 +184,10 @@ try {
             else { Write-Host ("[{0:HH:mm:ss}] Нет связи с сервером: {1}" -f (Get-Date), $_.Exception.Message) }
             $connected = $false
         }
-        # Ждём до следующей проверки, попутно выводим журнал применения (в т.ч. от push из фонового потока)
+        # Ждём до следующей проверки, попутно выводим журнал и сразу отчитываемся после применения push
         for ($i = 0; $i -lt $IntervalSec; $i++) {
             while ($S.Log.Count -gt 0) { Write-Host ([string]$S.Log.Dequeue()) }
+            if ($S.ReportNow) { $S.ReportNow = $false; break }   # push применён — сразу сообщить серверу статус
             Start-Sleep -Seconds 1
         }
     }
