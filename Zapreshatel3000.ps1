@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.8'
+$AppVersion  = '2.9'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1147,10 +1147,10 @@ function Get-NonAdminRestrictions {
 }
 
 # Файл настроек ограничений: им можно перенести запреты на другой компьютер
-function Export-RestrictionConfig($Config, [string]$File) {
+function New-RestrictionObject($Config) {
     $lock = [ordered]@{}
     foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$Config.Lockdowns[$l.Id] }
-    $obj = [ordered]@{
+    return [ordered]@{
         app       = $AppName
         type      = 'restrictions'
         version   = 1
@@ -1166,14 +1166,18 @@ function Export-RestrictionConfig($Config, [string]$File) {
         }
         lockdowns = $lock
     }
+}
+
+function Export-RestrictionConfig($Config, [string]$File) {
+    $obj = New-RestrictionObject $Config
     $dir = Split-Path -Parent $File
     if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $obj | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $File -Encoding UTF8
 }
 
-function Import-RestrictionConfig([string]$File) {
-    $j = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($j.type -ne 'restrictions') { throw "Файл не является файлом ограничений $AppName`: $File" }
+# Разбор уже прочитанного JSON-объекта ограничений в конфиг программы
+function New-ConfigFromRestrictionObject($j) {
+    if ($j.type -ne 'restrictions') { throw "Это не файл ограничений $AppName." }
     $lock = @{}
     foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$j.lockdowns.($l.Id) }
     $mode = 'block'
@@ -1192,6 +1196,12 @@ function Import-RestrictionConfig([string]$File) {
         HostsEnabled     = [bool]$j.sites.hosts
         Lockdowns        = $lock
     }
+}
+
+function Import-RestrictionConfig([string]$File) {
+    $j = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
+    try { return (New-ConfigFromRestrictionObject $j) }
+    catch { throw "Файл не является файлом ограничений $AppName`: $File" }
 }
 
 function Get-RestrictionSummary($Config) {
@@ -1425,6 +1435,133 @@ function Get-UserRestrictionStatus {
 
 #endregion
 
+#region Сеть: главный ПК рассылает ограничения остальным по требованию
+
+$NetSettingsFile = Join-Path $DataDir 'network_settings.json'
+
+# Состояние сетевого приёма (делится с фоновым потоком-приёмником)
+$script:Net = [hashtable]::Synchronized(@{
+    RecvOn   = $false
+    Port     = 8777
+    Password = ''
+    Listener = $null; PS = $null; RS = $null; Error = ''
+    Incoming = [System.Collections.Queue]::Synchronized((New-Object System.Collections.Queue))
+    LastFrom = ''
+    Targets  = @()
+})
+
+# Фоновый приёмник: принимает команды только когда их присылает главный ПК (без опроса сети)
+$script:NetListenerScript = {
+    param($N)
+    $listener = $null
+    try {
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add("http://+:$($N.Port)/")
+        $listener.Start()
+        $N.Listener = $listener; $N.Error = ''
+        while ($N.RecvOn) {
+            $ctx = $null
+            try { $ctx = $listener.GetContext() } catch { break }
+            try {
+                $req = $ctx.Request
+                $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
+                $raw = $reader.ReadToEnd(); $reader.Close()
+                $data = $null; try { $data = $raw | ConvertFrom-Json } catch { }
+                $resp = @{ ok = $false }
+                if ($data -and ([string]$data.password -eq [string]$N.Password)) {
+                    $path = $req.Url.AbsolutePath
+                    if ($path -eq '/ping') {
+                        $resp = @{ ok = $true; name = $env:COMPUTERNAME }
+                    } elseif ($path -eq '/apply' -and $data.config) {
+                        $N.Incoming.Enqueue(($data.config | ConvertTo-Json -Depth 6))
+                        $N.LastFrom = ("{0} ({1:HH:mm:ss})" -f $req.RemoteEndPoint.Address, (Get-Date))
+                        $resp = @{ ok = $true; name = $env:COMPUTERNAME }
+                    }
+                }
+                $out = [System.Text.Encoding]::UTF8.GetBytes(($resp | ConvertTo-Json))
+                $ctx.Response.ContentType = 'application/json; charset=utf-8'
+                $ctx.Response.OutputStream.Write($out, 0, $out.Length)
+            } catch { } finally { try { $ctx.Response.Close() } catch { } }
+        }
+    } catch { $N.Error = $_.Exception.Message } finally {
+        try { if ($listener) { $listener.Stop(); $listener.Close() } } catch { }
+        $N.RecvOn = $false
+    }
+}
+
+function Start-NetReceiver {
+    if ($script:Net.RecvOn) { return }
+    # Разрешаем входящий порт в брандмауэре (мы админ)
+    try {
+        & netsh advfirewall firewall delete rule name="Zapreshatel3000 Net" 2>&1 | Out-Null
+        & netsh advfirewall firewall add rule name="Zapreshatel3000 Net" dir=in action=allow protocol=TCP localport=$($script:Net.Port) 2>&1 | Out-Null
+    } catch { }
+    $script:Net.RecvOn = $true; $script:Net.Error = ''
+    $rs = [runspacefactory]::CreateRunspace(); $rs.ApartmentState = 'MTA'; $rs.ThreadOptions = 'ReuseThread'; $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript($script:NetListenerScript.ToString()).AddArgument($script:Net)
+    $script:Net.PS = $ps; $script:Net.RS = $rs
+    [void]$ps.BeginInvoke()
+    Start-Sleep -Milliseconds 300
+    if ($script:Net.Error) { $script:Net.RecvOn = $false; throw $script:Net.Error }
+}
+
+function Stop-NetReceiver {
+    $script:Net.RecvOn = $false
+    try { if ($script:Net.Listener) { $script:Net.Listener.Stop() } } catch { }
+    try { if ($script:Net.PS) { $script:Net.PS.Stop(); $script:Net.PS.Dispose() } } catch { }
+    try { if ($script:Net.RS) { $script:Net.RS.Close(); $script:Net.RS.Dispose() } } catch { }
+    $script:Net.PS = $null; $script:Net.RS = $null; $script:Net.Listener = $null
+}
+
+# Отправка текущих ограничений выбранным ПК (только по нажатию — сеть не засоряется)
+function Send-ConfigToTargets([string[]]$Targets, [int]$Port, [string]$Password, $Config) {
+    $obj = New-RestrictionObject $Config
+    $body = @{ password = $Password; config = $obj } | ConvertTo-Json -Depth 6
+    $results = @()
+    foreach ($t in $Targets) {
+        $ip = ([string]$t).Trim(); if (-not $ip) { continue }
+        try {
+            $r = Invoke-RestMethod -Uri ("http://{0}:{1}/apply" -f $ip, $Port) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 4
+            $results += [pscustomobject]@{ Ip = $ip; Ok = [bool]$r.ok; Name = [string]$r.name }
+        } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = '' } }
+    }
+    return , $results
+}
+
+function Test-NetTargets([string[]]$Targets, [int]$Port, [string]$Password) {
+    $body = @{ password = $Password } | ConvertTo-Json
+    $results = @()
+    foreach ($t in $Targets) {
+        $ip = ([string]$t).Trim(); if (-not $ip) { continue }
+        try {
+            $r = Invoke-RestMethod -Uri ("http://{0}:{1}/ping" -f $ip, $Port) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 3
+            $results += [pscustomobject]@{ Ip = $ip; Ok = [bool]$r.ok; Name = [string]$r.name }
+        } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = '' } }
+    }
+    return , $results
+}
+
+function Save-NetSettings {
+    try {
+        [ordered]@{ recvOn = $script:Net.RecvOn; port = $script:Net.Port; password = $script:Net.Password; targets = @($script:Net.Targets) } |
+            ConvertTo-Json | Set-Content -LiteralPath $NetSettingsFile -Encoding UTF8
+    } catch { Write-Log "Не удалось сохранить сетевые настройки: $($_.Exception.Message)" }
+}
+
+function Load-NetSettings {
+    if (Test-Path -LiteralPath $NetSettingsFile) {
+        try {
+            $s = Get-Content -LiteralPath $NetSettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($s.port)     { $script:Net.Port = [int]$s.port }
+            if ($s.password) { $script:Net.Password = [string]$s.password }
+            $script:Net.Targets = @($s.targets)
+            $script:Net.RecvOn = $false   # приём включает пользователь вручную
+        } catch { }
+    }
+}
+
+#endregion
 
 #region Режим командной строки
 
@@ -1818,6 +1955,7 @@ $MainWindowXaml = @'
           <RadioButton x:Name="navTools" Style="{StaticResource Nav}" Tag="&#xE90F;" Content="Инструменты"/>
           <RadioButton x:Name="navAudit" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="Журнал"/>
           <RadioButton x:Name="navConfig" Style="{StaticResource Nav}" Tag="&#xE8B5;" Content="Конфигурация"/>
+          <RadioButton x:Name="navNet" Style="{StaticResource Nav}" Tag="&#xE968;" Content="Сеть"/>
           <RadioButton x:Name="navAbout" Style="{StaticResource Nav}" Tag="&#xE946;" Content="О программе"/>
         </StackPanel>
       </DockPanel>
@@ -2540,6 +2678,57 @@ $MainWindowXaml = @'
           </StackPanel>
         </ScrollViewer>
 
+        <!-- ===== Сеть ===== -->
+        <ScrollViewer x:Name="pageNet" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+          <StackPanel Margin="32,0,32,24" MaxWidth="900" HorizontalAlignment="Left">
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Этот компьютер (приём)"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Включите приём, если этим ПК должен управлять главный компьютер. Программа будет ждать команду и применит присланные ограничения. Сеть не опрашивается — связь происходит, только когда главный ПК сам присылает настройки."/>
+                <CheckBox x:Name="chkNetRecv" Style="{StaticResource Switch}" Content="Разрешить приём настроек с главного ПК"/>
+                <Grid Margin="0,12,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="Порт:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBox x:Name="txtNetPort" Grid.Column="1" Style="{StaticResource Input}" Text="8777" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="2" Text="Пароль:" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                  <TextBox x:Name="txtNetPass" Grid.Column="3" Style="{StaticResource Input}" VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock x:Name="txtNetRecvStatus" Style="{StaticResource Muted}" Margin="0,10,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource H2}" Text="Рассылка на другие ПК (этот ПК — главный)"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Добавьте IP-адреса компьютеров, на которых включён приём (тот же порт и пароль). По кнопке программа применит на них текущие ограничения со вкладки «Ограничения». Отправка происходит только по нажатию."/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                  <TextBox x:Name="txtNetTargetAdd" Style="{StaticResource Input}" Width="260" Tag="IP, например 192.168.1.42"/>
+                  <Button x:Name="btnNetAdd" Style="{StaticResource Btn}" Content="Добавить ПК" Margin="10,0,0,0"/>
+                  <Button x:Name="btnNetDel" Style="{StaticResource Btn}" Content="Убрать выбранный" Margin="10,0,0,0"/>
+                </StackPanel>
+                <ListBox x:Name="lbNetTargets" Height="140" BorderThickness="1" BorderBrush="#E5E7EB"/>
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                  <Button x:Name="btnNetSend" Style="{StaticResource BtnPrimary}" Content="Применить ограничения на этих ПК"/>
+                  <Button x:Name="btnNetPing" Style="{StaticResource Btn}" Content="Проверить связь" Margin="10,0,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="txtNetSendStatus" Style="{StaticResource Muted}" Margin="0,12,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Text="Как пользоваться: на подконтрольных ПК откройте программу и включите «Разрешить приём» (один порт и пароль на всю сеть). На главном ПК добавьте их IP и нажмите «Применить ограничения на этих ПК». Программа на подконтрольных ПК должна быть запущена (можно свернуть). Постоянного трафика нет — только в момент отправки."/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+
         <!-- ===== О программе ===== -->
         <ScrollViewer x:Name="pageAbout" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
           <StackPanel Margin="32,0,32,24" MaxWidth="760" HorizontalAlignment="Left">
@@ -2843,6 +3032,7 @@ function Show-MainWindow {
         navTools    = @('pageTools', 'Инструменты', 'Применение и диагностика групповых политик')
         navAudit    = @('pageAudit', 'Журнал', 'Запуск приложений и посещённые сайты на этом компьютере')
         navConfig   = @('pageConfig', 'Конфигурация', 'Сохранение и перенос всех настроек на другое устройство')
+        navNet      = @('pageNet', 'Сеть', 'Главный ПК по требованию рассылает ограничения остальным в локальной сети')
         navAbout    = @('pageAbout', 'О программе', 'Сведения о программе и разработчике')
     }
     $script:RegScanned = $false
@@ -2859,6 +3049,7 @@ function Show-MainWindow {
         if ($Nav -eq 'navProfiles') { Update-ProfileList }
         if ($Nav -eq 'navAudit') { if ($ui.rbLogSites.IsChecked -eq $true) { Update-SiteView } else { Update-AuditView } }
         if ($Nav -eq 'navConfig') { Update-CfgSummary }
+        if ($Nav -eq 'navNet') { Update-NetRecvUi }
     }
     foreach ($k in $pageInfo.Keys) {
         $ui[$k].Add_Checked({ param($s, $e) Invoke-Safe { Show-Page $s.Name } })
@@ -3814,6 +4005,113 @@ function Show-MainWindow {
 
     #endregion
 
+    #region Вкладка «Сеть»
+
+    Load-NetSettings
+    $ui.txtNetPort.Text = [string]$script:Net.Port
+    $ui.txtNetPass.Text = [string]$script:Net.Password
+    $netTargets = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    foreach ($t in @($script:Net.Targets)) { if ($t) { $netTargets.Add([string]$t) } }
+    $ui.lbNetTargets.ItemsSource = $netTargets
+
+    function Update-NetRecvUi {
+        if ($script:Net.RecvOn) {
+            $ui.chkNetRecv.IsChecked = $true
+            $ui.txtNetRecvStatus.Text = "Приём включён на порту $($script:Net.Port). IP этого ПК: $(Get-LocalIPv4). Ожидаю команды с главного ПК."
+        } else {
+            $ui.txtNetRecvStatus.Text = "Приём выключен. IP этого ПК: $(Get-LocalIPv4)."
+        }
+    }
+
+    function Get-LocalIPv4 {
+        try {
+            @(Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction Stop | Where-Object { $_.IPEnabled -and $_.IPAddress } |
+                ForEach-Object { $_.IPAddress } | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -ne '127.0.0.1' }) -join ', '
+        } catch { '' }
+    }
+
+    $ui.chkNetRecv.Add_Click({
+        Invoke-Safe {
+            if ($ui.chkNetRecv.IsChecked -eq $true) {
+                if (-not $IsAdmin) { Show-Error 'Для приёма нужны права администратора.'; $ui.chkNetRecv.IsChecked = $false; return }
+                $port = 0; if (-not [int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port) -or $port -lt 1 -or $port -gt 65535) { Show-Error 'Укажите корректный порт (1–65535).'; $ui.chkNetRecv.IsChecked = $false; return }
+                if (-not $ui.txtNetPass.Text.Trim()) { Show-Error 'Задайте пароль — он защищает от чужих ПК в сети.'; $ui.chkNetRecv.IsChecked = $false; return }
+                $script:Net.Port = $port; $script:Net.Password = $ui.txtNetPass.Text.Trim()
+                try { Start-NetReceiver } catch { Show-Error "Не удалось включить приём: $($_.Exception.Message)`r`n`r`nВозможно, порт занят или заблокирован брандмауэром."; $ui.chkNetRecv.IsChecked = $false }
+            } else {
+                Stop-NetReceiver
+            }
+            Save-NetSettings
+            Update-NetRecvUi
+        }
+    })
+
+    $ui.btnNetAdd.Add_Click({
+        Invoke-Safe {
+            $ip = $ui.txtNetTargetAdd.Text.Trim()
+            if ($ip -and -not $netTargets.Contains($ip)) { $netTargets.Add($ip) }
+            $ui.txtNetTargetAdd.Text = ''
+            $script:Net.Targets = @($netTargets); Save-NetSettings
+        }
+    })
+    $ui.btnNetDel.Add_Click({
+        Invoke-Safe {
+            $sel = $ui.lbNetTargets.SelectedItem
+            if ($sel) { [void]$netTargets.Remove($sel); $script:Net.Targets = @($netTargets); Save-NetSettings }
+        }
+    })
+
+    $ui.btnNetSend.Add_Click({
+        Invoke-Safe {
+            if (-not $netTargets.Count) { Show-Error 'Добавьте хотя бы один IP-адрес.'; return }
+            $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
+            $pass = $ui.txtNetPass.Text.Trim(); $script:Net.Password = $pass; $script:Net.Port = $port; Save-NetSettings
+            $cfg = Get-RestrictionsFromUI
+            Set-Busy $true
+            try { $res = Send-ConfigToTargets @($netTargets) $port $pass $cfg } finally { Set-Busy $false }
+            $okn = @($res | Where-Object { $_.Ok }).Count
+            $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "принято ($($_.Name))" } else { 'нет связи' }) }
+            Show-Info ("Отправлены ограничения:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nУспешно: $okn из $($res.Count)`r`n" + ($lines -join "`r`n"))
+        }
+    })
+
+    $ui.btnNetPing.Add_Click({
+        Invoke-Safe {
+            if (-not $netTargets.Count) { Show-Error 'Добавьте хотя бы один IP-адрес.'; return }
+            $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
+            $pass = $ui.txtNetPass.Text.Trim()
+            Set-Busy $true
+            try { $res = Test-NetTargets @($netTargets) $port $pass } finally { Set-Busy $false }
+            $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "на связи ($($_.Name))" } else { 'нет связи' }) }
+            $ui.txtNetSendStatus.Text = ($lines -join "`r`n")
+        }
+    })
+
+    # Приём применяем в потоке интерфейса: фоновый приёмник кладёт конфиг в очередь, здесь применяем
+    $netApplyTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $netApplyTimer.Interval = [TimeSpan]::FromSeconds(1)
+    $netApplyTimer.Add_Tick({
+        Invoke-Safe {
+            while ($script:Net.Incoming.Count -gt 0) {
+                $raw = [string]$script:Net.Incoming.Dequeue()
+                try {
+                    $obj = $raw | ConvertFrom-Json
+                    $cfg = New-ConfigFromRestrictionObject $obj
+                    if ($IsAdmin) {
+                        [void](Set-NonAdminRestrictions $cfg)
+                        Set-RestrictionsUI $cfg $false
+                        Show-Toast "Применены ограничения, присланные главным ПК ($($script:Net.LastFrom))."
+                    }
+                } catch { Write-Log "Ошибка применения присланных настроек: $($_.Exception.Message)" }
+            }
+        }
+    })
+    $netApplyTimer.Start()
+    Update-NetRecvUi
+
+    $window.Add_Closing({ Invoke-Safe { Stop-NetReceiver } })
+
+    #endregion
 
     [void]$window.ShowDialog()
 }
