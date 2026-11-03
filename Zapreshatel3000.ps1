@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.4'
+$AppVersion  = '3.5'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1531,6 +1531,10 @@ $script:NetListenerScript = {
                         $N.Incoming.Enqueue(($data.config | ConvertTo-Json -Depth 6))
                         $N.LastFrom = ("{0} ({1:HH:mm:ss})" -f $req.RemoteEndPoint.Address, (Get-Date))
                         $resp = @{ ok = $true; name = $env:COMPUTERNAME; mac = $mac }
+                    } elseif ($path -eq '/clear') {
+                        $N.Incoming.Enqueue('ZAP_CLEAR')
+                        $N.LastFrom = ("{0} ({1:HH:mm:ss})" -f $req.RemoteEndPoint.Address, (Get-Date))
+                        $resp = @{ ok = $true; name = $env:COMPUTERNAME; mac = $mac }
                     }
                 }
                 $out = [System.Text.Encoding]::UTF8.GetBytes(($resp | ConvertTo-Json))
@@ -1633,6 +1637,19 @@ function New-NetTarget([string]$Ip, [string]$Name, [string]$Mac) {
     if ($Name) { $disp += "   —   $Name" }
     if ($Mac)  { $disp += "   —   MAC $Mac" }
     [pscustomobject]@{ Ip = $Ip; Name = [string]$Name; Mac = [string]$Mac; Display = $disp }
+}
+
+function Send-ClearToTargets([string[]]$Targets, [int]$Port, [string]$Password) {
+    $body = @{ password = $Password } | ConvertTo-Json
+    $results = @()
+    foreach ($t in $Targets) {
+        $ip = ([string]$t).Trim(); if (-not $ip) { continue }
+        try {
+            $r = Invoke-RestMethod -Uri ("http://{0}:{1}/clear" -f $ip, $Port) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 4
+            $results += [pscustomobject]@{ Ip = $ip; Ok = [bool]$r.ok; Name = [string]$r.name; Mac = [string]$r.mac }
+        } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = ''; Mac = '' } }
+    }
+    return , $results
 }
 
 function Test-NetTargets([string[]]$Targets, [int]$Port, [string]$Password) {
@@ -2832,6 +2849,9 @@ $MainWindowXaml = @'
                   <Button x:Name="btnNetSendSel" Style="{StaticResource Btn}" Content="Применить на выбранных"/>
                   <Button x:Name="btnNetSend" Style="{StaticResource Btn}" Content="Применить на всех из списка" Margin="10,0,0,0"/>
                   <Button x:Name="btnNetPing" Style="{StaticResource Btn}" Content="Проверить связь" Margin="10,0,0,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                  <Button x:Name="btnNetClear" Style="{StaticResource BtnDanger}" Content="Снять ограничения на ПК"/>
                 </StackPanel>
                 <TextBlock x:Name="txtNetSendStatus" Style="{StaticResource Muted}" Margin="0,12,0,0" TextWrapping="Wrap"/>
               </StackPanel>
@@ -4216,6 +4236,23 @@ function Show-MainWindow {
             Invoke-NetSendTo $sel
         }
     })
+    $ui.btnNetClear.Add_Click({
+        Invoke-Safe {
+            $sel = @($ui.lbNetTargets.SelectedItems)
+            $targets = if ($sel.Count) { $sel } else { @($netTargets) }
+            if (-not $targets.Count) { Show-Error 'Список ПК пуст. Добавьте адреса или нажмите «Найти ПК».'; return }
+            $who = if ($sel.Count) { "выбранных ПК ($($sel.Count))" } else { "всех ПК из списка ($($targets.Count))" }
+            if (-not (Confirm-Action "Снять все ограничения на $who`? Настройки сайтов и программ у них будут сброшены.")) { return }
+            $ips = @($targets | ForEach-Object { $_.Ip } | Where-Object { $_ })
+            $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
+            $pass = $ui.txtNetPass.Text.Trim()
+            Set-Busy $true
+            try { $res = Send-ClearToTargets $ips $port $pass } finally { Set-Busy $false }
+            $okn = @($res | Where-Object { $_.Ok }).Count
+            $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "снято ($($_.Name))" } else { 'нет связи' }) }
+            Show-Info ("Команда «снять ограничения» отправлена.`r`n`r`nУспешно: $okn из $($res.Count)`r`n" + ($lines -join "`r`n"))
+        }
+    })
 
     $ui.btnNetPing.Add_Click({
         Invoke-Safe {
@@ -4273,6 +4310,14 @@ function Show-MainWindow {
             while ($script:Net.Incoming.Count -gt 0) {
                 $raw = [string]$script:Net.Incoming.Dequeue()
                 try {
+                    if ($raw -eq 'ZAP_CLEAR') {
+                        if ($IsAdmin) {
+                            [void](Clear-NonAdminRestrictions)
+                            Import-RestrictionsToUI
+                            Show-Toast "Ограничения сняты по команде главного ПК ($($script:Net.LastFrom))."
+                        }
+                        continue
+                    }
                     $obj = $raw | ConvertFrom-Json
                     $cfg = New-ConfigFromRestrictionObject $obj
                     if ($IsAdmin) {
