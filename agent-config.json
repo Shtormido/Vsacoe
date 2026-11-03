@@ -1,7 +1,0 @@
-﻿{
-  "server": "192.168.1.10",
-  "port": 8777,
-  "password": "change-this-password-123",
-  "interval": 15,
-  "listenPort": 8778
-}
