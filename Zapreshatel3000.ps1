@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.0'
+$AppVersion  = '3.1'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -358,7 +358,8 @@ function Set-PolicyOption($p, [string]$Key) {
 
 #region Резервные копии и профили
 
-function Export-PolicyBackup([string]$File) {
+# Текущее состояние всех политик каталога как записи реестра (для бэкапа и переноса)
+function Get-PolicyRecords {
     $records = foreach ($p in $script:Catalog) {
         foreach ($v in $p.Values) {
             $c = Get-RegValue $v.Path $v.Name
@@ -370,6 +371,24 @@ function Export-PolicyBackup([string]$File) {
             [pscustomobject]@{ policy = $p.Id; path = $v.Path; name = $v.Name; exists = [bool]$c; kind = $kind; data = $data }
         }
     }
+    return @($records)
+}
+
+# Применить записи политик (как при восстановлении из копии); возвращает число ошибок
+function Apply-PolicyRecords($Records) {
+    Invoke-AutoBackup
+    $errors = 0
+    foreach ($r in @($Records)) {
+        try {
+            if ($r.exists) { Set-RegValue $r.path $r.name $r.kind $r.data }
+            else { Remove-RegValue $r.path $r.name }
+        } catch { $errors++; Write-Log "ОШИБКА применения политики $($r.path)\$($r.name): $($_.Exception.Message)" }
+    }
+    return $errors
+}
+
+function Export-PolicyBackup([string]$File) {
+    $records = Get-PolicyRecords
     $obj = [pscustomobject]@{
         app      = "$AppName $AppVersion"
         created  = (Get-Date).ToString('s')
@@ -1165,6 +1184,7 @@ function New-RestrictionObject($Config) {
             hosts   = [bool]$Config.HostsEnabled
         }
         lockdowns = $lock
+        policies  = @(Get-PolicyRecords)
     }
 }
 
@@ -1195,6 +1215,7 @@ function New-ConfigFromRestrictionObject($j) {
         AllowSites       = $allow
         HostsEnabled     = [bool]$j.sites.hosts
         Lockdowns        = $lock
+        PolicyRecords    = @($j.policies)
     }
 }
 
@@ -3528,8 +3549,9 @@ function Show-MainWindow {
             $cfg = Import-RestrictionConfig $files[0]
             Set-RestrictionsUI $cfg $false
             Write-Log "Загружены настройки ограничений: $($files[0])"
-            if (Confirm-Action ("Настройки загружены:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nПрименить их сейчас для всех пользователей без прав администратора?")) {
+            if (Confirm-Action ("Настройки загружены:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nПрименить их сейчас (ограничения + политики Windows)?")) {
                 Invoke-ApplyRestrictions $false
+                if (@($cfg.PolicyRecords).Count) { $e = Apply-PolicyRecords $cfg.PolicyRecords; Update-PolicyStates; Write-Log "Политики из файла применены (ошибок: $e)" }
             } else {
                 Show-Toast 'Настройки загружены в форму. Проверьте их и нажмите «Применить ограничения».'
             }
@@ -3537,7 +3559,12 @@ function Show-MainWindow {
     })
 
     function Update-CfgSummary {
-        try { $ui.txtCfgSummary.Text = (Get-RestrictionSummary (Get-RestrictionsFromUI)) } catch { $ui.txtCfgSummary.Text = '—' }
+        try {
+            $txt = Get-RestrictionSummary (Get-RestrictionsFromUI)
+            $setn = @($script:Catalog | Where-Object { (Get-SafePolicyState $_).Key -ne '_unset' }).Count
+            $txt += "`r`n• Политик Windows задано: $setn (переносятся вместе с конфигурацией)"
+            $ui.txtCfgSummary.Text = $txt
+        } catch { $ui.txtCfgSummary.Text = '—' }
     }
 
     $ui.btnCfgSave.Add_Click({
@@ -3560,8 +3587,9 @@ function Show-MainWindow {
             Update-CfgSummary
             Write-Log "Конфигурация загружена: $($files[0])"
             $ui.txtCfgStatus.Text = "Загружено: $($files[0])"
-            if (Confirm-Action ("Конфигурация загружена:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nПрименить её сейчас для всех пользователей без прав администратора?")) {
+            if (Confirm-Action ("Конфигурация загружена:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nПрименить её сейчас (ограничения для пользователей + политики Windows)?")) {
                 Invoke-ApplyRestrictions $false
+                if (@($cfg.PolicyRecords).Count) { $e = Apply-PolicyRecords $cfg.PolicyRecords; Update-PolicyStates; Write-Log "Политики из конфигурации применены (ошибок: $e)" }
             } else {
                 Show-Toast 'Конфигурация загружена в форму. Проверьте её и нажмите «Применить ограничения».'
             }
@@ -4198,8 +4226,9 @@ function Show-MainWindow {
                     $cfg = New-ConfigFromRestrictionObject $obj
                     if ($IsAdmin) {
                         [void](Set-NonAdminRestrictions $cfg)
+                        if (@($cfg.PolicyRecords).Count) { [void](Apply-PolicyRecords $cfg.PolicyRecords); Update-PolicyStates }
                         Set-RestrictionsUI $cfg $false
-                        Show-Toast "Применены ограничения, присланные главным ПК ($($script:Net.LastFrom))."
+                        Show-Toast "Применены настройки, присланные главным ПК ($($script:Net.LastFrom))."
                     }
                 } catch { Write-Log "Ошибка применения присланных настроек: $($_.Exception.Message)" }
             }
