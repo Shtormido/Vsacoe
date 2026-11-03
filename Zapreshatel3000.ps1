@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.3'
+$AppVersion  = '3.4'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -2826,9 +2826,11 @@ $MainWindowXaml = @'
                   <Button x:Name="btnNetAdd" Style="{StaticResource Btn}" Content="Добавить ПК" Margin="10,0,0,0"/>
                   <Button x:Name="btnNetDel" Style="{StaticResource Btn}" Content="Убрать выбранный" Margin="10,0,0,0"/>
                 </StackPanel>
-                <ListBox x:Name="lbNetTargets" Height="140" BorderThickness="1" BorderBrush="#E5E7EB"/>
+                <ListBox x:Name="lbNetTargets" Height="140" BorderThickness="1" BorderBrush="#E5E7EB" SelectionMode="Extended"/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,6,0,0" Text="Выделите один или несколько ПК (Ctrl/Shift) для «Применить на выбранных»."/>
                 <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                  <Button x:Name="btnNetSend" Style="{StaticResource Btn}" Content="Применить на ПК из списка"/>
+                  <Button x:Name="btnNetSendSel" Style="{StaticResource Btn}" Content="Применить на выбранных"/>
+                  <Button x:Name="btnNetSend" Style="{StaticResource Btn}" Content="Применить на всех из списка" Margin="10,0,0,0"/>
                   <Button x:Name="btnNetPing" Style="{StaticResource Btn}" Content="Проверить связь" Margin="10,0,0,0"/>
                 </StackPanel>
                 <TextBlock x:Name="txtNetSendStatus" Style="{StaticResource Muted}" Margin="0,12,0,0" TextWrapping="Wrap"/>
@@ -4188,17 +4190,30 @@ function Show-MainWindow {
         }
     })
 
+    function Invoke-NetSendTo($TargetObjs) {
+        $ips = @($TargetObjs | ForEach-Object { $_.Ip } | Where-Object { $_ })
+        if (-not $ips.Count) { Show-Error 'Нет ПК для отправки.'; return }
+        $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
+        $pass = $ui.txtNetPass.Text.Trim(); $script:Net.Password = $pass; $script:Net.Port = $port; Save-NetSettings
+        $cfg = Get-RestrictionsFromUI
+        Set-Busy $true
+        try { $res = Send-ConfigToTargets $ips $port $pass $cfg } finally { Set-Busy $false }
+        $okn = @($res | Where-Object { $_.Ok }).Count
+        $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "принято ($($_.Name), MAC $($_.Mac))" } else { 'нет связи' }) }
+        Show-Info ("Отправлены настройки (ограничения + политики):`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nУспешно: $okn из $($res.Count)`r`n" + ($lines -join "`r`n"))
+    }
+
     $ui.btnNetSend.Add_Click({
         Invoke-Safe {
-            if (-not $netTargets.Count) { Show-Error 'Добавьте хотя бы один IP-адрес.'; return }
-            $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
-            $pass = $ui.txtNetPass.Text.Trim(); $script:Net.Password = $pass; $script:Net.Port = $port; Save-NetSettings
-            $cfg = Get-RestrictionsFromUI
-            Set-Busy $true
-            try { $res = Send-ConfigToTargets @($netTargets | ForEach-Object { $_.Ip }) $port $pass $cfg } finally { Set-Busy $false }
-            $okn = @($res | Where-Object { $_.Ok }).Count
-            $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "принято ($($_.Name), MAC $($_.Mac))" } else { 'нет связи' }) }
-            Show-Info ("Отправлены ограничения:`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nУспешно: $okn из $($res.Count)`r`n" + ($lines -join "`r`n"))
+            if (-not $netTargets.Count) { Show-Error 'Список ПК пуст. Добавьте адреса или нажмите «Найти ПК».'; return }
+            Invoke-NetSendTo @($netTargets)
+        }
+    })
+    $ui.btnNetSendSel.Add_Click({
+        Invoke-Safe {
+            $sel = @($ui.lbNetTargets.SelectedItems)
+            if (-not $sel.Count) { Show-Error 'Выделите в списке один или несколько ПК.'; return }
+            Invoke-NetSendTo $sel
         }
     })
 
