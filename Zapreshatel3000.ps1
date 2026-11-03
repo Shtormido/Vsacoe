@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.2'
+$AppVersion  = '3.3'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1470,6 +1470,7 @@ $script:Net = [hashtable]::Synchronized(@{
     Incoming = [System.Collections.Queue]::Synchronized((New-Object System.Collections.Queue))
     LastFrom = ''
     Targets  = @()
+    WantRecv = $false
 })
 
 # UDP-ответчик: на широковещательный запрос поиска отвечает своим именем (адреса искать не нужно)
@@ -1664,7 +1665,8 @@ function Load-NetSettings {
             $script:Net.Targets = @(@($s.targets) | ForEach-Object {
                 if ($_ -is [string]) { New-NetTarget $_ '' '' } else { New-NetTarget ([string]$_.ip) ([string]$_.name) ([string]$_.mac) }
             })
-            $script:Net.RecvOn = $false   # приём включает пользователь вручную
+            $script:Net.WantRecv = [bool]$s.recvOn   # запоминаем, был ли включён приём
+            $script:Net.RecvOn = $false              # фактический запуск — ниже, при старте программы
         } catch { }
     }
 }
@@ -4134,9 +4136,14 @@ function Show-MainWindow {
     $ui.lbNetTargets.ItemsSource = $netTargets
     $ui.lbNetTargets.DisplayMemberPath = 'Display'
 
+    # Если приём был включён в прошлый раз — включаем автоматически при запуске
+    if ($script:Net.WantRecv -and $IsAdmin -and $script:Net.Password) {
+        try { Start-NetReceiver } catch { Write-Log "Автовключение приёма не удалось: $($_.Exception.Message)" }
+    }
+
     function Update-NetRecvUi {
+        $ui.chkNetRecv.IsChecked = [bool]$script:Net.RecvOn
         if ($script:Net.RecvOn) {
-            $ui.chkNetRecv.IsChecked = $true
             $ui.txtNetRecvStatus.Text = "Приём включён на порту $($script:Net.Port). IP этого ПК: $(Get-LocalIPv4). Ожидаю команды с главного ПК."
         } else {
             $ui.txtNetRecvStatus.Text = "Приём выключен. IP этого ПК: $(Get-LocalIPv4)."
