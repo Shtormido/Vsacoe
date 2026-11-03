@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '2.9'
+$AppVersion  = '3.0'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1445,10 +1445,33 @@ $script:Net = [hashtable]::Synchronized(@{
     Port     = 8777
     Password = ''
     Listener = $null; PS = $null; RS = $null; Error = ''
+    Udp = $null; UdpPS = $null; UdpRS = $null
     Incoming = [System.Collections.Queue]::Synchronized((New-Object System.Collections.Queue))
     LastFrom = ''
     Targets  = @()
 })
+
+# UDP-ответчик: на широковещательный запрос поиска отвечает своим именем (адреса искать не нужно)
+$script:NetUdpScript = {
+    param($N)
+    $udp = $null
+    try {
+        $udp = New-Object System.Net.Sockets.UdpClient($N.Port)
+        $N.Udp = $udp
+        $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+        while ($N.RecvOn) {
+            $bytes = $null
+            try { $bytes = $udp.Receive([ref]$ep) } catch { break }
+            try {
+                $msg = [System.Text.Encoding]::UTF8.GetString($bytes)
+                if ($msg -eq ("ZAP_DISCOVER`t" + $N.Password)) {
+                    $reply = [System.Text.Encoding]::UTF8.GetBytes("ZAP_HERE`t$env:COMPUTERNAME")
+                    [void]$udp.Send($reply, $reply.Length, $ep)
+                }
+            } catch { }
+        }
+    } catch { } finally { try { if ($udp) { $udp.Close() } } catch { } }
+}
 
 # Фоновый приёмник: принимает команды только когда их присылает главный ПК (без опроса сети)
 $script:NetListenerScript = {
@@ -1491,10 +1514,12 @@ $script:NetListenerScript = {
 
 function Start-NetReceiver {
     if ($script:Net.RecvOn) { return }
-    # Разрешаем входящий порт в брандмауэре (мы админ)
+    # Разрешаем входящие порт в брандмауэре (мы админ): TCP для настроек, UDP для поиска
     try {
         & netsh advfirewall firewall delete rule name="Zapreshatel3000 Net" 2>&1 | Out-Null
         & netsh advfirewall firewall add rule name="Zapreshatel3000 Net" dir=in action=allow protocol=TCP localport=$($script:Net.Port) 2>&1 | Out-Null
+        & netsh advfirewall firewall delete rule name="Zapreshatel3000 Net UDP" 2>&1 | Out-Null
+        & netsh advfirewall firewall add rule name="Zapreshatel3000 Net UDP" dir=in action=allow protocol=UDP localport=$($script:Net.Port) 2>&1 | Out-Null
     } catch { }
     $script:Net.RecvOn = $true; $script:Net.Error = ''
     $rs = [runspacefactory]::CreateRunspace(); $rs.ApartmentState = 'MTA'; $rs.ThreadOptions = 'ReuseThread'; $rs.Open()
@@ -1502,6 +1527,12 @@ function Start-NetReceiver {
     [void]$ps.AddScript($script:NetListenerScript.ToString()).AddArgument($script:Net)
     $script:Net.PS = $ps; $script:Net.RS = $rs
     [void]$ps.BeginInvoke()
+    # UDP-ответчик поиска
+    $urs = [runspacefactory]::CreateRunspace(); $urs.ApartmentState = 'MTA'; $urs.ThreadOptions = 'ReuseThread'; $urs.Open()
+    $ups = [powershell]::Create(); $ups.Runspace = $urs
+    [void]$ups.AddScript($script:NetUdpScript.ToString()).AddArgument($script:Net)
+    $script:Net.UdpPS = $ups; $script:Net.UdpRS = $urs
+    [void]$ups.BeginInvoke()
     Start-Sleep -Milliseconds 300
     if ($script:Net.Error) { $script:Net.RecvOn = $false; throw $script:Net.Error }
 }
@@ -1509,9 +1540,13 @@ function Start-NetReceiver {
 function Stop-NetReceiver {
     $script:Net.RecvOn = $false
     try { if ($script:Net.Listener) { $script:Net.Listener.Stop() } } catch { }
+    try { if ($script:Net.Udp) { $script:Net.Udp.Close() } } catch { }
     try { if ($script:Net.PS) { $script:Net.PS.Stop(); $script:Net.PS.Dispose() } } catch { }
     try { if ($script:Net.RS) { $script:Net.RS.Close(); $script:Net.RS.Dispose() } } catch { }
+    try { if ($script:Net.UdpPS) { $script:Net.UdpPS.Stop(); $script:Net.UdpPS.Dispose() } } catch { }
+    try { if ($script:Net.UdpRS) { $script:Net.UdpRS.Close(); $script:Net.UdpRS.Dispose() } } catch { }
     $script:Net.PS = $null; $script:Net.RS = $null; $script:Net.Listener = $null
+    $script:Net.Udp = $null; $script:Net.UdpPS = $null; $script:Net.UdpRS = $null
 }
 
 # Отправка текущих ограничений выбранным ПК (только по нажатию — сеть не засоряется)
@@ -1527,6 +1562,29 @@ function Send-ConfigToTargets([string[]]$Targets, [int]$Port, [string]$Password,
         } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = '' } }
     }
     return , $results
+}
+
+# Поиск включённых на приём ПК в локальной сети (решает проблему динамических IP)
+function Find-NetTargets([int]$Port, [string]$Password) {
+    $found = [ordered]@{}
+    $udp = New-Object System.Net.Sockets.UdpClient
+    try {
+        $udp.EnableBroadcast = $true
+        $udp.Client.ReceiveTimeout = 400
+        $msg = [System.Text.Encoding]::UTF8.GetBytes("ZAP_DISCOVER`t$Password")
+        $bcast = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Broadcast, $Port)
+        [void]$udp.Send($msg, $msg.Length, $bcast)
+        $deadline = (Get-Date).AddMilliseconds(1500)
+        while ((Get-Date) -lt $deadline) {
+            $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+            try {
+                $data = $udp.Receive([ref]$ep)
+                $reply = [System.Text.Encoding]::UTF8.GetString($data)
+                if ($reply -like "ZAP_HERE`t*") { $found[$ep.Address.ToString()] = $reply.Split("`t")[1] }
+            } catch { }
+        }
+    } finally { try { $udp.Close() } catch { } }
+    return $found
 }
 
 function Test-NetTargets([string[]]$Targets, [int]$Port, [string]$Password) {
@@ -2706,7 +2764,11 @@ $MainWindowXaml = @'
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock Style="{StaticResource H2}" Text="Рассылка на другие ПК (этот ПК — главный)"/>
-                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Добавьте IP-адреса компьютеров, на которых включён приём (тот же порт и пароль). По кнопке программа применит на них текущие ограничения со вкладки «Ограничения». Отправка происходит только по нажатию."/>
+                <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Проще всего — «Найти ПК и применить ко всем»: программа сама найдёт в сети все компьютеры с включённым приёмом (адреса вводить не нужно, подходит для динамических IP) и применит на них текущие ограничения. Можно и вручную добавить адреса ниже."/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                  <Button x:Name="btnNetDiscoverApply" Style="{StaticResource BtnPrimary}" Content="🔍 Найти ПК и применить ко всем"/>
+                  <Button x:Name="btnNetDiscover" Style="{StaticResource Btn}" Content="Только найти ПК" Margin="10,0,0,0"/>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                   <TextBox x:Name="txtNetTargetAdd" Style="{StaticResource Input}" Width="260" Tag="IP, например 192.168.1.42"/>
                   <Button x:Name="btnNetAdd" Style="{StaticResource Btn}" Content="Добавить ПК" Margin="10,0,0,0"/>
@@ -2714,7 +2776,7 @@ $MainWindowXaml = @'
                 </StackPanel>
                 <ListBox x:Name="lbNetTargets" Height="140" BorderThickness="1" BorderBrush="#E5E7EB"/>
                 <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                  <Button x:Name="btnNetSend" Style="{StaticResource BtnPrimary}" Content="Применить ограничения на этих ПК"/>
+                  <Button x:Name="btnNetSend" Style="{StaticResource Btn}" Content="Применить на ПК из списка"/>
                   <Button x:Name="btnNetPing" Style="{StaticResource Btn}" Content="Проверить связь" Margin="10,0,0,0"/>
                 </StackPanel>
                 <TextBlock x:Name="txtNetSendStatus" Style="{StaticResource Muted}" Margin="0,12,0,0" TextWrapping="Wrap"/>
@@ -4084,6 +4146,43 @@ function Show-MainWindow {
             try { $res = Test-NetTargets @($netTargets) $port $pass } finally { Set-Busy $false }
             $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "на связи ($($_.Name))" } else { 'нет связи' }) }
             $ui.txtNetSendStatus.Text = ($lines -join "`r`n")
+        }
+    })
+
+    function Invoke-NetDiscover {
+        $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
+        $pass = $ui.txtNetPass.Text.Trim(); $script:Net.Port = $port; $script:Net.Password = $pass
+        $found = Find-NetTargets $port $pass
+        $ips = @($found.Keys)
+        $netTargets.Clear(); foreach ($ip in $ips) { $netTargets.Add([string]$ip) }
+        $script:Net.Targets = @($netTargets); Save-NetSettings
+        return $found
+    }
+
+    $ui.btnNetDiscover.Add_Click({
+        Invoke-Safe {
+            Set-Busy $true
+            try { $found = Invoke-NetDiscover } finally { Set-Busy $false }
+            if (-not $found.Count) { $ui.txtNetSendStatus.Text = 'ПК с включённым приёмом не найдены. Проверьте: на них включён приём, тот же пароль, одна сеть.'; return }
+            $lines = $found.GetEnumerator() | ForEach-Object { "• $($_.Key) ($($_.Value))" }
+            $ui.txtNetSendStatus.Text = ("Найдено ПК: $($found.Count)`r`n" + ($lines -join "`r`n"))
+        }
+    })
+
+    $ui.btnNetDiscoverApply.Add_Click({
+        Invoke-Safe {
+            $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
+            $pass = $ui.txtNetPass.Text.Trim()
+            $cfg = Get-RestrictionsFromUI
+            Set-Busy $true
+            try {
+                $found = Invoke-NetDiscover
+                if (-not $found.Count) { $ui.txtNetSendStatus.Text = 'ПК с включённым приёмом не найдены.'; return }
+                $res = Send-ConfigToTargets @($found.Keys) $port $pass $cfg
+            } finally { Set-Busy $false }
+            $okn = @($res | Where-Object { $_.Ok }).Count
+            $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "применено ($($_.Name))" } else { 'нет связи' }) }
+            Show-Info ("Найдено и обработано ПК: $($res.Count), успешно: $okn`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`n" + ($lines -join "`r`n"))
         }
     })
 
