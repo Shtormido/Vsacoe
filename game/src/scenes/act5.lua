@@ -129,7 +129,7 @@ function Rituals.alesha(sc)
   State.trust(1)
   State.panic(-10)
   State.complete("alesha")
-  G.rest = { scene = "lipovaya", x = 720 }
+  G.rest = { scene = "lipovaya", x = 430 }
 end
 
 -------------------------------------------------------------- 5.2 Депо секты
@@ -606,7 +606,7 @@ reg("glow_tunnel", {
   end,
   objects = {
     { id = "exit", name = "К «Липовой»", x = 660, y = 120, w = 40, h = 112, ax = 680,
-      exit = { to = "lipovaya", x = 1020, facing = -1 } },
+      exit = { to = "lipovaya", x = 748, facing = -1 } },
     { id = "back", name = "Назад", x = 0, y = 120, w = 16, h = 112, ax = 10,
       exit = { to = "laptev_store", x = 600, facing = -1 } },
   },

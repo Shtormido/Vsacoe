@@ -7,7 +7,20 @@ local Wd = {
   shakeT = 0, shakeA = 0, hover = nil, noiseT = 0,
   breath = { t = 0, ok = false, releasedAt = nil, active = false, flash = 0, last = "" },
   fx = { aberr = 0, aberrT = 0 }, parts = {}, motes = {},
+  zoom = 1, viewTop = 0, charScale = 1,
 }
+
+-------------------------------------------------------------- камера: мир ↔ экран (сцены с артом приближены)
+function Wd.toScreen(x, y)
+  local z = Wd.zoom
+  return (x - Wd.camx) * z + (Wd.drawOffX or 0), (y - Wd.viewTop) * z + (Wd.drawOffY or 0)
+end
+
+function Wd.toWorld(sx, sy)
+  return sx / Wd.zoom + Wd.camx, sy / Wd.zoom + Wd.viewTop
+end
+
+function Wd.viewW() return W / Wd.zoom end
 
 FLOOR = 232
 local lg = love.graphics
@@ -128,7 +141,8 @@ function Wd.drawMotes()
   local c = Wd.coneWorld
   local lights = Wd.lastLights or {}
   for _, q in ipairs(m) do
-    local wx = (q.x + t * 2 * q.s - Wd.camx * 0.15) % W + Wd.camx
+    local vw = Wd.viewW()
+    local wx = (q.x / Wd.zoom + t * 2 * q.s - Wd.camx * 0.15) % vw + Wd.camx
     local wy = q.y + math.sin(t * 0.6 * q.s + q.ph) * 6
     local a = 0
     if c then
@@ -146,7 +160,8 @@ function Wd.drawMotes()
     end
     if a > 0.05 then
       local tw = 0.6 + 0.4 * math.sin(t * 5 * q.s + q.ph)
-      Gx.px(P.yellow, wx - Wd.camx, wy, math.min(0.9, a * tw))
+      local px, py = Wd.toScreen(wx, wy)
+      Gx.px(P.yellow, px, py, math.min(0.9, a * tw))
     end
   end
 end
@@ -160,6 +175,18 @@ function Wd.enter(id, x, facing)
   G.scene = id
   local sc = { def = def, id = id, t = 0, w = def.w or W, actors = {}, enemies = {}, v = {}, running = {}, lights = {} }
   Wd.sc = sc
+  Wd.zoom, Wd.viewTop, Wd.charScale = 1, 0, 1
+  if def.bg then
+    local path = "assets/bg/" .. def.bg.img .. ".png"
+    if love.filesystem.getInfo(path) then
+      sc.bgImg = lg.newImage(path)
+      sc.bgImg:setFilter("nearest", "nearest")
+      Wd.zoom = def.bg.zoom or 2.4
+      Wd.viewTop = def.bg.viewTop
+      -- персонажи мельче: на экране как при приближении 1.8
+      Wd.charScale = def.bg.charScale or 0.75
+    end
+  end
   Wd.parts = {}
   Fx.sparks = {}
   Fx.flash = 0
@@ -179,7 +206,7 @@ function Wd.enter(id, x, facing)
   l.x = U.clamp(p.x - p.facing * 24, 6, sc.w - 6)
   l.facing = p.facing
   G.marks[id] = G.marks[id] or {}
-  if def.static then
+  if def.static and not sc.bgImg then
     lg.push("all")
     sc.canvas = lg.newCanvas(sc.w, H)
     lg.setCanvas(sc.canvas)
@@ -229,8 +256,9 @@ end
 
 function Wd.snapCamera()
   local sc = Wd.sc
-  if sc.w <= W then Wd.camx = math.floor((sc.w - W) / 2) return end
-  Wd.camx = U.clamp(Wd.player.x - W / 2, 0, sc.w - W)
+  local vw = Wd.viewW()
+  if sc.w <= vw then Wd.camx = math.floor((sc.w - vw) / 2) return end
+  Wd.camx = U.clamp(Wd.player.x - vw / 2, 0, sc.w - vw)
 end
 
 -------------------------------------------------------------- предметы
@@ -545,7 +573,7 @@ function Wd.update(dt)
   if p.frozen then p.tx = nil p.pose = "freeze" end
 
   -- Дима
-  local spd = (def.speed or 58)
+  local spd = (def.speed or 58) * (Wd.charScale < 1 and 0.85 or 1)
   if moveEntity(p, dt, spd, false) and p.pending then Wd.arrive() end
   if p.poseT then
     p.poseT = p.poseT - dt
@@ -590,11 +618,12 @@ function Wd.update(dt)
   end
 
   -- камера
-  if sc.w > W then
-    local target = U.clamp(p.x - W / 2 + p.facing * 24, 0, sc.w - W)
+  local vw = Wd.viewW()
+  if sc.w > vw then
+    local target = U.clamp(p.x - vw / 2 + p.facing * 24 / Wd.zoom, 0, sc.w - vw)
     Wd.camx = Wd.camx + (target - Wd.camx) * math.min(1, dt * 3)
   end
-  Audio.listenerX = Wd.camx + W / 2
+  Audio.listenerX = Wd.camx + vw / 2
 
   if def.update then def.update(sc, dt) end
   Wd.updateParticles(dt)
@@ -637,9 +666,10 @@ function Wd.speakerPos(sp, opts)
     if sc and sc.def.speakerPos then return sc.def.speakerPos(sc, sp) end
     return nil
   end
-  if sp == "DIMA" then return Wd.player.x, FLOOR - 48 + (Wd.player.pose == "sit" and 10 or 0) end
+  local hh = 48 * Wd.charScale
+  if sp == "DIMA" then return Wd.player.x, FLOOR - hh + (Wd.player.pose == "sit" and 10 or 0) end
   if sp == "LEHA" or sp == "CHOIR" then
-    if Wd.leha.visible then return Wd.leha.x, FLOOR - 48 + (Wd.leha.pose == "sit" and 10 or 0) end
+    if Wd.leha.visible then return Wd.leha.x, FLOOR - hh + (Wd.leha.pose == "sit" and 10 or 0) end
     return nil
   end
   local a = sc.actors[sp]
@@ -701,8 +731,15 @@ function Wd.drawWorld()
     def.far(sc)
     lg.pop()
   end
+  local z = Wd.zoom
+  cx = math.floor(Wd.camx * z) / z
   lg.push()
-  lg.translate(-cx + sx, sy)
+  lg.scale(z)
+  lg.translate(-cx + sx / z, -Wd.viewTop + sy / z)
+  if sc.bgImg then
+    lg.setColor(1, 1, 1, 1)
+    lg.draw(sc.bgImg, 0, Wd.viewTop, 0, 1 / z, 1 / z)
+  end
   if sc.canvas then
     lg.setColor(1, 1, 1, 1)
     lg.draw(sc.canvas, 0, 0)
@@ -722,8 +759,9 @@ function Wd.drawWorld()
   if not def.noShadow then
     for _, e in ipairs({ p, l.visible and l or nil }) do
       if e and not e.hiddenSprite then
-        Gx.r(P.black, e.x - 8, FLOOR - 1 + sink, 16, 2, 0.45)
-        Gx.r(P.black, e.x - 5, FLOOR + 1 + sink, 10, 1, 0.3)
+        local cs = Wd.charScale
+        Gx.r(P.black, e.x - 8 * cs, FLOOR - 1 + sink, 16 * cs, 2, 0.45)
+        Gx.r(P.black, e.x - 5 * cs, FLOOR + 1 + sink, 10 * cs, 1, 0.3)
       end
     end
   end
@@ -759,33 +797,36 @@ end
 function Wd.lightData()
   local sc = Wd.sc
   local def = sc.def
-  local cx = Wd.camx
+  local z = Wd.zoom
   local lights = {}
-  local function add(x, y, r, col, k)
-    if #lights < 14 then lights[#lights + 1] = { x - cx + Wd.drawOffX, y + Wd.drawOffY, r, col[1] * k, col[2] * k, col[3] * k } end
+  local worldLights = {}
+  local function add(x, y, r, col, k, noWorld)
+    if #lights < 14 then
+      local sx, sy = Wd.toScreen(x, y)
+      lights[#lights + 1] = { sx, sy, r * z, col[1] * k, col[2] * k, col[3] * k }
+      if not noWorld then worldLights[#worldLights + 1] = { x, y, r } end
+    end
   end
   if def.lights then
     for _, L in ipairs(def.lights(sc) or {}) do add(L[1], L[2], L[3], L[4] or P.orange2, L[5] or 1) end
   end
   Fx.lights(function(x, y, r, col, k) add(x, y, r, col, k) end)
-  local worldLights = {}
   Wd.lastLights = worldLights
-  for _, L in ipairs(lights) do worldLights[#worldLights + 1] = { L[1] + cx - Wd.drawOffX, L[2] - Wd.drawOffY, L[3] } end
   for _, a in pairs(sc.actors) do
-    if a.glow and a.visible ~= false then add(a.x, (a.y or FLOOR) - (a.gy or 30), a.glowR or 60, a.glowCol or P.violet2, a.glow * (a.a or 1)) end
+    if a.glow and a.visible ~= false then add(a.x, (a.y or FLOOR) - (a.gy or 30), a.glowR or 60, a.glowCol or P.violet2, a.glow * (a.a or 1), true) end
   end
   for _, e in ipairs(sc.enemies) do
     -- враги чуть видны в темноте: серые Безымянные, красноватый Проповедник
-    if e.kind == "preacher" then add(e.x, FLOOR - 40, 46, P.red2, 0.22)
-    else add(e.x, FLOOR - 30, 36, P.gray4, 0.22) end
+    if e.kind == "preacher" then add(e.x, FLOOR - 40, 46, P.red2, 0.22, true)
+    else add(e.x, FLOOR - 30, 36, P.gray4, 0.22, true) end
   end
   if not def.custom then
     -- слабое свечение вокруг героев, чтобы силуэт читался
-    add(Wd.player.x, FLOOR - 24, 30, P.blue3, 0.2)
-    if Wd.leha.visible then add(Wd.leha.x, FLOOR - 24, 26, P.blue3, 0.14) end
+    add(Wd.player.x, FLOOR - 24, 30, P.blue3, 0.2, true)
+    if Wd.leha.visible then add(Wd.leha.x, FLOOR - 24, 26, P.blue3, 0.14, true) end
     if G.light and G.battery > 0 then
       -- рассеянный свет налобного фонаря на самих героях
-      add(Wd.player.x + Wd.player.facing * 6, FLOOR - 26, 54, P.orange2, 0.55)
+      add(Wd.player.x + Wd.player.facing * 6, FLOOR - 26, 54, P.orange2, 0.55, true)
     end
   end
   local amb = sc.ambient or def.ambient or { 0.05, P.blue2 }
@@ -807,7 +848,8 @@ function Wd.lightData()
     if sc.flicker or Wd.spiritNear() then
       if love.math.random() < 0.1 then k = k * 0.2 end
     end
-    cone = { hx - cx + Wd.drawOffX, hy + Wd.drawOffY, dx, dy, G.dim and 140 or 240, G.dim and 0.36 or 0.52, k * (G.dim and 0.7 or 1) }
+    local csx, csy = Wd.toScreen(hx, hy)
+    cone = { csx, csy, dx, dy, (G.dim and 140 or 240) * z, G.dim and 0.36 or 0.52, k * (G.dim and 0.7 or 1) }
     Wd.coneWorld = { hx, hy, dx, dy, G.dim and 140 or 240, G.dim and 0.36 or 0.52 }
   else
     Wd.coneWorld = nil

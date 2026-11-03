@@ -4,9 +4,33 @@ local Sp = { img = {}, ok = false }
 local lg = love.graphics
 local floor = math.floor
 
+-- Набор высокого разрешения (assets/sprites_hd, ×2.4) для приближенных сцен с артом
+Sp.hd = {}
+Sp.HD_MUL = 1.8
+
+local function loadSet(dir, target, meta)
+  for ch, anims in pairs(meta) do
+    target[ch] = {}
+    for an, n in pairs(anims) do
+      local list = {}
+      for i = 1, n do
+        local path = dir .. "/" .. ch .. "/" .. an .. "_" .. i .. ".png"
+        if love.filesystem.getInfo(path) then
+          local im = lg.newImage(path)
+          im:setFilter("nearest", "nearest")
+          list[#list + 1] = im
+        end
+      end
+      if #list > 0 then target[ch][an] = list end
+    end
+  end
+end
+
 function Sp.load()
   local ok, meta = pcall(require, "assets.sprites.sprites")
   if not ok or type(meta) ~= "table" then return end
+  local okHd, metaHd = pcall(require, "assets.sprites_hd.sprites")
+  if okHd and type(metaHd) == "table" then loadSet("assets/sprites_hd", Sp.hd, metaHd) end
   for ch, anims in pairs(meta) do
     Sp.img[ch] = {}
     for an, n in pairs(anims) do
@@ -33,6 +57,13 @@ end
 function Sp.draw(ch, an, frame, x, y, facing, alpha)
   local set = Sp.img[ch]
   if not set then return false end
+  local k = 1
+  if World and World.zoom > 1.5 and Sp.hd[ch] and (Sp.hd[ch][an] or Sp.hd[ch].idle) then
+    set = Sp.hd[ch]
+    k = (World.charScale or 1) / Sp.HD_MUL
+  elseif World then
+    k = World.charScale or 1
+  end
   local list = set[an] or set.idle
   if not list then return false end
   local img = list[(floor(frame or 0) % #list) + 1]
@@ -44,7 +75,11 @@ function Sp.draw(ch, an, frame, x, y, facing, alpha)
     lg.setColor(1, 1, 1, a)
   end
   local f = (facing or 1) >= 0 and 1 or -1
-  lg.draw(img, floor(x), floor(y), 0, f, 1, floor(img:getWidth() / 2), img:getHeight())
+  if k ~= 1 then
+    lg.draw(img, x, y, 0, f * k, k, floor(img:getWidth() / 2), img:getHeight())
+  else
+    lg.draw(img, floor(x), floor(y), 0, f, 1, floor(img:getWidth() / 2), img:getHeight())
+  end
   return true
 end
 

@@ -77,7 +77,7 @@ reg("tunnel_drip", {
       })
       local r = choose({ "Сходим", "Отказаться" })
       if r == 1 then
-        World.go("lipovaya", 960, -1)
+        World.go("lipovaya", 700, -1)
       else
         State.panic(5)
         G.flags.thermosBack = true
@@ -94,7 +94,7 @@ reg("tunnel_drip", {
         { L, "Значит, невидимая." },
       } },
     { id = "back", name = "Назад, на «Липовую»", x = 0, y = 130, w = 16, h = 102, ax = 10,
-      exit = { to = "lipovaya", x = 1050, facing = -1 } },
+      exit = { to = "lipovaya", x = 748, facing = -1 } },
     { id = "exit", name = "Боковой проход", x = 1260, y = 130, w = 40, h = 102, ax = 1275,
       cond = function() return G.flags.thermosTrip end,
       exit = { to = "side_passage", x = 30, facing = 1 } },

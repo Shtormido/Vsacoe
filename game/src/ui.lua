@@ -11,10 +11,14 @@ function UI.setMouse(x, y) UI.mx, UI.my = x, y end
 
 function UI.mouseWorldX()
   if not World.sc then return nil end
-  return UI.mx + World.camx
+  return (World.toWorld(UI.mx, UI.my))
 end
 
-function UI.mouseWorldY() return UI.my end
+function UI.mouseWorldY()
+  if not World.sc then return UI.my end
+  local _, y = World.toWorld(UI.mx, UI.my)
+  return y
+end
 
 -------------------------------------------------------------- тосты и подсказки
 function UI.toast(text, dur)
@@ -954,11 +958,12 @@ function UI.drawOverlay()
       if not o.noShimmer then
         local x, y, w, h = o.x, o.y or (FLOOR - (o.h or 20)), o.w or 20, o.h or 20
         local cx = x + w / 2
-        if math.abs(cx - wx) < w / 2 + 40 and math.abs((y + h / 2) - UI.my) < h / 2 + 40 then
+        if math.abs(cx - wx) < w / 2 + 40 and math.abs((y + h / 2) - UI.mouseWorldY()) < h / 2 + 40 then
           for k = 1, 4 do
             local hx = Gx.hash(k + math.floor(t * 3), o.x)
             local hy = Gx.hash(o.x, k + math.floor(t * 3))
-            Gx.px(o.exit and P.blue3 or P.yellow, x + hx * w - World.camx, y + hy * h, 0.55)
+            local px, py = World.toScreen(x + hx * w, y + hy * h)
+            Gx.px(o.exit and P.blue3 or P.yellow, px, py, 0.55)
           end
         end
       end
@@ -967,7 +972,7 @@ function UI.drawOverlay()
   -- подпись под курсором
   local hov = nil
   if sc and not sc.def.custom and not UI.modal and not Script.blocking() then
-    hov = World.objectAt(UI.mouseWorldX(), UI.my)
+    hov = World.objectAt(UI.mouseWorldX(), UI.mouseWorldY())
   end
   UI.hoverObj = hov
   if hov and hov.name then

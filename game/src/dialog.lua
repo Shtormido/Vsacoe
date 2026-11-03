@@ -150,9 +150,10 @@ function D.draw(camx, shakeX, shakeY)
     tailx = nil
   else
     local wx, wy = World.speakerPos(c.sp, c.opts)
-    local sx = wx - camx
+    local sx, sy = World.toScreen(wx, wy)
+    if World.sc and World.sc.def.custom then sx, sy = wx, wy end
     x = math.floor(sx - w / 2)
-    y = math.floor(wy - h - 8)
+    y = math.floor(sy - h - 8)
     tailx = math.floor(U.clamp(sx, 6, W - 6))
     if y < 22 then y = 22 end
   end

@@ -1,5 +1,6 @@
 # Нарезка спрайтов из референс-листа: поиск кадров, удаление фона, уменьшение до игрового размера.
 # Запуск: python cut_sprites.py reference_sheet.jpg ../../game/assets/sprites
+#         python cut_sprites.py reference_sheet.jpg ../../game/assets/sprites_hd 1.8
 import sys, os, json
 import numpy as np
 from PIL import Image
@@ -7,6 +8,7 @@ from scipy import ndimage as nd
 
 src = Image.open(sys.argv[1]).convert("RGB")
 OUT = sys.argv[2]
+MUL = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0   # 2.4 — набор для приближенных сцен
 os.makedirs(OUT, exist_ok=True)
 im = np.asarray(src).astype(int)
 BG = np.array([7, 14, 24])
@@ -85,7 +87,7 @@ for ch, (scale, anims) in SPEC.items():
     meta[ch] = {}
     os.makedirs(os.path.join(OUT, ch), exist_ok=True)
     for an, frames in anims.items():
-        s = scale * ADJ.get((ch, an), 1)
+        s = scale * ADJ.get((ch, an), 1) * MUL
         if an == "portrait": s = 64 / (find(*frames[0])[3] - find(*frames[0])[1])
         meta[ch][an] = len(frames)
         for i, (x, y) in enumerate(frames):

@@ -387,7 +387,7 @@ function love.mousepressed(x, y, b)
     return
   end
   if UI.listening or World.player.frozen then return end
-  World.click(cx + World.camx, cy, b)
+  World.click(World.toWorld(cx, cy), select(2, World.toWorld(cx, cy)), b)
 end
 
 function love.mousereleased(x, y, b)
