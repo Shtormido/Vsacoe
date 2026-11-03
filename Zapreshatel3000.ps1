@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.5'
+$AppVersion  = '3.6'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1201,11 +1201,12 @@ function New-ConfigFromRestrictionObject($j) {
     $lock = @{}
     foreach ($l in $Lockdowns) { $lock[$l.Id] = [bool]$j.lockdowns.($l.Id) }
     $mode = 'block'
-    if ($j.sites.mode -eq 'allow') { $mode = 'allow' }
+    if ($j.sites.mode -in @('allow', 'combined')) { $mode = [string]$j.sites.mode }
     $programs = @(Get-UniqueText @(@($j.programs.list) | ForEach-Object { ConvertTo-ExeName $_ }))
     $block = @(Get-UniqueText @(@($j.sites.block) | ForEach-Object { ConvertTo-Domain $_ }))
     $allow = @(Get-UniqueText @(@($j.sites.allow) | ForEach-Object { ConvertTo-Domain $_ }))
-    $active = if ($mode -eq 'allow') { $allow } else { $block }
+    # в строгих режимах (белый/совмещённый) главный список — белый; в чёрном — чёрный
+    $active = if ($mode -eq 'block') { @($block + $allow) } else { $allow }
     [pscustomobject]@{
         WhitelistEnabled = ([bool]$j.programs.enabled -and $programs.Count -gt 0)
         Programs         = $programs
@@ -2251,9 +2252,9 @@ $MainWindowXaml = @'
                   <StackPanel IsEnabled="{Binding IsChecked, ElementName=chkSites}">
                     <TextBlock FontWeight="SemiBold" Margin="0,4,0,6" Text="Режим работы списков"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" Content="Чёрный список"/>
+                      <RadioButton x:Name="rbModeBlack" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Чёрный список"/>
                       <RadioButton x:Name="rbModeWhite" Style="{StaticResource Segment}" GroupName="sitemode" Content="Белый список"/>
-                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" IsChecked="True" Content="Совмещённый"/>
+                      <RadioButton x:Name="rbModeCombo" Style="{StaticResource Segment}" GroupName="sitemode" Content="Совмещённый"/>
                     </StackPanel>
                     <TextBlock x:Name="txtModeDesc" Style="{StaticResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
@@ -4333,7 +4334,18 @@ function Show-MainWindow {
     $netApplyTimer.Start()
     Update-NetRecvUi
 
-    $window.Add_Closing({ Invoke-Safe { Stop-NetReceiver } })
+    $window.Add_Closing({
+        Invoke-Safe {
+            # Сохраняем всё, что введено в интерфейсе, чтобы при следующем запуске не сбрасывалось
+            try {
+                if ($ui.txtProgAdd.Text)  { Add-Programs   @($ui.txtProgAdd.Text  -split '[,;\s]+'); $ui.txtProgAdd.Text = '' }
+                if ($ui.txtBlockAdd.Text) { Add-BlockSites @($ui.txtBlockAdd.Text -split '[,;\s]+'); $ui.txtBlockAdd.Text = '' }
+                if ($ui.txtAllowAdd.Text) { Add-AllowSites @($ui.txtAllowAdd.Text -split '[,;\s]+'); $ui.txtAllowAdd.Text = '' }
+                Export-RestrictionConfig (Get-RestrictionsFromUI) $RestrictionsFile
+            } catch { }
+        }
+        Invoke-Safe { Stop-NetReceiver }
+    })
 
     #endregion
 
