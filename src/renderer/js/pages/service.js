@@ -1,4 +1,4 @@
-import { html, useState, useEffect, S, api, call, toast, curVersion, batByKey, patchCfg, fmtTime } from '../lib.js';
+import { html, useState, useEffect, S, api, call, toast, curVersion, batByKey, patchCfg, fmtTime, update } from '../lib.js';
 import { Icon } from '../icons.js';
 import { Orb, Select, InfoBar, Expander } from '../ui.js';
 import { installService, removeService, serviceControl } from '../actions.js';
@@ -36,6 +36,7 @@ export function ServicePage() {
         <div class="row wrap" style="margin-top:14px">
           ${svc.installed && (svc.state === 'RUNNING' ? html`<button class="btn" onClick=${() => serviceControl('stop')}><${Icon} name="stop" fill size=${14} />Остановить</button>` : html`<button class="btn" onClick=${() => serviceControl('start')}><${Icon} name="play" fill size=${14} />Запустить</button>`)}
           ${svc.installed && html`<button class="btn danger" onClick=${removeService}><${Icon} name="trash" size=${15} />Удалить сервис</button>`}
+          <button class="btn ghost" onClick=${() => update(s => { s.page = 'servicebat'; })}><${Icon} name="terminal" size=${15} />Через service.bat</button>
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ const { Store, appDir } = require('./store');
 const { Engine } = require('./engine');
 const { Tester } = require('./tester');
 const diag = require('./diagnostics');
+const { ServiceBat } = require('./servicebat');
 const sys = require('./sys');
 const V = require('./versions');
 const { FAKE_SLOTS, DEFAULTS, SCOPES } = require('./core/settings');
@@ -26,6 +27,7 @@ const startHidden = process.argv.includes('--hidden');
 
 const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
 const tester = new Tester(engine, store, (ev) => send('tests:event', ev));
+const sbat = new ServiceBat((ev) => send('sb:event', ev));
 
 function createWindow() {
   const cfg = store.get();
@@ -291,6 +293,13 @@ function registerIpc() {
     return `data:image/${ext};base64,${buf.toString('base64')}`;
   });
   handle('log:read', () => V.readText(store.runtime('winws.log')) || '');
+  const verOrThrow = (id) => { const v = engine.version(id || store.get().selectedVersion); if (!v) throw new Error('Версия не найдена'); return v; };
+  handle('sb:status', (id) => sbat.status(verOrThrow(id).id));
+  handle('sb:start', (id) => sbat.start(verOrThrow(id)));
+  handle('sb:input', (id, text) => sbat.input(verOrThrow(id).id, String(text)));
+  handle('sb:stop', (id) => sbat.stop(verOrThrow(id).id));
+  handle('sb:window', (id) => sbat.openWindow(verOrThrow(id)));
+  handle('sb:refresh', async () => { engine.rescan(); await pollStatus(); return engine.snapshot(); });
 }
 
 function relaunchAdmin() {
@@ -319,6 +328,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', async (e) => {
   quitting = true;
+  sbat.stopAll();
   if (store.get().app.stopOnExit && lastStatus && lastStatus.state === 'running' && !app._stopped) {
     e.preventDefault();
     app._stopped = true;

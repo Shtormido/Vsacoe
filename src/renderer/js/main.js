@@ -13,6 +13,7 @@ import { ServicePage } from './pages/service.js';
 import { VersionsPage } from './pages/versions.js';
 import { AppearancePage } from './pages/appearance.js';
 import { AppPage } from './pages/app.js';
+import { ServiceBatPage, onSbEvent } from './pages/servicebat.js';
 
 const PAGES = [
   { id: 'home', label: 'Главная', icon: 'home', C: HomePage },
@@ -22,6 +23,7 @@ const PAGES = [
   { id: 'lists', label: 'Списки', icon: 'list', C: ListsPage },
   { id: 'tests', label: 'Проверка', icon: 'flask', C: TestsPage },
   { id: 'service', label: 'Сервис', icon: 'shield', C: ServicePage },
+  { id: 'servicebat', label: 'service.bat', icon: 'terminal', C: ServiceBatPage },
   { id: 'versions', label: 'Версии', icon: 'box', C: VersionsPage },
   { sep: true },
   { id: 'appearance', label: 'Оформление', icon: 'palette', C: AppearancePage },
@@ -61,6 +63,7 @@ function App() {
           ${p.id === 'home' && html`<span class=${'nav-dot st-' + st}></span>`}
           ${p.id === 'tests' && s.tests.running && html`<span class="nav-dot st-testing"></span>`}
           ${p.id === 'service' && s.status.service.state === 'RUNNING' && html`<span class="nav-dot st-service"></span>`}
+          ${p.id === 'servicebat' && s.sb && s.sb[s.cfg.selectedVersion] && s.sb[s.cfg.selectedVersion].running && html`<span class="nav-dot st-running"></span>`}
         </button>`)}
       </nav>
       <main class="content"><${C} key=${page.id} /></main>
@@ -83,6 +86,7 @@ async function boot() {
   }
   api.on('status', (st) => update(s => { s.status = st; }));
   api.on('tests:event', onTestEvent);
+  api.on('sb:event', onSbEvent);
   api.on('toast', (t) => toast(t.text, t.type));
   api.on('tray:profile', (id) => activateProfile(id));
 }
