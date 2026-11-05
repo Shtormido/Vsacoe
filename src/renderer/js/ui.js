@@ -1,5 +1,5 @@
 // Базовые компоненты в стиле Fluent.
-import { html, useState, useEffect, useRef, cls, S, closeModal, scoreColor } from './lib.js';
+import { html, render, useState, useEffect, useRef, useLayoutEffect, cls, S, closeModal, scoreColor } from './lib.js';
 import { Icon } from './icons.js';
 
 export function Toggle({ on, onChange, disabled }) {
@@ -16,38 +16,74 @@ export function Seg({ value, options, onChange, disabled }) {
 }
 
 /** Выпадающий список с поиском и группами. options: [{value,label,hint,group,badge}] */
-export function Select({ value, options, onChange, placeholder = 'Не выбрано', search, width, disabled, render }) {
+/** Рендер в отдельный слой поверх окна (вне карточек, анимаций и overflow). */
+function Portal({ children }) {
+  const el = useRef(null);
+  if (!el.current) { el.current = document.createElement('div'); el.current.className = 'portal'; }
+  useLayoutEffect(() => {
+    document.body.appendChild(el.current);
+    return () => { render(null, el.current); el.current.remove(); };
+  }, []);
+  useLayoutEffect(() => { render(children, el.current); });
+  return null;
+}
+
+/** Выпадающий список с поиском и группами. options: [{value,label,hint,group,badge}] */
+export function Select({ value, options, onChange, placeholder = 'Не выбрано', search, width, disabled, render: renderOpt }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const [up, setUp] = useState(false);
+  const [pos, setPos] = useState(null);
   const ref = useRef();
+  const popRef = useRef();
+  const place = () => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 12;
+    const above = r.top - 12;
+    const up = below < 260 && above > below;
+    const maxH = Math.max(160, Math.min(360, up ? above : below));
+    setPos({ left: r.left, width: Math.max(r.width, 220), top: up ? null : r.bottom + 4, bottom: up ? window.innerHeight - r.top + 4 : null, maxH, up });
+  };
   useEffect(() => {
     if (!open) return;
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    place();
+    const close = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc);
-    const r = ref.current.getBoundingClientRect();
-    setUp(window.innerHeight - r.bottom < 300 && r.top > 300);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+    const onScroll = (e) => { if (popRef.current && popRef.current.contains(e.target)) return; place(); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    window.addEventListener('resize', place);
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+      window.removeEventListener('resize', place);
+      document.removeEventListener('scroll', onScroll, true);
+    };
   }, [open]);
   const cur = options.find(o => o.value === value);
   const filtered = q ? options.filter(o => (o.label + ' ' + (o.hint || '')).toLowerCase().includes(q.toLowerCase())) : options;
   let lastGroup = null;
+  const style = pos ? `left:${pos.left}px;width:${pos.width}px;max-height:${pos.maxH}px;${pos.up ? `bottom:${pos.bottom}px` : `top:${pos.top}px`}` : 'visibility:hidden';
   return html`<div class="select" ref=${ref} style=${width ? `width:${width}` : ''}>
-    <button class="select-btn" disabled=${disabled} onClick=${() => { setOpen(!open); setQ(''); }}>
-      <span class="v">${cur ? (render ? render(cur) : cur.label) : html`<span class="muted">${placeholder}</span>`}</span>
+    <button class=${cls('select-btn', open && 'open')} disabled=${disabled} onClick=${() => { setOpen(!open); setQ(''); }}>
+      <span class="v">${cur ? (renderOpt ? renderOpt(cur) : cur.label) : html`<span class="muted">${placeholder}</span>`}</span>
       <${Icon} name="chevdown" size=${14} />
     </button>
-    ${open && html`<div class=${cls('select-pop', up && 'up')}>
+    ${open && html`<${Portal}><div class=${cls('select-pop', pos && pos.up && 'up')} style=${style} ref=${popRef}>
       ${(search || options.length > 12) && html`<input class="input select-search" placeholder="Поиск…" value=${q} onInput=${e => setQ(e.target.value)} ref=${el => el && setTimeout(() => el.focus(), 10)} />`}
       ${filtered.map(o => {
         const g = o.group && o.group !== lastGroup ? html`<div class="opt-group">${o.group}</div>` : null;
         lastGroup = o.group;
         return html`${g}<div class=${cls('opt', o.value === value && 'sel')} onClick=${() => { onChange(o.value); setOpen(false); }}>
-          <span class="grow ellipsis">${render ? render(o) : o.label}</span>${o.badge || ''}${o.hint ? html`<span class="tiny muted">${o.hint}</span>` : ''}</div>`;
+          <span class="grow ellipsis">${renderOpt ? renderOpt(o) : o.label}</span>${o.badge || ''}${o.hint ? html`<span class="tiny muted">${o.hint}</span>` : ''}</div>`;
       })}
       ${!filtered.length && html`<div class="opt muted">Ничего не найдено</div>`}
-    </div>`}
+    </div><//>`}
   </div>`;
 }
 

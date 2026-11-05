@@ -69,6 +69,10 @@ export function applyTheme(t = currentTheme()) {
   for (const [k, v] of Object.entries(map)) if (c[k]) r.setProperty(v, toCss(c[k]));
   const ac = parseColor(c.accent);
   r.setProperty('--accent-soft', `rgba(${ac.r},${ac.g},${ac.b},.16)`);
+  // Непрозрачный фон всплывающих окон (списки, модалки, тосты)
+  const bgc = parseColor(c.bg), tx = parseColor(c.text), k = t.dark ? 0.09 : 0.03;
+  const mix = (a, b) => Math.round(a * (1 - k) + b * k);
+  r.setProperty('--pop-bg', `rgb(${mix(bgc.r, tx.r)},${mix(bgc.g, tx.g)},${mix(bgc.b, tx.b)})`);
   r.setProperty('--font', t.font);
   r.setProperty('--font-display', t.displayFont || t.font);
   r.setProperty('--mono', t.mono);
