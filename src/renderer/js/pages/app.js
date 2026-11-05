@@ -1,6 +1,6 @@
 import { html, S, api, call, toast, patchCfg } from '../lib.js';
 import { Icon } from '../icons.js';
-import { Setting, Toggle, InfoBar } from '../ui.js';
+import { Setting, Toggle, InfoBar, Seg } from '../ui.js';
 
 export function AppPage() {
   const c = S.cfg;
@@ -15,6 +15,10 @@ export function AppPage() {
 
     <div class="section-title">Окно и трей</div>
     <${Setting} icon="menu" title="Сворачивать в трей при закрытии" desc="Значок в трее меняет цвет вместе с состоянием"><${Toggle} on=${a.minimizeToTray} onChange=${v => set('minimizeToTray', v)} /><//>
+    <${Setting} icon="grid" title="Меню трея" desc="Панель — флайаут в стиле Windows 11 с состоянием, стратегиями, профилями и сервисом; системное — обычное контекстное меню">
+      <${Seg} value=${a.trayStyle || 'flyout'} onChange=${v => set('trayStyle', v)} options=${[{ value: 'flyout', label: 'Панель' }, { value: 'native', label: 'Системное' }]} />
+      <button class="btn sm" onClick=${() => api.call('tray:open')}>Показать</button>
+    <//>
     <${Setting} icon="eye" title="Запускать свёрнутым"><${Toggle} on=${a.startMinimized} onChange=${v => set('startMinimized', v)} /><//>
     <${Setting} icon="rocket" title="Запуск вместе с Windows" desc="Через планировщик задач с правами администратора (без запроса UAC)">
       <${Toggle} on=${a.autoStart} onChange=${async v => { try { await call('app:autostart', v); set('autoStart', v); toast(v ? 'Автозапуск включён' : 'Автозапуск выключен', 'ok', 1800); } catch {} }} /><//>

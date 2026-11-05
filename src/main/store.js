@@ -25,7 +25,7 @@ const DEFAULT_CONFIG = () => ({
     { id: 'light', name: 'Минимальный', icon: 'leaf', color: '#ff9f0a', version: '', bat: '', overrides: { 'gameFilter.mode': 'disabled', 'ipset.mode': 'none' } },
   ],
   ui: { themeId: 'fluent-dark', customThemes: [], sidebarCollapsed: false, lastPage: 'home' },
-  app: { stopFull: true, stopOnExit: false, minimizeToTray: true, startMinimized: false, autoRestart: true, pollMs: 2000, autoStart: false, autoStartBat: true },
+  app: { trayStyle: 'flyout', stopFull: true, stopOnExit: false, minimizeToTray: true, startMinimized: false, autoRestart: true, pollMs: 2000, autoStart: false, autoStartBat: true },
   tests: { type: 'standard', timeout: 4, parallel: 12, warmup: 1500, groups: null },
   scores: {},
   serviceMeta: null,

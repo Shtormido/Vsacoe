@@ -62,7 +62,7 @@ export function parseColor(hex) {
 export function toCss(hex) { const c = parseColor(hex); return `rgba(${c.r},${c.g},${c.b},${+c.a.toFixed(3)})`; }
 
 let lastTrayKey = '';
-export function applyTheme(t = currentTheme()) {
+export function applyTheme(t = currentTheme(), opts = {}) {
   const r = document.documentElement.style;
   const c = t.colors;
   const map = { accent: '--accent', accentText: '--accent-text', bg: '--bg', layer: '--layer', card: '--card', surface: '--surface', surfaceHover: '--surface-hover', surfaceActive: '--surface-active', stroke: '--stroke', strokeStrong: '--stroke-strong', text: '--text', text2: '--text-2', text3: '--text-3', success: '--success', warning: '--warning', danger: '--danger', stOff: '--st-off', stOn: '--st-on', stService: '--st-service', stBusy: '--st-busy', sidebar: '--sidebar' };
@@ -90,7 +90,7 @@ export function applyTheme(t = currentTheme()) {
   document.body.classList.toggle('reduce-motion', !!t.reduceMotion);
   document.body.classList.toggle('density-compact', t.density === 'compact');
   document.body.dataset.orb = t.orb;
-  if (!api) return;
+  if (!api || opts.local) return; // панель трея меняет только себя
   api.call('win:overlay', { color: '#00000000', symbolColor: toCss(c.text).replace(/,[\d.]+\)$/, ',1)').replace('rgba', 'rgba'), dark: t.dark }).catch(() => {});
   api.call('win:material', t.material).catch(() => {});
   const trayKey = [c.stOff, c.stOn, c.stService, c.stBusy].join();

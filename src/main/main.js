@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, nativeTheme, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { Store, appDir } = require('./store');
@@ -25,7 +25,11 @@ let lastStatus = null;
 let quitting = false;
 const startHidden = process.argv.includes('--hidden');
 
-const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
+let trayWin = null;
+// Событие уходит и в главное окно, и во всплывающую панель трея
+const send = (ch, payload) => {
+  for (const w of [win, trayWin]) if (w && !w.isDestroyed()) w.webContents.send(ch, payload);
+};
 const tester = new Tester(engine, store, (ev) => send('tests:event', ev));
 const sbat = new ServiceBat((ev) => send('sb:event', ev));
 
@@ -55,18 +59,105 @@ function createWindow() {
 
 function trayMenu() {
   const cfg = store.get();
-  const st = lastStatus ? lastStatus.state : 'off';
+  const st = lastStatus || { state: 'off', service: {} };
+  const r = st.run || {};
+  const svc = st.service || {};
+  const DOT = { off: '⚪', running: '🟢', service: '🟣', testing: '🟠', starting: '🟠' };
+  const ver = engine.version(cfg.selectedVersion);
+  const bats = ver ? [...ver.bats, ...engine.custom.bats] : [];
+  const err = (e) => send('toast', { type: 'error', text: e.message });
+  const run = (fn) => () => Promise.resolve(fn()).then(pollStatus).catch(err);
+  const full = cfg.app.stopFull !== false;
+  const openPage = (page) => () => { win.show(); win.focus(); win.webContents.send('nav', page); };
   return Menu.buildFromTemplate([
-    { label: 'Zapret Ultimate Edition', enabled: false },
+    { label: `${DOT[st.state] || '⚪'}  Zapret UE — ${STATE_LABEL[st.state] || st.state}`, enabled: false },
+    ...(st.state !== 'off' && r.batName ? [{ label: `     ${r.batName}${r.version ? ' · v' + r.version : ''}`, enabled: false }] : []),
     { type: 'separator' },
-    { label: 'Открыть', click: () => { win.show(); win.focus(); } },
-    st === 'running'
-      ? { label: 'Остановить', click: () => engine.stop({ full: store.get().app.stopFull !== false }).then(pollStatus) }
-      : { label: 'Запустить', enabled: st === 'off', click: () => engine.start({}).then(pollStatus).catch(e => send('toast', { type: 'error', text: e.message })) },
-    { label: 'Профиль', submenu: cfg.profiles.map(p => ({ label: p.name, type: 'radio', checked: p.id === cfg.activeProfileId, click: () => send('tray:profile', p.id) })) },
+    st.state === 'running'
+      ? { label: '⏹  Выключить', click: run(() => engine.stop({ full })) }
+      : st.state === 'service'
+        ? { label: '⏹  Остановить сервис', click: run(() => engine.serviceControl('stop')) }
+        : { label: '▶  Включить', enabled: st.state === 'off' && !!cfg.selectedBat, click: run(() => engine.start({})) },
+    { label: '🔄  Перезапустить', enabled: st.state === 'running', click: run(() => engine.start({})) },
+    { label: '✨  Подобрать оптимальный', enabled: st.state === 'off' || st.state === 'running', click: () => {
+      if (!ver) return;
+      tester.run({ versionId: ver.id, ...cfg.tests, mode: 'quick', bats: bats.map(b => b.key), autoApply: true }).then(pollStatus).catch(() => {});
+    } },
+    { type: 'separator' },
+    { label: '📑  Стратегия', submenu: bats.length ? bats.map(b => ({ label: b.name + (b.source === 'custom' ? '  (своя)' : ''), type: 'radio', checked: b.key === cfg.selectedBat, click: () => {
+      cfg.selectedBat = b.key; store.save(); refreshTrayMenu(); send('config:changed', null);
+      if (lastStatus && lastStatus.state === 'running') run(() => engine.start({ batKey: b.key }))();
+    } })) : [{ label: 'Нет стратегий', enabled: false }] },
+    { label: '📦  Версия', submenu: engine.versions.map(v => ({ label: 'v' + v.version, type: 'radio', checked: v.id === cfg.selectedVersion, click: () => { cfg.selectedVersion = v.id; store.save(); engine.rescan(); refreshTrayMenu(); send('config:changed', null); } })) },
+    { label: '👤  Профиль', submenu: cfg.profiles.map(p => ({ label: p.name, type: 'radio', checked: p.id === cfg.activeProfileId, click: () => send('tray:profile', p.id) })) },
+    { label: `🛡  Сервис — ${svc.installed ? (svc.state === 'RUNNING' ? 'работает' : 'остановлен') : 'не установлен'}`, submenu: [
+      { label: svc.installed ? 'Сменить на выбранную стратегию' : 'Установить выбранную стратегию', enabled: !!cfg.selectedBat, click: run(() => engine.serviceInstall({})) },
+      { label: 'Запустить', enabled: !!svc.installed && svc.state !== 'RUNNING', click: run(() => engine.serviceControl('start')) },
+      { label: 'Остановить', enabled: svc.state === 'RUNNING', click: run(() => engine.serviceControl('stop')) },
+      { type: 'separator' },
+      { label: 'Удалить сервис (как п.2 service.bat)', enabled: !!svc.installed, click: run(() => engine.serviceRemove()) },
+    ] },
+    { type: 'separator' },
+    { label: '🏠  Открыть программу', click: openPage('home') },
+    { label: '🧪  Проверка стратегий', click: openPage('tests') },
+    { label: '📝  Списки', click: openPage('lists') },
+    { label: '⌨  service.bat', click: openPage('servicebat') },
     { type: 'separator' },
     { label: 'Выход', click: () => { quitting = true; app.quit(); } },
   ]);
+}
+
+const TRAY_W = 372;
+let trayHiddenAt = 0;
+
+function createTrayWin() {
+  const isWin = process.platform === 'win32';
+  trayWin = new BrowserWindow({
+    width: TRAY_W, height: 560, show: false, frame: false, resizable: false, movable: false,
+    minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
+    backgroundColor: isWin ? '#00000000' : '#202020', backgroundMaterial: isWin ? 'acrylic' : undefined,
+    roundedCorners: true, hasShadow: true, title: 'Zapret UE',
+    webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false, spellcheck: false },
+  });
+  trayWin.removeMenu();
+  trayWin.loadFile(path.join(__dirname, '..', 'renderer', 'tray.html'));
+  trayWin.on('blur', () => {
+    if (trayWin.webContents.isDevToolsOpened()) return;
+    trayWin.hide(); trayHiddenAt = Date.now();
+  });
+  trayWin.on('closed', () => { trayWin = null; });
+}
+
+/** Ставит панель у значка трея (панель задач может быть снизу, сверху или сбоку). */
+function placeTrayWin() {
+  if (!trayWin) return;
+  const [w, h] = trayWin.getSize();
+  const b = tray ? tray.getBounds() : { x: 0, y: 0, width: 0, height: 0 };
+  const pt = b.width ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : screen.getCursorScreenPoint();
+  const wa = screen.getDisplayNearestPoint(pt).workArea;
+  const clampX = (x) => Math.min(Math.max(x, wa.x + 8), wa.x + wa.width - w - 8);
+  const clampY = (y) => Math.min(Math.max(y, wa.y + 8), wa.y + wa.height - h - 8);
+  let x = clampX(Math.round(pt.x - w / 2));
+  let y = pt.y > wa.y + wa.height / 2 ? wa.y + wa.height - h - 8 : wa.y + 8;
+  if (pt.x < wa.x) x = wa.x + 8;                               // панель задач слева
+  else if (pt.x > wa.x + wa.width) x = wa.x + wa.width - w - 8; // справа
+  if (pt.x < wa.x || pt.x > wa.x + wa.width) y = clampY(Math.round(pt.y - h + 40));
+  trayWin.setPosition(Math.round(x), Math.round(y));
+}
+
+function showTrayWin() {
+  if (store.get().app.trayStyle === 'native') { tray.popUpContextMenu(trayMenu()); return; }
+  if (!trayWin) createTrayWin();
+  if (trayWin.isVisible()) { trayWin.hide(); return; }
+  if (Date.now() - trayHiddenAt < 250) return; // клик по значку, который только что закрыл панель
+  placeTrayWin();
+  trayWin.show(); trayWin.focus();
+  trayWin.webContents.send('tray:shown');
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(store.get().app.trayStyle === 'native' ? trayMenu() : null);
 }
 
 function setupTray() {
@@ -74,8 +165,11 @@ function setupTray() {
     const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'renderer', 'assets', 'icon.png')).resize({ width: 16, height: 16 });
     tray = new Tray(icon);
     tray.setToolTip('Zapret Ultimate Edition');
-    tray.on('click', () => { if (win.isVisible()) win.focus(); else win.show(); });
-    tray.setContextMenu(trayMenu());
+    tray.on('click', showTrayWin);
+    tray.on('right-click', showTrayWin);
+    tray.on('double-click', () => { if (trayWin) trayWin.hide(); win.show(); win.focus(); });
+    refreshTrayMenu();
+    createTrayWin();
   } catch (e) { console.error('tray', e); }
 }
 
@@ -94,7 +188,7 @@ async function pollStatus() {
         const r = st.run;
         tray.setToolTip(`Zapret UE — ${STATE_LABEL[st.state] || st.state}${r && r.batName ? '\n' + r.batName + (r.version ? ' · v' + r.version : '') : ''}`);
         if (trayIcons[st.state]) tray.setImage(trayIcons[st.state]);
-        tray.setContextMenu(trayMenu());
+        refreshTrayMenu();
       }
     }
     return st;
@@ -120,10 +214,16 @@ function stripBuild(b) {
   return { ...rest, versionId: version && version.id, versionLabel: version && version.version, batKey: bat && bat.key, batName: bat && bat.name, batFile: bat && bat.file };
 }
 
+let currentSender = null;
 function handle(ch, fn) {
-  ipcMain.handle(ch, async (_e, ...args) => {
-    try { return { ok: true, data: await fn(...args) }; } catch (e) { return { ok: false, error: e.message || String(e) }; }
+  ipcMain.handle(ch, async (e, ...args) => {
+    currentSender = e.sender;
+    try { return { ok: true, data: await fn(...args) }; } catch (err) { return { ok: false, error: err.message || String(err) }; }
   });
+}
+/** Сообщить остальным окнам (главному / панели трея), что настройки изменились. */
+function notifyConfig(except) {
+  for (const w of [win, trayWin]) if (w && !w.isDestroyed() && w.webContents !== except) w.webContents.send('config:changed', null);
 }
 
 function registerIpc() {
@@ -135,9 +235,11 @@ function registerIpc() {
   handle('config:patch', (partial) => {
     const before = store.get();
     const rootChanged = partial && (('zapretRoot' in partial && partial.zapretRoot !== before.zapretRoot) || ('customDir' in partial && partial.customDir !== before.customDir));
+    const sender = currentSender;
     store.patch(partial);
     if (rootChanged) engine.rescan();
-    if (tray && partial && (partial.profiles || partial.activeProfileId)) tray.setContextMenu(trayMenu());
+    notifyConfig(sender);
+    if (tray && partial && (partial.profiles || partial.activeProfileId || partial.app)) refreshTrayMenu();
     return store.get();
   });
   handle('dialog:folder', async (opts = {}) => {
@@ -252,7 +354,8 @@ function registerIpc() {
     if (p.version && engine.version(p.version)) c.selectedVersion = p.version;
     if (p.bat) c.selectedBat = p.bat;
     store.save();
-    if (tray) tray.setContextMenu(trayMenu());
+    refreshTrayMenu();
+    notifyConfig(currentSender);
     return c;
   });
   handle('tests:run', (opts) => { tester.run(opts).catch(() => {}); return true; });
@@ -285,6 +388,27 @@ function registerIpc() {
     return true;
   });
   handle('app:relaunchAdmin', () => relaunchAdmin());
+  handle('tray:open', () => { showTrayWin(); return true; });
+  handle('tray:hide', () => { if (trayWin) { trayWin.hide(); trayHiddenAt = Date.now(); } return true; });
+  handle('tray:resize', (h) => {
+    if (!trayWin) return false;
+    const wa = screen.getDisplayMatching(trayWin.getBounds()).workArea;
+    const nh = Math.max(240, Math.min(Math.ceil(h), wa.height - 16));
+    if (trayWin.getSize()[1] === nh) return true;
+    // у окна без изменения размера setSize может игнорироваться — на мгновение разрешаем
+    trayWin.setResizable(true);
+    trayWin.setSize(TRAY_W, nh);
+    trayWin.setResizable(false);
+    placeTrayWin();
+    return true;
+  });
+  handle('win:show', (page) => {
+    if (trayWin) trayWin.hide();
+    win.show(); win.focus();
+    if (page) win.webContents.send('nav', page);
+    return true;
+  });
+  handle('app:quit', () => { quitting = true; app.quit(); return true; });
   handle('app:autostart', async (enabled) => {
     if (!sys.isWin) return { ok: true, sim: true };
     const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;

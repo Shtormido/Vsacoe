@@ -93,5 +93,11 @@ async function boot() {
   api.on('sb:event', onSbEvent);
   api.on('toast', (t) => toast(t.text, t.type));
   api.on('tray:profile', (id) => activateProfile(id));
+  api.on('nav', (page) => go(page));
+  api.on('config:changed', async () => {
+    const [cfg, scan] = await Promise.all([api.call('config:get'), api.call('versions:scan')]);
+    const themeChanged = JSON.stringify(cfg.ui) !== JSON.stringify(S.cfg.ui);
+    S.cfg = cfg; S.scan = scan; if (themeChanged) applyTheme(); update();
+  });
 }
 boot();
