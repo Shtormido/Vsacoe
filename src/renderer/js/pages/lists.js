@@ -21,9 +21,9 @@ function ItemChip({ value, hit, onChange, onRemove, onDragStart }) {
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState(value);
   if (edit) return html`<span class="item-chip"><input value=${v} size=${Math.max(6, v.length)} ref=${el => el && setTimeout(() => el.focus(), 0)} onInput=${e => setV(e.target.value)}
-    onBlur=${() => { setEdit(false); if (v.trim() && v !== value) onChange(v.trim()); }} onKeyDown=${e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setV(value); setEdit(false); } }} /></span>`;
-  return html`<span class=${cls('item-chip', hit && 'hit')} draggable="true" onDragStart=${onDragStart} onDblClick=${() => { setV(value); setEdit(true); }} title="Двойной клик — изменить, перетащите в другую группу">${value}
-    <button class="btn ghost icon" onClick=${onRemove}><${Icon} name="x" size=${12} /></button></span>`;
+    onBlur=${(e) => { const nv = e.target.value.trim(); setEdit(false); if (nv && nv !== value) onChange(nv); }} onKeyDown=${e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setV(value); setEdit(false); } }} /></span>`;
+  return html`<span class=${cls('item-chip', hit && 'hit')} draggable="true" onDragStart=${onDragStart} onClick=${(e) => { if (e.target.closest('button')) return; setV(value); setEdit(true); }} title="Нажмите, чтобы изменить; перетащите в другую группу">${value}
+    <button class="btn ghost icon" title="Удалить" onClick=${(e) => { e.stopPropagation(); onRemove(); }}><${Icon} name="x" size=${12} /></button></span>`;
 }
 
 function AddBox({ onAdd, placeholder }) {
@@ -66,7 +66,11 @@ export function ListsPage() {
   const file = index && index.files.find(f => f.path === sel);
   const kind = file ? detectKind(file.name) : 'list';
   const current = mode === 'groups' && model ? serializeGrouped(model) : text;
-  const dirty = model !== null && current !== orig && current.replace(/\r\n/g, '\n').trim() !== orig.replace(/\r\n/g, '\n').trim();
+  // Изменения считаем относительно того же файла, разобранного и записанного обратно:
+  // иначе файл без пустых строк между группами выглядел бы изменённым сразу после открытия.
+  const norm = (t) => String(t).replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim();
+  const baseline = useMemo(() => (file ? serializeGrouped(parseGrouped(orig, kind)) : ''), [orig, kind, file && file.path]);
+  const dirty = model !== null && (mode === 'groups' ? norm(current) !== norm(baseline) : norm(text) !== norm(orig));
 
   const load = async (f) => {
     if (dirty && !(await confirmDialog('Несохранённые изменения', 'Перейти к другому файлу без сохранения?', 'Перейти'))) return;

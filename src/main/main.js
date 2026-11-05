@@ -109,9 +109,9 @@ function schedulePoll() {
 
 function insideAllowed(p) {
   const c = store.get();
-  const roots = [c.zapretRoot, c.customDir, DATA_DIR].filter(Boolean).map(r => path.resolve(r).toLowerCase() + path.sep);
-  const rp = path.resolve(p).toLowerCase();
-  return roots.some(r => rp.startsWith(r));
+  const norm = (x) => path.resolve(x).replace(/[\\/]+$/, '').toLowerCase();
+  const rp = norm(p);
+  return [c.zapretRoot, c.customDir, DATA_DIR].filter(Boolean).map(norm).some(r => rp === r || rp.startsWith(r + path.sep));
 }
 
 function stripBuild(b) {
