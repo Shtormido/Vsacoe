@@ -30,7 +30,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $AppName     = 'Zapreshatel3000'
-$AppVersion  = '3.6'
+$AppVersion  = '3.7'
 $BuildDate   = '03.11.2026'
 $CatalogFile = Join-Path $PSScriptRoot 'policies.json'
 $ProfilesDir = Join-Path $PSScriptRoot 'profiles'
@@ -1472,6 +1472,7 @@ $script:Net = [hashtable]::Synchronized(@{
     LastFrom = ''
     Targets  = @()
     WantRecv = $false
+    BindIp   = ''
 })
 
 # UDP-ответчик: на широковещательный запрос поиска отвечает своим именем (адреса искать не нужно)
@@ -1586,15 +1587,45 @@ function Stop-NetReceiver {
     $script:Net.Udp = $null; $script:Net.UdpPS = $null; $script:Net.UdpRS = $null
 }
 
+# Локальные IPv4-адреса этого ПК (у главного их может быть несколько)
+function Get-LocalIPv4List {
+    try {
+        @(Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction Stop | Where-Object { $_.IPEnabled -and $_.IPAddress } |
+            ForEach-Object { $_.IPAddress } | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -ne '127.0.0.1' } | Select-Object -Unique)
+    } catch {
+        try { @([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | ForEach-Object { $_.ToString() } | Where-Object { $_ -ne '127.0.0.1' }) } catch { @() }
+    }
+}
+
+# POST JSON с возможностью привязки исходящего соединения к конкретному локальному IP
+function Invoke-NetPost([string]$Url, [string]$BodyJson, [int]$TimeoutSec, [string]$BindIp) {
+    $req = [System.Net.HttpWebRequest]::Create($Url)
+    $req.Method = 'POST'
+    $req.ContentType = 'application/json; charset=utf-8'
+    $req.Timeout = $TimeoutSec * 1000
+    $req.ReadWriteTimeout = $TimeoutSec * 1000
+    if ($BindIp) {
+        $local = [System.Net.IPAddress]::Parse($BindIp)
+        $req.ServicePoint.BindIPEndPointDelegate = [System.Net.BindIPEndPoint] { param($sp, $remote, $retry) New-Object System.Net.IPEndPoint($local, 0) }
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($BodyJson)
+    $req.ContentLength = $bytes.Length
+    $s = $req.GetRequestStream(); $s.Write($bytes, 0, $bytes.Length); $s.Close()
+    $resp = $req.GetResponse()
+    $sr = New-Object System.IO.StreamReader($resp.GetResponseStream(), [System.Text.Encoding]::UTF8)
+    $txt = $sr.ReadToEnd(); $sr.Close(); $resp.Close()
+    return ($txt | ConvertFrom-Json)
+}
+
 # Отправка текущих ограничений выбранным ПК (только по нажатию — сеть не засоряется)
-function Send-ConfigToTargets([string[]]$Targets, [int]$Port, [string]$Password, $Config) {
+function Send-ConfigToTargets([string[]]$Targets, [int]$Port, [string]$Password, $Config, [string]$BindIp = '') {
     $obj = New-RestrictionObject $Config
     $body = @{ password = $Password; config = $obj } | ConvertTo-Json -Depth 6
     $results = @()
     foreach ($t in $Targets) {
         $ip = ([string]$t).Trim(); if (-not $ip) { continue }
         try {
-            $r = Invoke-RestMethod -Uri ("http://{0}:{1}/apply" -f $ip, $Port) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 4
+            $r = Invoke-NetPost ("http://{0}:{1}/apply" -f $ip, $Port) $body 4 $BindIp
             $results += [pscustomobject]@{ Ip = $ip; Ok = [bool]$r.ok; Name = [string]$r.name; Mac = [string]$r.mac }
         } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = ''; Mac = '' } }
     }
@@ -1602,10 +1633,10 @@ function Send-ConfigToTargets([string[]]$Targets, [int]$Port, [string]$Password,
 }
 
 # Поиск включённых на приём ПК в локальной сети (решает проблему динамических IP)
-function Find-NetTargets([int]$Port, [string]$Password) {
+function Find-NetTargets([int]$Port, [string]$Password, [string]$BindIp = '') {
     $found = @()
     $seen = @{}
-    $udp = New-Object System.Net.Sockets.UdpClient
+    $udp = if ($BindIp) { New-Object System.Net.Sockets.UdpClient((New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($BindIp), 0))) } else { New-Object System.Net.Sockets.UdpClient }
     try {
         $udp.EnableBroadcast = $true
         $udp.Client.ReceiveTimeout = 400
@@ -1640,26 +1671,26 @@ function New-NetTarget([string]$Ip, [string]$Name, [string]$Mac) {
     [pscustomobject]@{ Ip = $Ip; Name = [string]$Name; Mac = [string]$Mac; Display = $disp }
 }
 
-function Send-ClearToTargets([string[]]$Targets, [int]$Port, [string]$Password) {
+function Send-ClearToTargets([string[]]$Targets, [int]$Port, [string]$Password, [string]$BindIp = '') {
     $body = @{ password = $Password } | ConvertTo-Json
     $results = @()
     foreach ($t in $Targets) {
         $ip = ([string]$t).Trim(); if (-not $ip) { continue }
         try {
-            $r = Invoke-RestMethod -Uri ("http://{0}:{1}/clear" -f $ip, $Port) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 4
+            $r = Invoke-NetPost ("http://{0}:{1}/clear" -f $ip, $Port) $body 4 $BindIp
             $results += [pscustomobject]@{ Ip = $ip; Ok = [bool]$r.ok; Name = [string]$r.name; Mac = [string]$r.mac }
         } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = ''; Mac = '' } }
     }
     return , $results
 }
 
-function Test-NetTargets([string[]]$Targets, [int]$Port, [string]$Password) {
+function Test-NetTargets([string[]]$Targets, [int]$Port, [string]$Password, [string]$BindIp = '') {
     $body = @{ password = $Password } | ConvertTo-Json
     $results = @()
     foreach ($t in $Targets) {
         $ip = ([string]$t).Trim(); if (-not $ip) { continue }
         try {
-            $r = Invoke-RestMethod -Uri ("http://{0}:{1}/ping" -f $ip, $Port) -Method Post -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 3
+            $r = Invoke-NetPost ("http://{0}:{1}/ping" -f $ip, $Port) $body 3 $BindIp
             $results += [pscustomobject]@{ Ip = $ip; Ok = [bool]$r.ok; Name = [string]$r.name; Mac = [string]$r.mac }
         } catch { $results += [pscustomobject]@{ Ip = $ip; Ok = $false; Name = ''; Mac = '' } }
     }
@@ -1669,7 +1700,7 @@ function Test-NetTargets([string[]]$Targets, [int]$Port, [string]$Password) {
 function Save-NetSettings {
     try {
         $tg = @($script:Net.Targets | ForEach-Object { [ordered]@{ ip = $_.Ip; name = $_.Name; mac = $_.Mac } })
-        [ordered]@{ recvOn = $script:Net.RecvOn; port = $script:Net.Port; password = $script:Net.Password; targets = $tg } |
+        [ordered]@{ recvOn = $script:Net.RecvOn; port = $script:Net.Port; password = $script:Net.Password; bindIp = $script:Net.BindIp; targets = $tg } |
             ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $NetSettingsFile -Encoding UTF8
     } catch { Write-Log "Не удалось сохранить сетевые настройки: $($_.Exception.Message)" }
 }
@@ -1680,6 +1711,7 @@ function Load-NetSettings {
             $s = Get-Content -LiteralPath $NetSettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($s.port)     { $script:Net.Port = [int]$s.port }
             if ($s.password) { $script:Net.Password = [string]$s.password }
+            if ($s.bindIp)   { $script:Net.BindIp = [string]$s.bindIp }
             $script:Net.Targets = @(@($s.targets) | ForEach-Object {
                 if ($_ -is [string]) { New-NetTarget $_ '' '' } else { New-NetTarget ([string]$_.ip) ([string]$_.name) ([string]$_.mac) }
             })
@@ -2835,6 +2867,11 @@ $MainWindowXaml = @'
               <StackPanel>
                 <TextBlock Style="{StaticResource H2}" Text="Рассылка на другие ПК (этот ПК — главный)"/>
                 <TextBlock Style="{StaticResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap" Text="Проще всего — «Найти ПК и применить ко всем»: программа сама найдёт в сети все компьютеры с включённым приёмом (адреса вводить не нужно, подходит для динамических IP) и применит на них текущие ограничения. Можно и вручную добавить адреса ниже."/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                  <TextBlock Text="Отправлять с IP:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <ComboBox x:Name="cmbNetBindIp" Width="260" VerticalAlignment="Center"/>
+                  <TextBlock Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="10,0,0,0" Text="(если у этого ПК несколько сетей)"/>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                   <Button x:Name="btnNetDiscoverApply" Style="{StaticResource BtnPrimary}" Content="🔍 Найти ПК и применить ко всем"/>
                   <Button x:Name="btnNetDiscover" Style="{StaticResource Btn}" Content="Только найти ПК" Margin="10,0,0,0"/>
@@ -4159,6 +4196,15 @@ function Show-MainWindow {
     $ui.lbNetTargets.ItemsSource = $netTargets
     $ui.lbNetTargets.DisplayMemberPath = 'Display'
 
+    # Выбор исходящего IP (у главного ПК может быть несколько сетей)
+    $NetBindAuto = 'Авто (все сети)'
+    [void]$ui.cmbNetBindIp.Items.Add($NetBindAuto)
+    foreach ($lip in (Get-LocalIPv4List)) { [void]$ui.cmbNetBindIp.Items.Add($lip) }
+    if ($script:Net.BindIp -and $ui.cmbNetBindIp.Items.Contains($script:Net.BindIp)) { $ui.cmbNetBindIp.SelectedItem = $script:Net.BindIp }
+    else { $ui.cmbNetBindIp.SelectedItem = $NetBindAuto }
+    function Get-NetBindIp { $v = [string]$ui.cmbNetBindIp.SelectedItem; if ($v -and $v -ne $NetBindAuto) { return $v } else { return '' } }
+    $ui.cmbNetBindIp.Add_SelectionChanged({ Invoke-Safe { $script:Net.BindIp = Get-NetBindIp; Save-NetSettings } })
+
     # Если приём был включён в прошлый раз — включаем автоматически при запуске
     if ($script:Net.WantRecv -and $IsAdmin -and $script:Net.Password) {
         try { Start-NetReceiver } catch { Write-Log "Автовключение приёма не удалось: $($_.Exception.Message)" }
@@ -4218,7 +4264,7 @@ function Show-MainWindow {
         $pass = $ui.txtNetPass.Text.Trim(); $script:Net.Password = $pass; $script:Net.Port = $port; Save-NetSettings
         $cfg = Get-RestrictionsFromUI
         Set-Busy $true
-        try { $res = Send-ConfigToTargets $ips $port $pass $cfg } finally { Set-Busy $false }
+        try { $res = Send-ConfigToTargets $ips $port $pass $cfg (Get-NetBindIp) } finally { Set-Busy $false }
         $okn = @($res | Where-Object { $_.Ok }).Count
         $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "принято ($($_.Name), MAC $($_.Mac))" } else { 'нет связи' }) }
         Show-Info ("Отправлены настройки (ограничения + политики):`r`n`r`n" + (Get-RestrictionSummary $cfg) + "`r`n`r`nУспешно: $okn из $($res.Count)`r`n" + ($lines -join "`r`n"))
@@ -4248,7 +4294,7 @@ function Show-MainWindow {
             $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
             $pass = $ui.txtNetPass.Text.Trim()
             Set-Busy $true
-            try { $res = Send-ClearToTargets $ips $port $pass } finally { Set-Busy $false }
+            try { $res = Send-ClearToTargets $ips $port $pass (Get-NetBindIp) } finally { Set-Busy $false }
             $okn = @($res | Where-Object { $_.Ok }).Count
             $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "снято ($($_.Name))" } else { 'нет связи' }) }
             Show-Info ("Команда «снять ограничения» отправлена.`r`n`r`nУспешно: $okn из $($res.Count)`r`n" + ($lines -join "`r`n"))
@@ -4261,7 +4307,7 @@ function Show-MainWindow {
             $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
             $pass = $ui.txtNetPass.Text.Trim()
             Set-Busy $true
-            try { $res = Test-NetTargets @($netTargets | ForEach-Object { $_.Ip }) $port $pass } finally { Set-Busy $false }
+            try { $res = Test-NetTargets @($netTargets | ForEach-Object { $_.Ip }) $port $pass (Get-NetBindIp) } finally { Set-Busy $false }
             $lines = $res | ForEach-Object { "• $($_.Ip) — " + $(if ($_.Ok) { "на связи ($($_.Name), MAC $($_.Mac))" } else { 'нет связи' }) }
             $ui.txtNetSendStatus.Text = ($lines -join "`r`n")
         }
@@ -4270,7 +4316,7 @@ function Show-MainWindow {
     function Invoke-NetDiscover {
         $port = 0; [void][int]::TryParse($ui.txtNetPort.Text.Trim(), [ref]$port); if ($port -le 0) { $port = $script:Net.Port }
         $pass = $ui.txtNetPass.Text.Trim(); $script:Net.Port = $port; $script:Net.Password = $pass
-        $found = @(Find-NetTargets $port $pass)
+        $found = @(Find-NetTargets $port $pass (Get-NetBindIp))
         $netTargets.Clear(); foreach ($t in $found) { $netTargets.Add($t) }
         $script:Net.Targets = @($netTargets); Save-NetSettings
         return , $found
