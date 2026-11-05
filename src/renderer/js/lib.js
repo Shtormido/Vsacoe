@@ -86,7 +86,12 @@ export function patchCfg(partial) {
 
 export function curVersion() { return S.scan.versions.find(v => v.id === S.cfg.selectedVersion) || null; }
 export function allBats(ver = curVersion()) {
-  return [...(ver ? ver.bats : []), ...S.scan.custom.bats];
+  const list = [...(ver ? ver.bats : []), ...S.scan.custom.bats];
+  const order = (S.cfg && S.cfg.batOrder) || [];
+  if (!order.length) return list;
+  // свой порядок (перетаскиванием на вкладке «Стратегии»); новые батники — в конце в обычном порядке
+  const pos = (b) => { const i = order.indexOf(b.key); return i < 0 ? 1e6 : i; };
+  return list.map((b, i) => [b, i]).sort((a, c) => (pos(a[0]) - pos(c[0])) || (a[1] - c[1])).map(x => x[0]);
 }
 export function batByKey(key, ver = curVersion()) { return allBats(ver).find(b => b.key === key) || null; }
 export function activeProfile() { return S.cfg.profiles.find(p => p.id === S.cfg.activeProfileId) || S.cfg.profiles[0]; }
@@ -151,3 +156,15 @@ export function scoreColor(p) {
 export const GF_LABEL = { disabled: 'выкл', all: 'TCP+UDP', tcp: 'TCP', udp: 'UDP', 'n/a': 'нет' };
 export const IPSET_LABEL = { loaded: 'loaded', none: 'none', any: 'any', 'n/a': 'нет' };
 export const STATE_TEXT = { off: 'Выключен', running: 'Обход работает', service: 'Работает как сервис', testing: 'Идёт проверка', starting: 'Запуск…' };
+
+/** Пути файлов, перетащенных из проводника. */
+export function droppedPaths(e) {
+  return [...((e.dataTransfer && e.dataTransfer.files) || [])].map(f => api.pathForFile(f)).filter(Boolean);
+}
+/** Перемещение элемента массива. */
+export function moveItem(arr, from, to) {
+  const a = [...arr];
+  const [x] = a.splice(from, 1);
+  a.splice(to > from ? to - 1 : to, 0, x);
+  return a;
+}

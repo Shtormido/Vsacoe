@@ -320,3 +320,24 @@ input, textarea, select, button { font: inherit; color: inherit; }
 
 .select-btn.open { border-bottom: 2px solid var(--accent); }
 .stagger > *:hover, .stagger > *:focus-within { position: relative; z-index: 5; }
+
+/* Свёрнутое меню: только значки, без обрезков подписей */
+.sidebar.collapsed .nav-item { padding: 0 11px; }
+.sidebar.collapsed .nav-item > span:not(.nav-dot) { display: none; }
+.sidebar.collapsed .nav-item .nav-dot { position: absolute; top: 7px; left: 27px; width: 7px; height: 7px; margin: 0; }
+
+/* Перетаскивание */
+.drag-handle { cursor: grab; color: var(--text-3); display: inline-grid; place-items: center; padding: 2px; border-radius: 4px; flex: 0 0 auto; }
+.drag-handle:hover { color: var(--text); background: var(--surface-hover); }
+.drag-handle:active { cursor: grabbing; }
+.dragging { opacity: .35; }
+.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
+.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
+.item-chip.drop-before { box-shadow: -3px 0 0 0 var(--accent); }
+.file-drop { position: relative; }
+.file-drop.over::after { content: attr(data-drop); position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--accent) 12%, var(--pop-bg)); color: var(--text); font-weight: 600; font-size: calc(var(--fs) * 1.1); pointer-events: none; animation: fadeIn var(--dur); }
+.card-actions { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; }
+
+.card.drop-before { box-shadow: -4px 0 0 0 var(--accent); }
+.card.drop-after { box-shadow: 4px 0 0 0 var(--accent); }
+.gauto { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }

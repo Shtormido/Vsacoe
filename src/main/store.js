@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = () => ({
   base: {},
   versionOverrides: {},
   batOverrides: {},
+  batOrder: [],
   profiles: [
     { id: 'daily', name: 'Повседневный', icon: 'globe', color: '#0a84ff', version: '', bat: '', overrides: {} },
     { id: 'games', name: 'Игры', icon: 'game', color: '#34c759', version: '', bat: '', overrides: { 'gameFilter.mode': 'all' } },

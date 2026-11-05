@@ -213,6 +213,29 @@ function registerIpc() {
     fs.unlinkSync(bat.file);
     return engine.rescan();
   });
+  // Файлы, перетащенные из проводника: .bat -> bats\, .txt -> lists\ (targets.txt -> корень), .bin -> bin\
+  handle('import:files', ({ paths, overwrite } = {}) => {
+    const c = store.get();
+    if (!c.customDir) throw new Error('Общая папка не задана');
+    const res = { copied: [], exists: [], skipped: [] };
+    for (const src of paths || []) {
+      const name = path.basename(src);
+      const ext = path.extname(name).toLowerCase();
+      let dst = null;
+      if (ext === '.bat' && !/^service/i.test(name)) dst = path.join(c.customDir, 'bats', name);
+      else if (ext === '.bin') dst = path.join(c.customDir, 'bin', name);
+      else if (/^targets\.txt$/i.test(name)) dst = path.join(c.customDir, 'targets.txt');
+      else if (ext === '.txt') dst = path.join(c.customDir, 'lists', name);
+      if (!dst) { res.skipped.push(name); continue; }
+      try { if (!fs.statSync(src).isFile()) { res.skipped.push(name); continue; } } catch { res.skipped.push(name); continue; }
+      if (fs.existsSync(dst) && !overwrite) { res.exists.push(name); continue; }
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst);
+      res.copied.push(name);
+    }
+    if (res.copied.length) engine.rescan();
+    return res;
+  });
   handle('fake:import', async () => {
     const c = store.get();
     if (!c.customDir) throw new Error('Общая папка не задана');

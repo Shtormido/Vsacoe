@@ -1,6 +1,7 @@
-import { html, useState, useEffect, useMemo, S, api, call, toast, confirmDialog, promptDialog, fmtSize, cls, curVersion } from '../lib.js';
+import { html, useState, useEffect, useMemo, S, api, call, toast, confirmDialog, promptDialog, fmtSize, cls, curVersion, droppedPaths } from '../lib.js';
+import { importDropped } from '../actions.js';
 import { Icon } from '../icons.js';
-import { Seg, Expander, InfoBar, Empty } from '../ui.js';
+import { Seg, Expander, InfoBar, Empty, useFileDrop } from '../ui.js';
 import { detectKind, parseGrouped, serializeGrouped, parseTarget, formatTarget } from '../listmodel.js';
 
 const BIG_LINES = 4000;
@@ -17,12 +18,12 @@ const DESCR = {
   'targets.txt': 'Цели для проверки стратегий',
 };
 
-function ItemChip({ value, hit, onChange, onRemove, onDragStart }) {
+function ItemChip({ value, hit, onChange, onRemove, dnd = {}, extraClass }) {
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState(value);
   if (edit) return html`<span class="item-chip"><input value=${v} size=${Math.max(6, v.length)} ref=${el => el && setTimeout(() => el.focus(), 0)} onInput=${e => setV(e.target.value)}
     onBlur=${(e) => { const nv = e.target.value.trim(); setEdit(false); if (nv && nv !== value) onChange(nv); }} onKeyDown=${e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setV(value); setEdit(false); } }} /></span>`;
-  return html`<span class=${cls('item-chip', hit && 'hit')} draggable="true" onDragStart=${onDragStart} onClick=${(e) => { if (e.target.closest('button')) return; setV(value); setEdit(true); }} title="Нажмите, чтобы изменить; перетащите в другую группу">${value}
+  return html`<span class=${cls('item-chip', hit && 'hit', extraClass)} draggable="true" ...${dnd} onClick=${(e) => { if (e.target.closest('button')) return; setV(value); setEdit(true); }} title="Нажмите, чтобы изменить; перетащите, чтобы переместить">${value}
     <button class="btn ghost icon" title="Удалить" onClick=${(e) => { e.stopPropagation(); onRemove(); }}><${Icon} name="x" size=${12} /></button></span>`;
 }
 
@@ -59,7 +60,8 @@ export function ListsPage() {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState({});
   const [showAll, setShowAll] = useState({});
-  const [dragOver, setDragOver] = useState(null);
+  const [dnd, setDnd] = useState(null);       // что тащим: { type: 'item', g, i } | { type: 'group', g }
+  const [target, setTarget] = useState(null); // куда: { g, i, pos } для строк, { g, pos } для групп, { g, text } для текста
 
   const loadIndex = () => api.call('lists:index', S.cfg.selectedVersion).then(setIndex).catch(e => toast(e.message, 'error'));
   useEffect(() => { loadIndex(); }, [S.cfg.selectedVersion, S.cfg.customDir]);
@@ -112,13 +114,104 @@ export function ListsPage() {
     setOpen(o => ({ ...o, [model.groups.length]: true }));
   };
 
+  // ---------- перетаскивание ----------
+  const T_ITEM = 'text/zue-item', T_GROUP = 'text/zue-group';
+  const types = (e) => [...e.dataTransfer.types];
+  const isText = (e) => !dnd && types(e).includes('text/plain') && !types(e).includes('Files');
+  const endDrag = () => { setDnd(null); setTarget(null); };
+  const addItems = (gi, arr) => {
+    const ex = new Set(model.groups[gi].items.map(x => x.toLowerCase()));
+    const fresh = [...new Set(arr)].filter(x => !ex.has(x.toLowerCase()));
+    if (fresh.length < arr.length) toast(`Пропущено дублей: ${arr.length - fresh.length}`, 'warn', 2000);
+    if (fresh.length) mutate(m => { m.groups[gi].items.push(...fresh); });
+    return fresh.length;
+  };
+  const textToItems = (txt) => String(txt || '').split(/[\s,;]+/)
+    .map(x => x.trim().replace(/^[a-z]+:\/\//i, '').replace(/[/?#].*$/, '').replace(/^www\./i, ''))
+    .filter(x => /^[\w.\-:*^]+(\/\d+)?$/.test(x) && /[.:]/.test(x));
+  const moveItemTo = (fg, fi, tg, ti) => mutate(m => {
+    const [v] = m.groups[fg].items.splice(fi, 1);
+    let idx = ti === null || ti === undefined ? m.groups[tg].items.length : ti;
+    if (fg === tg && fi < idx) idx--;
+    m.groups[tg].items.splice(idx, 0, v);
+  });
+  const moveGroup = (from, to) => {
+    if (to > from) to--;
+    if (to === from) return;
+    mutate(m => { const [g] = m.groups.splice(from, 1); m.groups.splice(to, 0, g); });
+    setOpen(o => {
+      const flags = model.groups.map((_, i) => !!o[i]);
+      const [f] = flags.splice(from, 1); flags.splice(to, 0, f);
+      const n = {}; flags.forEach((v, i) => { n[i] = v; }); return n;
+    });
+  };
+  const chipDnD = (gi, ii) => ({
+    onDragStart: (e) => { e.stopPropagation(); e.dataTransfer.setData(T_ITEM, '1'); e.dataTransfer.setData('text/plain', model.groups[gi].items[ii]); e.dataTransfer.effectAllowed = 'move'; setDnd({ type: 'item', g: gi, i: ii }); },
+    onDragEnd: endDrag,
+    onDragOver: (e) => {
+      if (!dnd || dnd.type !== 'item') return;
+      e.preventDefault(); e.stopPropagation();
+      const r = e.currentTarget.getBoundingClientRect();
+      const i = e.clientX < r.left + r.width / 2 ? ii : ii + 1;
+      if (!target || target.g !== gi || target.i !== i) setTarget({ g: gi, i });
+    },
+    onDrop: (e) => {
+      if (!dnd || dnd.type !== 'item') return;
+      e.preventDefault(); e.stopPropagation();
+      moveItemTo(dnd.g, dnd.i, gi, target && target.g === gi ? target.i : ii);
+      endDrag();
+    },
+  });
+  const groupDnD = (gi) => ({
+    onDragOver: (e) => {
+      if (dnd && dnd.type === 'group') {
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        const pos = e.clientY < r.top + Math.min(r.height / 2, 30) ? 'before' : 'after';
+        if (!target || target.g !== gi || target.pos !== pos) setTarget({ g: gi, pos });
+      } else if (dnd && dnd.type === 'item') {
+        e.preventDefault();
+        if (!target || target.g !== gi || target.i !== undefined) setTarget({ g: gi });
+      } else if (isText(e) && kind !== 'targets') {
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+        if (!target || target.g !== gi || !target.text) setTarget({ g: gi, text: true });
+      }
+    },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget) && target && target.g === gi) setTarget(null); },
+    onDrop: (e) => {
+      if (dnd && dnd.type === 'group') { e.preventDefault(); moveGroup(dnd.g, target && target.pos === 'after' ? gi + 1 : gi); }
+      else if (dnd && dnd.type === 'item') { e.preventDefault(); moveItemTo(dnd.g, dnd.i, gi, null); }
+      else if (isText(e) && kind !== 'targets') {
+        e.preventDefault();
+        const n = addItems(gi, textToItems(e.dataTransfer.getData('text/plain')));
+        if (n) { toast(`Добавлено строк: ${n}`, 'ok', 1800); setOpen(o => ({ ...o, [gi]: true })); }
+        else toast('В перетащенном тексте не найдено доменов или IP', 'warn', 2500);
+      }
+      endDrag();
+    },
+  });
+  const groupHandle = (gi) => html`<span class="drag-handle" draggable="true" title="Перетащите, чтобы изменить порядок групп"
+    onClick=${e => e.stopPropagation()}
+    onDragStart=${(e) => { e.stopPropagation(); e.dataTransfer.setData(T_GROUP, String(gi)); e.dataTransfer.effectAllowed = 'move'; setDnd({ type: 'group', g: gi }); }}
+    onDragEnd=${endDrag}><${Icon} name="grip" size=${15} stroke=${3} /></span>`;
+  // .txt из проводника — в общие списки
+  const fileDrop = useFileDrop(async (e) => {
+    const r = await importDropped(droppedPaths(e));
+    if (r && r.copied.length) {
+      const idx = await api.call('lists:index', S.cfg.selectedVersion);
+      setIndex(idx);
+      const f = idx.files.find(x => x.scope === 'shared' && x.name === r.copied.find(n => /\.txt$/i.test(n)));
+      if (f) load(f);
+    }
+  });
+
   const ql = q.trim().toLowerCase();
   const stats = useMemo(() => model ? { groups: model.groups.length, items: model.groups.reduce((a, g) => a + g.items.length, 0) } : null, [model]);
 
   const fileGroups = index ? [['shared', 'Общие (переходят между версиями)'], ['version', 'Версия ' + (ver ? ver.version : '')]] : [];
-  return html`<div class="page" style="max-width:1300px">
+  return html`<div class=${cls('page file-drop', fileDrop.over && 'over')} style="max-width:1300px" data-drop="Отпустите — .txt добавятся в общие списки" ...${fileDrop.props}>
     <h1 class="page-title">Списки</h1>
-    <p class="page-sub">Комментарии-заголовки (<span class="kbd"># Название</span>) показываются как сворачиваемые группы. Формат файлов не меняется — программа пишет их так же, как они были.</p>
+    <p class="page-sub">Комментарии-заголовки (<span class="kbd"># Название</span>) показываются как сворачиваемые группы. Перетаскивайте группы за <${Icon} name="grip" size=${13} stroke=${3} />, строки — между группами и внутри них; текст с доменами можно бросить на группу, а .txt из проводника — на страницу. Формат файлов не меняется.</p>
     <div class="split">
       <div class="card sticky" style="padding:8px">
         ${fileGroups.map(([sc, title]) => html`<div class="opt-group">${title}</div>
@@ -133,7 +226,7 @@ export function ListsPage() {
       </div>
 
       <div style="min-width:0">
-        ${!file ? html`<${Empty} icon="list" title="Выберите файл">Слева — общие списки и списки выбранной версии.<//>` : html`
+        ${!file || !model ? html`<${Empty} icon="list" title=${file ? "Загрузка…" : "Выберите файл"}>Слева — общие списки и списки выбранной версии.<//>` : html`
         <div class="card" style="padding:12px 14px;margin-bottom:10px">
           <div class="row wrap">
             <div class="grow" style="min-width:160px"><div style="font-weight:600" class="row">${file.name}${dirty && html`<span class="ovr-dot" title="Есть несохранённые изменения"></span>`}</div>
@@ -163,30 +256,23 @@ export function ListsPage() {
             if (ql && !items.length && !matchName) return null;
             const isOpen = ql ? true : !!open[gi];
             const limit = showAll[gi] ? Infinity : SHOW_LIMIT;
-            return html`<div key=${gi} class=${dragOver === gi ? 'drag-over' : ''} style="border-radius:var(--radius)"
-              onDragOver=${e => { e.preventDefault(); setDragOver(gi); }} onDragLeave=${() => setDragOver(null)}
-              onDrop=${e => { e.preventDefault(); setDragOver(null); const d = JSON.parse(e.dataTransfer.getData('text/zue') || 'null'); if (!d || d.g === gi) return; mutate(m => { const [v] = m.groups[d.g].items.splice(d.i, 1); m.groups[gi].items.push(v); }); }}>
+            const gcls = cls(dnd && dnd.type === 'group' && dnd.g === gi && 'dragging',
+              target && target.g === gi && (target.pos ? 'drop-' + target.pos : 'drag-over'));
+            return html`<div key=${gi} class=${gcls} style="border-radius:var(--radius);margin-bottom:6px" ...${groupDnD(gi)}>
               <${Expander} open=${isOpen} onToggle=${v => setOpen(o => ({ ...o, [gi]: v }))}
-                title=${html`<span class="row" style="gap:8px"><b>${g.name === null ? 'Без группы' : g.name}</b><span class="badge">${g.items.length}</span></span>`}
+                title=${html`<span class="row" style="gap:8px">${groupHandle(gi)}<b>${g.name === null ? 'Без группы' : g.name}</b><span class="badge">${g.items.length}</span>${target && target.g === gi && target.text && html`<span class="badge accent">отпустите, чтобы добавить</span>`}</span>`}
                 right=${html`
                   <button class="btn sm ghost icon tooltip" data-tip="Переименовать" onClick=${async () => { const n = await promptDialog('Переименовать группу', 'Название', g.name || ''); if (n) mutate(m => { m.groups[gi].name = n; }); }}><${Icon} name="edit" size=${14} /></button>
-                  <button class="btn sm ghost icon tooltip" data-tip="Выше" onClick=${() => gi > 0 && mutate(m => { [m.groups[gi - 1], m.groups[gi]] = [m.groups[gi], m.groups[gi - 1]]; })}><${Icon} name="chevron" size=${14} style="transform:rotate(-90deg)" /></button>
-                  <button class="btn sm ghost icon tooltip" data-tip="Ниже" onClick=${() => gi < model.groups.length - 1 && mutate(m => { [m.groups[gi + 1], m.groups[gi]] = [m.groups[gi], m.groups[gi + 1]]; })}><${Icon} name="chevron" size=${14} style="transform:rotate(90deg)" /></button>
                   <button class="btn sm ghost icon tooltip" data-tip="Удалить группу" onClick=${async () => { if (!g.items.length || await confirmDialog('Удалить группу?', `«${g.name}» и ${g.items.length} строк будут удалены.`, 'Удалить', true)) mutate(m => { m.groups.splice(gi, 1); }); }}><${Icon} name="trash" size=${14} /></button>`}>
                 ${kind === 'targets' ? html`<${TargetRows} group=${g} gi=${gi} mutate=${mutate} q=${matchName ? '' : ql} />` : html`
                   <div class="item-grid">
                     ${items.slice(0, limit).map(({ it, ii }) => html`<${ItemChip} key=${it + ii} value=${it} hit=${ql && it.toLowerCase().includes(ql)}
-                      onDragStart=${e => e.dataTransfer.setData('text/zue', JSON.stringify({ g: gi, i: ii }))}
+                      dnd=${chipDnD(gi, ii)} extraClass=${cls(dnd && dnd.type === 'item' && dnd.g === gi && dnd.i === ii && 'dragging', target && target.g === gi && target.i === ii && 'drop-before')}
                       onChange=${v => mutate(m => { m.groups[gi].items[ii] = v; })} onRemove=${() => mutate(m => { m.groups[gi].items.splice(ii, 1); })} />`)}
                     ${items.length > limit && html`<button class="btn sm" onClick=${() => setShowAll(s => ({ ...s, [gi]: true }))}>Показать все (${items.length})</button>`}
                     ${!g.items.length && html`<span class="small muted">Пусто</span>`}
                   </div>
-                  <${AddBox} placeholder="домены или IP через пробел / перенос строки" onAdd=${(arr) => {
-                    const ex = new Set(g.items.map(x => x.toLowerCase()));
-                    const fresh = arr.filter(x => !ex.has(x.toLowerCase()));
-                    if (fresh.length < arr.length) toast(`Пропущено дублей: ${arr.length - fresh.length}`, 'warn', 2000);
-                    mutate(m => { m.groups[gi].items.push(...fresh); });
-                  }} />`}
+                  <${AddBox} placeholder="домены или IP через пробел / перенос строки" onAdd=${(arr) => addItems(gi, arr)} />`}
               <//></div>`;
           })}
           ${!model.groups.length && html`<${Empty} icon="list" title="Файл пуст">Добавьте группу, чтобы начать.<//>`}

@@ -47,6 +47,30 @@ export function ProfilesPage() {
     patchCfg({ profiles: list, activeProfileId: c.activeProfileId === p.id ? list[0].id : c.activeProfileId });
   };
   const bind = (p) => setProfiles(profiles.map(x => x.id === p.id ? (x.bat ? { ...x, bat: '', version: '' } : { ...x, bat: c.selectedBat, version: c.selectedVersion }) : x));
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
+  const cardDnD = (p) => ({
+    onDragStart: (e) => { e.dataTransfer.setData('text/zue-profile', p.id); e.dataTransfer.effectAllowed = 'move'; setDrag(p.id); },
+    onDragEnd: () => { setDrag(null); setOver(null); },
+    onDragOver: (e) => {
+      if (!drag || drag === p.id) return;
+      e.preventDefault();
+      const r = e.currentTarget.getBoundingClientRect();
+      const pos = e.clientX < r.left + r.width / 2 ? 'before' : 'after';
+      if (!over || over.id !== p.id || over.pos !== pos) setOver({ id: p.id, pos });
+    },
+    onDrop: (e) => {
+      if (!drag) return;
+      e.preventDefault();
+      const list = [...profiles];
+      const from = list.findIndex(x => x.id === drag);
+      let to = list.findIndex(x => x.id === p.id) + (over && over.pos === 'after' ? 1 : 0);
+      const [x] = list.splice(from, 1);
+      if (to > from) to--;
+      list.splice(to, 0, x);
+      setProfiles(list); setDrag(null); setOver(null);
+    },
+  });
   const move = (p, d) => { const i = profiles.indexOf(p); const j = i + d; if (j < 0 || j >= profiles.length) return; const l = [...profiles]; [l[i], l[j]] = [l[j], l[i]]; setProfiles(l); };
 
   return html`<div class="page">
@@ -58,7 +82,7 @@ export function ProfilesPage() {
         const active = p.id === c.activeProfileId;
         const ov = Object.entries(p.overrides || {});
         const b = p.bat && batByKey(p.bat, S.scan.versions.find(v => v.id === p.version) || ver);
-        return html`<div key=${p.id} class=${cls('card hoverable')} style=${`--i:${i};${active ? `border-color:${p.color};box-shadow:0 0 0 1px ${p.color} inset` : ''}`}>
+        return html`<div key=${p.id} draggable="true" ...${cardDnD(p)} class=${cls('card hoverable', drag === p.id && 'dragging', over && over.id === p.id && 'drop-' + over.pos)} style=${`--i:${i};${active ? `border-color:${p.color};box-shadow:0 0 0 1px ${p.color} inset` : ''}`}>
           <div class="row">
             <div style=${`width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:${p.color}22;color:${p.color}`} onClick=${() => editLook(p)} class="tooltip" data-tip="Цвет и значок"><${Icon} name=${p.icon || 'star'} size=${22} /></div>
             <div class="grow" style="min-width:0"><div class="ellipsis" style="font-weight:600">${p.name}</div><div class="tiny muted">${active ? 'активен' : ov.length + ' настроек'}</div></div>
@@ -68,11 +92,10 @@ export function ProfilesPage() {
             ${ov.length ? ov.map(([k, v]) => html`<span class="chip tiny">${keyLabel(k)}: <b>${fmtVal(v)}</b></span>`) : html`<span class="small muted">Без изменений — только база</span>`}
           </div>
           <div class="small dim row" style="gap:6px;margin-bottom:10px"><${Icon} name=${p.bat ? 'link' : 'unlink'} size=${14} />${p.bat ? html`<span class="ellipsis">${(b && b.name) || p.bat.replace(/^custom:/, '')} ${p.version ? html`<span class="muted">· ${p.version}</span>` : ''}</span>` : html`<span class="muted">Стратегия не привязана</span>`}</div>
-          <div class="row wrap" style="gap:4px">
-            <button class="btn sm" onClick=${() => bind(p)} title=${p.bat ? 'Отвязать стратегию' : 'Привязать текущую стратегию и версию'}>${p.bat ? 'Отвязать' : 'Привязать'}</button>
+          <div class="card-actions">
+            <span class="drag-handle" title="Перетащите карточку, чтобы изменить порядок"><${Icon} name="grip" size=${15} stroke=${3} /></span>
             <span class="spacer"></span>
-            <button class="btn sm ghost icon tooltip" data-tip="Выше" onClick=${() => move(p, -1)}><${Icon} name="chevron" size=${14} style="transform:rotate(-90deg)" /></button>
-            <button class="btn sm ghost icon tooltip" data-tip="Ниже" onClick=${() => move(p, 1)}><${Icon} name="chevron" size=${14} style="transform:rotate(90deg)" /></button>
+            <button class="btn sm ghost icon tooltip" data-tip=${p.bat ? 'Отвязать стратегию' : 'Привязать текущую стратегию'} onClick=${() => bind(p)}><${Icon} name=${p.bat ? 'unlink' : 'link'} size=${14} /></button>
             <button class="btn sm ghost icon tooltip" data-tip="Переименовать" onClick=${() => rename(p)}><${Icon} name="edit" size=${14} /></button>
             <button class="btn sm ghost icon tooltip" data-tip="Дублировать" onClick=${() => create(p)}><${Icon} name="copy" size=${14} /></button>
             <button class="btn sm ghost icon tooltip" data-tip="Настроить" onClick=${async () => { if (!active) await activateProfile(p.id); update(s => { s.page = 'settings'; s.settingsScope = 'profile'; }); }}><${Icon} name="sliders" size=${14} /></button>

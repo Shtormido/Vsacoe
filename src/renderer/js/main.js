@@ -71,6 +71,10 @@ function App() {
     <${ModalHost} /><${Toasts} />`;
 }
 
+// Файл, брошенный мимо зоны перетаскивания, не должен открываться вместо программы
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => e.preventDefault());
+
 async function boot() {
   render(html`<${App} />`, document.getElementById('app'));
   try {

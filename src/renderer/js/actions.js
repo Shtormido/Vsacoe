@@ -97,3 +97,17 @@ export function onTestEvent(ev) {
   });
   if (ev.type === 'done' || ev.type === 'error') api.call('config:get').then(c => { S.cfg = c; update(); });
 }
+
+/** Импорт файлов, перетащенных из проводника, в общую папку (с вопросом о замене). */
+export async function importDropped(paths) {
+  if (!paths || !paths.length) return null;
+  const base = (p) => p.split(/[\\/]/).pop();
+  const r = await call('import:files', { paths });
+  if (r.exists.length && await confirmDialog('Файлы уже есть', `В общей папке уже есть:\n${r.exists.join('\n')}\n\nЗаменить их?`, 'Заменить')) {
+    const r2 = await call('import:files', { paths: paths.filter(p => r.exists.includes(base(p))), overwrite: true });
+    r.copied.push(...r2.copied);
+  }
+  if (r.skipped.length) toast('Пропущено (нужны .bat, .txt или .bin): ' + r.skipped.join(', '), 'warn', 5000);
+  if (r.copied.length) { toast('Добавлено в общую папку: ' + r.copied.join(', '), 'ok', 4000); await refreshScan(); }
+  return r;
+}

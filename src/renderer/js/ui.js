@@ -195,3 +195,19 @@ export function Warnings({ list }) {
   return html`<${InfoBar} type="warn" title=${`Предупреждений: ${list.length}.`} action=${html`<button class="btn sm ghost" onClick=${() => setOpen(!open)}>${open ? 'Скрыть' : 'Показать'}</button>`}>
     ${open ? html`<ul style="margin:6px 0 0;padding-left:18px">${list.map(w => html`<li class="small">${w}</li>`)}</ul>` : html`<span class="small">${list[0]}…</span>`}<//>`;
 }
+
+/** Зона приёма файлов из проводника. Возвращает обработчики и флаг подсветки. */
+export function useFileDrop(onFiles) {
+  const [over, setOver] = useState(false);
+  const depth = useRef(0);
+  const isFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  return {
+    over,
+    props: {
+      onDragEnter: (e) => { if (!isFiles(e)) return; depth.current++; setOver(true); },
+      onDragOver: (e) => { if (!isFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
+      onDragLeave: (e) => { if (!isFiles(e)) return; if (--depth.current <= 0) { depth.current = 0; setOver(false); } },
+      onDrop: (e) => { if (!isFiles(e)) return; e.preventDefault(); depth.current = 0; setOver(false); onFiles(e); },
+    },
+  };
+}
