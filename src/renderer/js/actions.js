@@ -30,6 +30,21 @@ export async function selectVersion(id) {
     bat = same ? same.key : ((ver.bats.find(b => b.name === 'general') || ver.bats[0] || {}).key || '');
   }
   await patchCfg({ selectedVersion: id, selectedBat: bat });
+  await restartIfRunning();
+}
+
+/** Если обход запущен из программы — перезапустить его с текущим выбором (версия/стратегия). */
+export async function restartIfRunning() {
+  const st = S.status;
+  if (st.state !== 'running' || !st.run || st.run.external || !S.cfg.app.autoRestart) return;
+  if (st.run.versionId === S.cfg.selectedVersion && st.run.batKey === S.cfg.selectedBat) return;
+  await startZapret();
+}
+
+/** Выбор стратегии с перезапуском работающего обхода. */
+export async function selectBat(key) {
+  await patchCfg({ selectedBat: key });
+  await restartIfRunning();
 }
 
 export async function activateProfile(id) {

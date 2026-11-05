@@ -1,7 +1,7 @@
 import { html, useState, useEffect, droppedPaths, S, curVersion, allBats, patchCfg, api, call, toast, update, openModal, closeModal, promptDialog, confirmDialog, scoreColor, cls } from '../lib.js';
 import { Icon } from '../icons.js';
 import { Select, CommandView, InfoBar, ScoreBar, Empty, Warnings, useFileDrop } from '../ui.js';
-import { startZapret, selectVersion, refreshScan, importDropped } from '../actions.js';
+import { startZapret, selectVersion, selectBat, refreshScan, importDropped } from '../actions.js';
 
 function Details({ bat }) {
   const c = S.cfg;
@@ -135,7 +135,7 @@ export function StrategiesPage() {
               ? html`<button class="btn sm ghost icon tooltip" data-tip="Редактировать" onClick=${() => editBat(b)}><${Icon} name="edit" size=${15} /></button>
                      <button class="btn sm ghost icon tooltip" data-tip="Удалить" onClick=${() => del(b)}><${Icon} name="trash" size=${15} /></button>`
               : html`<button class="btn sm ghost icon tooltip" data-tip="Копировать в свои" onClick=${() => copyToCustom(b)}><${Icon} name="copy" size=${15} /></button>`}
-            <button class="btn sm" onClick=${() => patchCfg({ selectedBat: b.key })} disabled=${isSel}>Выбрать</button>
+            <button class="btn sm" onClick=${() => selectBat(b.key)} disabled=${isSel}>Выбрать</button>
             <button class="btn sm primary" onClick=${() => { patchCfg({ selectedBat: b.key }); startZapret({ batKey: b.key }); }}><${Icon} name="play" size=${13} fill />Запустить</button>
           </div>
           ${open === b.key && html`<div class="card" style="margin:3px 0 8px;animation:rise var(--dur-slow) var(--ease)"><${Details} bat=${b} /></div>`}

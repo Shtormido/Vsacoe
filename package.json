@@ -1,7 +1,7 @@
 {
   "name": "zapret-ultimate-edition",
   "productName": "Zapret Ultimate Edition",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Портативный менеджер версий zapret-discord-youtube: стратегии, профили, списки, тесты, сервис.",
   "main": "src/main/main.js",
   "author": "Zapret UE",

@@ -3,7 +3,7 @@ import { html, render, useEffect, useRef, useState, S, api, update, useStore, to
 import { Icon } from './icons.js';
 import { Orb, Select, ModalHost, Toasts, Progress } from './ui.js';
 import { applyTheme } from './themes.js';
-import { startZapret, stopZapret, activateProfile, installService, removeService, serviceControl, runOptimal, selectVersion, onTestEvent } from './actions.js';
+import { startZapret, stopZapret, activateProfile, installService, removeService, serviceControl, runOptimal, selectVersion, selectBat, onTestEvent } from './actions.js';
 import { batOptions } from './pages/home.js';
 
 const open = (page) => api.call('win:show', page);
@@ -82,7 +82,7 @@ function Tray() {
       <div class="tray-label">Стратегия</div>
       <div class="row" style="gap:6px">
         <div style="width:96px;flex:0 0 96px"><${Select} value=${c.selectedVersion} onChange=${selectVersion} options=${s.scan.versions.map(v => ({ value: v.id, label: 'v' + v.version }))} /></div>
-        <div class="grow" style="min-width:0"><${Select} value=${c.selectedBat} search onChange=${async (k) => { await patchCfg({ selectedBat: k }); if (running && c.app.autoRestart) startZapret({ batKey: k }); }} options=${batOptions(ver)} /></div>
+        <div class="grow" style="min-width:0"><${Select} value=${c.selectedBat} search onChange=${selectBat} options=${batOptions(ver)} /></div>
       </div>
     </div>
 

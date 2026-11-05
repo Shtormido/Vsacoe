@@ -1,7 +1,7 @@
 import { html, useState, useEffect, S, curVersion, allBats, activeProfile, patchCfg, fmtDur, STATE_TEXT, GF_LABEL, IPSET_LABEL, api, update, scoreColor } from '../lib.js';
 import { Icon } from '../icons.js';
 import { Orb, Select, Progress, InfoBar, ScoreBar, Warnings } from '../ui.js';
-import { startZapret, stopZapret, selectVersion, activateProfile, installService, removeService, serviceControl, runOptimal } from '../actions.js';
+import { startZapret, stopZapret, selectVersion, selectBat, activateProfile, installService, removeService, serviceControl, runOptimal } from '../actions.js';
 
 export function useTick(ms = 1000) {
   const [, set] = useState(0);
@@ -93,7 +93,7 @@ export function HomePage() {
       <div class="card"><div class="field"><label>Версия запрета</label>
         <${Select} value=${c.selectedVersion} onChange=${selectVersion} options=${S.scan.versions.map(v => ({ value: v.id, label: 'v' + v.version, hint: v.id !== 'v' + v.version ? v.id : '' }))} /></div></div>
       <div class="card"><div class="field"><label>Стратегия</label>
-        <${Select} value=${c.selectedBat} search onChange=${(k) => patchCfg({ selectedBat: k })} options=${batOptions(ver)} /></div></div>
+        <${Select} value=${c.selectedBat} search onChange=${selectBat} options=${batOptions(ver)} /></div></div>
       <div class="card"><div class="field"><label>Профиль</label>
         <${Select} value=${c.activeProfileId} onChange=${activateProfile} options=${c.profiles.map(p => ({ value: p.id, label: p.name, hint: p.bat ? '🔗' : '' }))}
           render=${(o) => { const p = c.profiles.find(x => x.id === o.value); return html`<span class="row" style="gap:8px"><span class="swatch" style=${`background:${p.color}`}></span>${o.label}</span>`; }} /></div></div>

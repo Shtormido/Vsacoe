@@ -52,7 +52,7 @@ function App() {
   const C = page.C;
   return html`
     <div class="titlebar">
-      <span class="logo"></span><span class="name">Zapret Ultimate Edition</span>
+      <span class="logo"></span><span class="name">Zapret Ultimate Edition <span class="muted">${s.info.version}</span></span>
       <span class=${'tb-status st-' + st}><span class=${cls('dot', (st === 'running' || st === 'service') && 'live')}></span>${STATE_TEXT[st]}${s.status.run && s.status.run.batName ? ' · ' + s.status.run.batName : ''}</span>
     </div>
     <div class="shell">

@@ -88,7 +88,10 @@ function trayMenu() {
       cfg.selectedBat = b.key; store.save(); refreshTrayMenu(); send('config:changed', null);
       if (lastStatus && lastStatus.state === 'running') run(() => engine.start({ batKey: b.key }))();
     } })) : [{ label: 'Нет стратегий', enabled: false }] },
-    { label: '📦  Версия', submenu: engine.versions.map(v => ({ label: 'v' + v.version, type: 'radio', checked: v.id === cfg.selectedVersion, click: () => { cfg.selectedVersion = v.id; store.save(); engine.rescan(); refreshTrayMenu(); send('config:changed', null); } })) },
+    { label: '📦  Версия', submenu: engine.versions.map(v => ({ label: 'v' + v.version, type: 'radio', checked: v.id === cfg.selectedVersion, click: () => {
+      cfg.selectedVersion = v.id; store.save(); engine.rescan(); refreshTrayMenu(); send('config:changed', null);
+      if (lastStatus && lastStatus.state === 'running' && !(lastStatus.run || {}).external) run(() => engine.start({}))();
+    } })) },
     { label: '👤  Профиль', submenu: cfg.profiles.map(p => ({ label: p.name, type: 'radio', checked: p.id === cfg.activeProfileId, click: () => send('tray:profile', p.id) })) },
     { label: `🛡  Сервис — ${svc.installed ? (svc.state === 'RUNNING' ? 'работает' : 'остановлен') : 'не установлен'}`, submenu: [
       { label: svc.installed ? 'Сменить на выбранную стратегию' : 'Установить выбранную стратегию', enabled: !!cfg.selectedBat, click: run(() => engine.serviceInstall({})) },
