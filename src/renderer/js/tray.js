@@ -48,7 +48,7 @@ function Tray() {
 
   return html`<div class=${cls('tray', 'st-' + st.state, s.trayAnim && 'tray-in')} ref=${rootRef} key=${s.trayKey}>
     <div class="tray-head">
-      <span class="logo"></span><b class="grow">Zapret UE</b>
+      <span class="logo"></span><b class="grow">Zapret UE <span class="tiny muted" style="font-weight:400">${s.info.version}</span></b>
       <button class="btn ghost sm icon" title="Открыть программу" onClick=${() => open('home')}><${Icon} name="eye" size=${15} /></button>
       <button class="btn ghost sm icon" title="Параметры" onClick=${() => open('app')}><${Icon} name="gear" size=${15} /></button>
     </div>

@@ -70,7 +70,7 @@ function trayMenu() {
   const full = cfg.app.stopFull !== false;
   const openPage = (page) => () => { win.show(); win.focus(); win.webContents.send('nav', page); };
   return Menu.buildFromTemplate([
-    { label: `${DOT[st.state] || '⚪'}  Zapret UE — ${STATE_LABEL[st.state] || st.state}`, enabled: false },
+    { label: `${DOT[st.state] || '⚪'}  Zapret UE ${app.getVersion()} — ${STATE_LABEL[st.state] || st.state}`, enabled: false },
     ...(st.state !== 'off' && r.batName ? [{ label: `     ${r.batName}${r.version ? ' · v' + r.version : ''}`, enabled: false }] : []),
     { type: 'separator' },
     st.state === 'running'
@@ -189,7 +189,7 @@ async function pollStatus() {
       send('status', st);
       if (tray) {
         const r = st.run;
-        tray.setToolTip(`Zapret UE — ${STATE_LABEL[st.state] || st.state}${r && r.batName ? '\n' + r.batName + (r.version ? ' · v' + r.version : '') : ''}`);
+        tray.setToolTip(`Zapret UE ${app.getVersion()} — ${STATE_LABEL[st.state] || st.state}${r && r.batName ? '\n' + r.batName + (r.version ? ' · v' + r.version : '') : ''}`);
         if (trayIcons[st.state]) tray.setImage(trayIcons[st.state]);
         refreshTrayMenu();
       }
