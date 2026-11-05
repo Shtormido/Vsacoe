@@ -1,0 +1,80 @@
+# targets.txt - endpoint list for zapret.ps1 tests
+#
+# Format:
+#   KeyName = "https://host..."   -> Runs HTTP/TLS checks + ping
+#   KeyName = "PING:1.2.3.4"       -> Ping only
+#
+# Keys must be a single word (letters/digits/underscore), because the
+# script parses them as simple identifiers. You can add or remove lines.
+
+### Discord
+DiscordMain           = "https://discord.com"
+DiscordGateway        = "https://gateway.discord.gg"
+DiscordCDN            = "https://cdn.discordapp.com"
+DiscordUpdates        = "https://updates.discord.com"
+
+### YouTube
+YouTubeWeb            = "https://www.youtube.com"
+YouTubeShort          = "https://youtu.be"
+YouTubeImage          = "https://i.ytimg.com"
+YouTubeVideoRedirect  = "https://redirector.googlevideo.com"
+
+### Google
+GoogleMain            = "https://www.google.com"
+GoogleGstatic         = "https://www.gstatic.com"
+
+### Cloudflare
+CloudflareWeb         = "https://www.cloudflare.com"
+CloudflareCDN         = "https://cdnjs.cloudflare.com"
+
+### Public DNS (PING-only)
+CloudflareDNS1111     = "PING:1.1.1.1"
+CloudflareDNS1001     = "PING:1.0.0.1"
+GoogleDNS8888         = "PING:8.8.8.8"
+GoogleDNS8844         = "PING:8.8.4.4"
+Quad9DNS9999          = "PING:9.9.9.9"
+
+### Don't Starve Together (Klei)
+KleiAuth              = "https://klei.com"
+KleiGame              = "https://kleitools.com"
+KleiLobby             = "https://klei.com"
+KleiMetrics           = "https://kleitools.com"
+
+### Steam Services (Required for DST)
+SteamCommunity        = "https://steamcommunity.com"
+SteamStore            = "https://steampowered.com"
+SteamAPI              = "https://steampowered.com"
+SteamStatic           = "https://steamstatic.com"
+
+### Roblox Services (Extended List)
+RobloxMain            = "https://roblox.com"
+RobloxWWW             = "https://roblox.com"
+RobloxAPI             = "https://roblox.com"
+RobloxStatic          = "https://rbxcdn.com"
+RobloxSetup           = "https://rbxcdn.com"
+RobloxLocale          = "https://roblox.com"
+RobloxAuth            = "https://roblox.com"
+RobloxUsers           = "https://roblox.com"
+RobloxAssetGame       = "https://roblox.com"
+RobloxGamePersistence = "https://roblox.com"
+RobloxRealtime        = "https://roblox.com"
+RobloxPresence        = "https://roblox.com"
+RobloxMobile          = "https://roblox.com"
+RobloxData            = "https://roblox.com"
+RobloxAbe             = "https://roblox.com"
+RobloxNet             = "https://rbxcdn.net"
+RobloxTrk             = "https://rbxtrk.com"
+RobloxArkoseLabs      = "https://arkoselabs.com"
+
+### Mineplex
+Mineplex              = "mineplex.com"
+
+### Dead by Daylight & Behavior
+DbDBehaviorAuth       = "https://bhvr.com"
+DbDApiProd            = "https://bhvr.com"
+DbDDeadByDaylight     = "https://deadbydaylight.com"
+EacHome               = "https://easyanticheat.net"
+EacCdn                = "https://easyanticheat.net"
+EpicGamesAuth         = "https://epicgames.com"
+EpicOnlineServices    = "https://epicgames.com"
+AmazonAws             = "https://amazonaws.com"

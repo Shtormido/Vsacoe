@@ -1,0 +1,49 @@
+{
+  "name": "zapret-ultimate-edition",
+  "productName": "Zapret Ultimate Edition",
+  "version": "1.0.0",
+  "description": "Портативный менеджер версий zapret-discord-youtube: стратегии, профили, списки, тесты, сервис.",
+  "main": "src/main/main.js",
+  "author": "Zapret UE",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder --win portable",
+    "dist:dir": "electron-builder --win dir"
+  },
+  "build": {
+    "appId": "zapret.ultimate.edition",
+    "productName": "Zapret Ultimate Edition",
+    "artifactName": "ZapretUE-${version}-portable.${ext}",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
+      "signAndEditExecutable": true
+    },
+    "portable": {
+      "requestExecutionLevel": "admin",
+      "unpackDirName": "ZapretUE"
+    },
+    "electronLanguages": [
+      "ru",
+      "en-US"
+    ],
+    "compression": "maximum"
+  },
+  "devDependencies": {
+    "electron": "45.2.0",
+    "electron-builder": "26.0.12"
+  },
+  "dependencies": {}
+}

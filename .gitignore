@@ -1,0 +1,4 @@
+node_modules/
+dist/
+ZapretUE-data/
+*.log

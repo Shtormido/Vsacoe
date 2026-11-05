@@ -1,0 +1,61 @@
+# Игры и Игровые Платформы
+epicgames.com
+bhvr.com
+deadbydaylight.com
+heartopia-game.com
+playheartopia.com
+umamusume.com
+cygames.jp
+gommehd.net
+mc.gommehd.net
+roblox.com
+rbxcdn.com
+rbxcdn.net
+rbxtrk.com
+arkoselabs.com
+unity.com
+unity3d.com
+multiplay.com
+multiplay.co.uk
+
+# Steam и CDN
+steamserver.net
+steamcontent.com
+steamstatic.com
+akamaihd.net
+
+# Моды, Сообщества и Медia
+modrinth.com
+curseforge.com
+itch.io
+fandom.com
+
+# Голосовые и Онлайн Сервисы
+voicemod.net
+voicemod.com
+tuna.voicemod.net
+control-api.voicemod.net
+account.voicemod.net
+api.voicemod.net
+content.voicemod.net
+v3-api.voicemod.net
+xsolla.com
+
+# Аниме и Онлайн Видео
+kodik.cc
+kodik.biz
+kodik.info
+kodik.top
+shikimori.one
+animego.org
+aniboom.one
+jut.su
+sibnet.ru
+video.sibnet.ru
+web.aninet.app
+
+# Софт и Инструменты
+microsoft.com
+msedgeextensions.msedge.net
+virustotal.com
+emojidb.org
