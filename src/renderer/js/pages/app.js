@@ -22,6 +22,7 @@ export function AppPage() {
 
     <div class="section-title">Обход</div>
     <${Setting} icon="refresh" title="Перезапускать при изменении настроек" desc="Смена профиля или настроек сразу применяется к работающему обходу"><${Toggle} on=${a.autoRestart} onChange=${v => set('autoRestart', v)} /><//>
+    <${Setting} icon="stop" title="Полная остановка (как пункт 2 в service.bat)" desc="«Остановить» завершает winws.exe и выгружает драйвер WinDivert. Установленный сервис не удаляется — для этого кнопка «Удалить сервис»"><${Toggle} on=${a.stopFull !== false} onChange=${v => set('stopFull', v)} /><//>
     <${Setting} icon="stop" title="Останавливать обход при выходе" desc="Иначе winws продолжит работать после закрытия программы, как обычный батник"><${Toggle} on=${a.stopOnExit} onChange=${v => set('stopOnExit', v)} /><//>
     <${Setting} icon="pulse" title="Интервал обновления состояния">
       <select class="input" style="width:140px" value=${a.pollMs} onChange=${e => set('pollMs', +e.target.value)}>${[1000, 2000, 3000, 5000, 10000].map(v => html`<option value=${v}>${v / 1000} с</option>`)}</select>

@@ -61,7 +61,7 @@ function trayMenu() {
     { type: 'separator' },
     { label: 'Открыть', click: () => { win.show(); win.focus(); } },
     st === 'running'
-      ? { label: 'Остановить', click: () => engine.stop().then(pollStatus) }
+      ? { label: 'Остановить', click: () => engine.stop({ full: store.get().app.stopFull !== false }).then(pollStatus) }
       : { label: 'Запустить', enabled: st === 'off', click: () => engine.start({}).then(pollStatus).catch(e => send('toast', { type: 'error', text: e.message })) },
     { label: 'Профиль', submenu: cfg.profiles.map(p => ({ label: p.name, type: 'radio', checked: p.id === cfg.activeProfileId, click: () => send('tray:profile', p.id) })) },
     { type: 'separator' },
@@ -147,7 +147,7 @@ function registerIpc() {
   handle('versions:scan', () => engine.rescan());
   handle('cmd:build', (ref) => stripBuild(engine.build(ref || {})));
   handle('zapret:start', async (ref) => { engine.busy = 'starting'; send('status', { ...(lastStatus || {}), state: 'starting' }); try { return await engine.start(ref || {}); } finally { engine.busy = null; await pollStatus(); } });
-  handle('zapret:stop', async () => { await engine.stop(); return pollStatus(); });
+  handle('zapret:stop', async () => { await engine.stop({ full: store.get().app.stopFull !== false }); return pollStatus(); });
   handle('status:get', () => pollStatus());
   handle('service:install', async (ref) => { engine.busy = 'starting'; try { return await engine.serviceInstall(ref || {}); } finally { engine.busy = null; await pollStatus(); } });
   handle('service:remove', async () => { const r = await engine.serviceRemove(); await pollStatus(); return r; });
@@ -355,7 +355,7 @@ app.on('before-quit', async (e) => {
   if (store.get().app.stopOnExit && lastStatus && lastStatus.state === 'running' && !app._stopped) {
     e.preventDefault();
     app._stopped = true;
-    try { await engine.stop(); } catch {}
+    try { await engine.stop({ full: store.get().app.stopFull !== false }); } catch {}
     app.quit();
   }
   store.save(true);

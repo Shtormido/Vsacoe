@@ -17,7 +17,7 @@ export async function startZapret(ref = {}) {
 
 export async function stopZapret() {
   await call('zapret:stop');
-  toast('Обход остановлен', 'info', 2000);
+  toast(S.cfg.app.stopFull !== false ? 'Обход остановлен, WinDivert выгружен' : 'Обход остановлен', 'info', 2200);
 }
 
 export async function selectVersion(id) {

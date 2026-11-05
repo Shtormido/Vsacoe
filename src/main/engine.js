@@ -193,7 +193,13 @@ class Engine {
     return run;
   }
 
-  async stop({ keepService = true } = {}) {
+  /**
+   * Остановка обхода.
+   * full — как пункт 2 «Remove Services» в service.bat: завершить winws.exe и выгрузить драйвер
+   * WinDivert (WinDivert и WinDivert14). Сервис zapret при этом не удаляется; если он запущен,
+   * драйвер не трогаем — он нужен сервису.
+   */
+  async stop({ keepService = true, full = false } = {}) {
     const c = this.cfg;
     if (sys.SIM) {
       if (this.simChild) { await sys.killPid(this.simChild.pid); this.simChild = null; }
@@ -203,6 +209,13 @@ class Engine {
         if (c.lastRun && c.lastRun.pid) await sys.killPid(c.lastRun.pid);
       } else {
         await sys.killImage('winws.exe');
+        if (full) {
+          await wait(300);
+          for (const d of ['WinDivert', 'WinDivert14']) {
+            await sys.run('net', ['stop', d], { timeout: 15000 });
+            await sys.run('sc', ['delete', d]);
+          }
+        }
       }
     }
     this.testRun = null;

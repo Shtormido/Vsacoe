@@ -69,7 +69,8 @@ export function HomePage() {
         <${StatusDetails} st=${st} />
         <div class="row wrap" style="margin-top:16px">
           ${isSvc
-            ? html`<button class="btn lg" onClick=${() => serviceControl('stop')}><${Icon} name="stop" fill />Остановить сервис</button>`
+            ? html`<button class="btn lg" onClick=${() => serviceControl('stop')}><${Icon} name="stop" fill />Остановить сервис</button>
+                   <button class="btn lg" onClick=${removeService} title="Как пункт 2 в service.bat: остановить и удалить сервис, завершить winws, выгрузить WinDivert"><${Icon} name="trash" />Удалить сервис (как п.2)</button>`
             : running
               ? html`<button class="btn lg" onClick=${stopZapret}><${Icon} name="stop" fill />Остановить</button>
                      <button class="btn lg" onClick=${() => startZapret()} title="Перезапустить с выбранной стратегией"><${Icon} name="refresh" />Перезапустить</button>`
